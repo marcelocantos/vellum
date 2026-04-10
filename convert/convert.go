@@ -16,7 +16,6 @@ import (
 
 	chromahtml "github.com/alecthomas/chroma/v2/formatters/html"
 	"github.com/alecthomas/chroma/v2/styles"
-	"github.com/gohugoio/hugo-goldmark-extensions/passthrough"
 	"github.com/yuin/goldmark"
 	highlighting "github.com/yuin/goldmark-highlighting/v2"
 	meta "github.com/yuin/goldmark-meta"
@@ -39,38 +38,28 @@ type Options struct {
 
 var htmlTmpl = template.Must(template.New("page").Parse(embed.HTMLTemplate))
 
-func newGoldmark() goldmark.Markdown {
-	return goldmark.New(
-		goldmark.WithExtensions(
-			extension.GFM,
-			extension.Footnote,
-			extension.DefinitionList,
-			extension.Typographer,
-			meta.Meta,
-			highlighting.NewHighlighting(
-				highlighting.WithStyle("github"),
-				highlighting.WithFormatOptions(
-					chromahtml.WithClasses(true),
-					chromahtml.WithAllClasses(true),
-				),
+var md = goldmark.New(
+	goldmark.WithExtensions(
+		extension.GFM,
+		extension.Footnote,
+		extension.DefinitionList,
+		extension.Typographer,
+		meta.Meta,
+		highlighting.NewHighlighting(
+			highlighting.WithStyle("github"),
+			highlighting.WithFormatOptions(
+				chromahtml.WithClasses(true),
+				chromahtml.WithAllClasses(true),
 			),
-			passthrough.New(passthrough.Config{
-				InlineDelimiters: []passthrough.Delimiters{
-					{Open: "$", Close: "$"},
-				},
-				BlockDelimiters: []passthrough.Delimiters{
-					{Open: "$$", Close: "$$"},
-				},
-			}),
 		),
-		goldmark.WithParserOptions(
-			parser.WithAutoHeadingID(),
-		),
-		goldmark.WithRendererOptions(
-			html.WithUnsafe(),
-		),
-	)
-}
+	),
+	goldmark.WithParserOptions(
+		parser.WithAutoHeadingID(),
+	),
+	goldmark.WithRendererOptions(
+		html.WithUnsafe(),
+	),
+)
 
 // Convert reads a Markdown file at inputPath and writes a PDF to outputPath.
 func Convert(ctx context.Context, inputPath, outputPath string, opts *Options) error {
@@ -79,13 +68,18 @@ func Convert(ctx context.Context, inputPath, outputPath string, opts *Options) e
 		return fmt.Errorf("reading input: %w", err)
 	}
 
-	htmlContent, title, err := renderMarkdown(src)
+	// Extract math expressions before goldmark sees them — this prevents
+	// goldmark from mangling backslashes and other LaTeX syntax.
+	math := newMathPreprocessor()
+	processed := math.Extract(string(src))
+
+	htmlContent, title, err := renderMarkdown([]byte(processed))
 	if err != nil {
 		return fmt.Errorf("rendering markdown: %w", err)
 	}
 
-	// Pre-render KaTeX math expressions server-side.
-	htmlContent, err = renderKaTeX(ctx, htmlContent)
+	// Batch-render KaTeX math and replace placeholders in HTML.
+	htmlContent, err = math.ReplaceAll(ctx, htmlContent)
 	if err != nil {
 		return fmt.Errorf("rendering math: %w", err)
 	}
@@ -127,8 +121,6 @@ func Convert(ctx context.Context, inputPath, outputPath string, opts *Options) e
 }
 
 func renderMarkdown(src []byte) (htmlContent string, title string, err error) {
-	md := newGoldmark()
-
 	pctx := parser.NewContext()
 	var buf bytes.Buffer
 	if err := md.Convert(src, &buf, parser.WithContext(pctx)); err != nil {

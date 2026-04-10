@@ -13,9 +13,6 @@ import (
 	"strings"
 )
 
-// katexRenderScript is a Node.js script that reads a JSON array of
-// {expr, displayMode} objects from stdin and writes back a JSON array
-// of rendered HTML strings. This avoids spawning a process per expression.
 // katexRenderScript uses createRequire to resolve katex from the global
 // npm prefix, avoiding dependency on the local working directory.
 const katexRenderScript = `
@@ -47,76 +44,93 @@ process.stdin.on("end", () => {
 });
 `
 
-var (
-	// Match $$...$$ (block) before $...$ (inline) to avoid partial matches.
-	blockMathRe  = regexp.MustCompile(`\$\$\s*([\s\S]+?)\s*\$\$`)
-	inlineMathRe = regexp.MustCompile(`\$([^\n$]+?)\$`)
-)
-
 type mathExpr struct {
 	Expr        string `json:"expr"`
 	DisplayMode bool   `json:"displayMode"`
 }
 
-// renderKaTeX finds all math expressions in html (delimited by $ and $$),
-// renders them via KaTeX, and returns the html with rendered math.
-func renderKaTeX(ctx context.Context, html string) (string, error) {
-	// Collect all math expressions.
-	var exprs []mathExpr
-	type replacement struct {
-		start, end int
-		index      int
-		display    bool
-	}
-	var replacements []replacement
+var (
+	// Match $$...$$ blocks (possibly multiline) in markdown source.
+	blockMathRe = regexp.MustCompile(`(?m)^\$\$\s*\n([\s\S]+?)\n\$\$\s*$`)
+	// Match inline $...$ (no newlines, no leading/trailing space).
+	inlineMathRe = regexp.MustCompile(`\$([^\n$]+?)\$`)
+)
 
-	// Block math first ($$...$$).
-	for _, loc := range blockMathRe.FindAllStringSubmatchIndex(html, -1) {
-		exprs = append(exprs, mathExpr{
-			Expr:        strings.TrimSpace(html[loc[2]:loc[3]]),
-			DisplayMode: true,
-		})
-		replacements = append(replacements, replacement{
-			start:   loc[0],
-			end:     loc[1],
-			index:   len(exprs) - 1,
-			display: true,
-		})
-	}
+// mathPreprocessor extracts math expressions from markdown source before
+// goldmark processes it, replacing them with HTML-safe placeholders that
+// goldmark will pass through unchanged. After rendering, call ReplaceAll
+// to swap in KaTeX-rendered HTML.
+type mathPreprocessor struct {
+	exprs        []mathExpr
+	placeholders []string
+}
 
-	// Inline math ($...$) — but skip regions already matched as block math.
-	for _, loc := range inlineMathRe.FindAllStringSubmatchIndex(html, -1) {
-		// Check if this overlaps with any block match.
-		overlaps := false
-		for _, r := range replacements {
-			if loc[0] >= r.start && loc[0] < r.end {
-				overlaps = true
-				break
-			}
+func newMathPreprocessor() *mathPreprocessor {
+	return &mathPreprocessor{}
+}
+
+func (m *mathPreprocessor) placeholder(expr string, display bool) string {
+	idx := len(m.exprs)
+	m.exprs = append(m.exprs, mathExpr{Expr: expr, DisplayMode: display})
+	// Use a format that goldmark will treat as raw HTML and pass through.
+	p := fmt.Sprintf("<!--MATH:%d-->", idx)
+	m.placeholders = append(m.placeholders, p)
+	return p
+}
+
+// Extract finds all math expressions in the markdown source and replaces
+// them with HTML comment placeholders that goldmark will ignore.
+func (m *mathPreprocessor) Extract(src string) string {
+	// Block math first ($$...$$ on own lines).
+	src = blockMathRe.ReplaceAllStringFunc(src, func(match string) string {
+		inner := blockMathRe.FindStringSubmatch(match)
+		if len(inner) < 2 {
+			return match
 		}
-		if overlaps {
-			continue
-		}
-		exprs = append(exprs, mathExpr{
-			Expr:        html[loc[2]:loc[3]],
-			DisplayMode: false,
-		})
-		replacements = append(replacements, replacement{
-			start:   loc[0],
-			end:     loc[1],
-			index:   len(exprs) - 1,
-			display: false,
-		})
-	}
+		return m.placeholder(strings.TrimSpace(inner[1]), true)
+	})
 
-	if len(exprs) == 0 {
+	// Inline math ($...$).
+	src = inlineMathRe.ReplaceAllStringFunc(src, func(match string) string {
+		inner := inlineMathRe.FindStringSubmatch(match)
+		if len(inner) < 2 {
+			return match
+		}
+		return m.placeholder(strings.TrimSpace(inner[1]), false)
+	})
+
+	return src
+}
+
+// ReplaceAll batch-renders all collected math expressions via KaTeX
+// and replaces placeholders in the rendered HTML.
+func (m *mathPreprocessor) ReplaceAll(ctx context.Context, html string) (string, error) {
+	if len(m.exprs) == 0 {
 		return html, nil
 	}
 
-	// Render all expressions in one batch via Node.js.
+	rendered, err := batchKaTeX(ctx, m.exprs)
+	if err != nil {
+		return "", err
+	}
+
+	for i, p := range m.placeholders {
+		var wrapped string
+		if m.exprs[i].DisplayMode {
+			wrapped = `<div class="katex-display">` + rendered[i] + `</div>`
+		} else {
+			wrapped = rendered[i]
+		}
+		html = strings.Replace(html, p, wrapped, 1)
+	}
+
+	return html, nil
+}
+
+func batchKaTeX(ctx context.Context, exprs []mathExpr) ([]string, error) {
 	inputJSON, err := json.Marshal(exprs)
 	if err != nil {
-		return "", fmt.Errorf("marshalling katex input: %w", err)
+		return nil, fmt.Errorf("marshalling katex input: %w", err)
 	}
 
 	cmd := exec.CommandContext(ctx, "node", "-e", katexRenderScript)
@@ -126,30 +140,17 @@ func renderKaTeX(ctx context.Context, html string) (string, error) {
 	cmd.Stderr = &stderr
 
 	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("katex render: %w: %s", err, stderr.String())
+		return nil, fmt.Errorf("katex render: %w: %s", err, stderr.String())
 	}
 
 	var rendered []string
 	if err := json.Unmarshal(stdout.Bytes(), &rendered); err != nil {
-		return "", fmt.Errorf("parsing katex output: %w", err)
+		return nil, fmt.Errorf("parsing katex output: %w", err)
 	}
 
 	if len(rendered) != len(exprs) {
-		return "", fmt.Errorf("katex returned %d results for %d expressions", len(rendered), len(exprs))
+		return nil, fmt.Errorf("katex returned %d results for %d expressions", len(rendered), len(exprs))
 	}
 
-	// Apply replacements in reverse order to preserve offsets.
-	// Sort by start position descending.
-	for i := len(replacements) - 1; i >= 0; i-- {
-		r := replacements[i]
-		var wrapped string
-		if r.display {
-			wrapped = `<div class="katex-display">` + rendered[r.index] + `</div>`
-		} else {
-			wrapped = rendered[r.index]
-		}
-		html = html[:r.start] + wrapped + html[r.end:]
-	}
-
-	return html, nil
+	return rendered, nil
 }
