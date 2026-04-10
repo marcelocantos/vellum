@@ -27,20 +27,7 @@ import (
 	"github.com/marcelocantos/vellum/embed"
 )
 
-const katexHead = `<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.css">
-<script src="https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/contrib/auto-render.min.js"></script>
-<script>
-document.addEventListener("DOMContentLoaded", function() {
-  renderMathInElement(document.body, {
-    delimiters: [
-      {left: "$$", right: "$$", display: true},
-      {left: "$", right: "$", display: false}
-    ],
-    throwOnError: false
-  });
-});
-</script>`
+const katexCSSLink = `<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.css">`
 
 // Options configures the conversion pipeline.
 type Options struct {
@@ -97,8 +84,14 @@ func Convert(ctx context.Context, inputPath, outputPath string, opts *Options) e
 		return fmt.Errorf("rendering markdown: %w", err)
 	}
 
+	// Pre-render KaTeX math expressions server-side.
+	htmlContent, err = renderKaTeX(ctx, htmlContent)
+	if err != nil {
+		return fmt.Errorf("rendering math: %w", err)
+	}
+
 	css := embed.GitHubCSS
-	headExtra := katexHead
+	headExtra := katexCSSLink
 	if opts != nil {
 		if opts.CSS != "" {
 			css = opts.CSS
@@ -119,6 +112,11 @@ func Convert(ctx context.Context, inputPath, outputPath string, opts *Options) e
 	fullHTML, err := assembleHTML(title, css, headExtra, htmlContent)
 	if err != nil {
 		return fmt.Errorf("assembling HTML: %w", err)
+	}
+
+	// Debug: save HTML for inspection.
+	if debugPath := os.Getenv("VELLUM_DEBUG_HTML"); debugPath != "" {
+		os.WriteFile(debugPath, []byte(fullHTML), 0o644)
 	}
 
 	if err := prince(ctx, fullHTML, outputPath); err != nil {
@@ -189,7 +187,7 @@ func prince(ctx context.Context, htmlContent, outputPath string) error {
 	}
 	tmpFile.Close()
 
-	cmd := exec.CommandContext(ctx, "prince", "--javascript", tmpFile.Name(), "-o", outputPath)
+	cmd := exec.CommandContext(ctx, "prince", tmpFile.Name(), "-o", outputPath)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 
