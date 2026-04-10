@@ -11,3 +11,4 @@
 
 # Test artifacts
 /test/output/
+*.pdf
