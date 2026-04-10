@@ -16,6 +16,7 @@ import (
 
 	chromahtml "github.com/alecthomas/chroma/v2/formatters/html"
 	"github.com/alecthomas/chroma/v2/styles"
+	"github.com/gohugoio/hugo-goldmark-extensions/passthrough"
 	"github.com/yuin/goldmark"
 	highlighting "github.com/yuin/goldmark-highlighting/v2"
 	meta "github.com/yuin/goldmark-meta"
@@ -25,6 +26,21 @@ import (
 
 	"github.com/marcelocantos/vellum/embed"
 )
+
+const katexHead = `<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.css">
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/contrib/auto-render.min.js"></script>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  renderMathInElement(document.body, {
+    delimiters: [
+      {left: "$$", right: "$$", display: true},
+      {left: "$", right: "$", display: false}
+    ],
+    throwOnError: false
+  });
+});
+</script>`
 
 // Options configures the conversion pipeline.
 type Options struct {
@@ -51,6 +67,14 @@ func newGoldmark() goldmark.Markdown {
 					chromahtml.WithAllClasses(true),
 				),
 			),
+			passthrough.New(passthrough.Config{
+				InlineDelimiters: []passthrough.Delimiters{
+					{Open: "$", Close: "$"},
+				},
+				BlockDelimiters: []passthrough.Delimiters{
+					{Open: "$$", Close: "$$"},
+				},
+			}),
 		),
 		goldmark.WithParserOptions(
 			parser.WithAutoHeadingID(),
@@ -74,12 +98,14 @@ func Convert(ctx context.Context, inputPath, outputPath string, opts *Options) e
 	}
 
 	css := embed.GitHubCSS
-	headExtra := ""
+	headExtra := katexHead
 	if opts != nil {
 		if opts.CSS != "" {
 			css = opts.CSS
 		}
-		headExtra = opts.HeadExtra
+		if opts.HeadExtra != "" {
+			headExtra += "\n" + opts.HeadExtra
+		}
 	}
 
 	// Generate syntax highlighting CSS from chroma.
@@ -163,7 +189,7 @@ func prince(ctx context.Context, htmlContent, outputPath string) error {
 	}
 	tmpFile.Close()
 
-	cmd := exec.CommandContext(ctx, "prince", tmpFile.Name(), "-o", outputPath)
+	cmd := exec.CommandContext(ctx, "prince", "--javascript", tmpFile.Name(), "-o", outputPath)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 
