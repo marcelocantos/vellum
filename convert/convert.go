@@ -68,20 +68,27 @@ func Convert(ctx context.Context, inputPath, outputPath string, opts *Options) e
 		return fmt.Errorf("reading input: %w", err)
 	}
 
-	// Extract math expressions before goldmark sees them — this prevents
-	// goldmark from mangling backslashes and other LaTeX syntax.
+	// Pre-process: extract math and mermaid blocks before goldmark sees them.
+	// This prevents goldmark from mangling backslashes in LaTeX and from
+	// treating mermaid blocks as regular code.
 	math := newMathPreprocessor()
+	mermaid := newMermaidPreprocessor()
 	processed := math.Extract(string(src))
+	processed = mermaid.Extract(processed)
 
 	htmlContent, title, err := renderMarkdown([]byte(processed))
 	if err != nil {
 		return fmt.Errorf("rendering markdown: %w", err)
 	}
 
-	// Batch-render KaTeX math and replace placeholders in HTML.
+	// Render math and mermaid, replacing placeholders in HTML.
 	htmlContent, err = math.ReplaceAll(ctx, htmlContent)
 	if err != nil {
 		return fmt.Errorf("rendering math: %w", err)
+	}
+	htmlContent, err = mermaid.ReplaceAll(ctx, htmlContent)
+	if err != nil {
+		return fmt.Errorf("rendering mermaid: %w", err)
 	}
 
 	css := embed.GitHubCSS

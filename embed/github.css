@@ -78,7 +78,8 @@ pre code {
   font-size: 100%;
   background-color: transparent;
   border: 0;
-  white-space: pre;
+  white-space: pre-wrap;
+  word-wrap: break-word;
 }
 
 /* Blockquotes */

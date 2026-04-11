@@ -54,6 +54,10 @@ var (
 	blockMathRe = regexp.MustCompile(`(?m)^\$\$\s*\n([\s\S]+?)\n\$\$\s*$`)
 	// Match inline $...$ (no newlines, no leading/trailing space).
 	inlineMathRe = regexp.MustCompile(`\$([^\n$]+?)\$`)
+	// Match fenced code blocks (``` or ~~~) to protect them from math extraction.
+	fencedCodeRe = regexp.MustCompile("(?m)^```[\\s\\S]*?^```\\s*$")
+	// Match inline code (`...`).
+	inlineCodeRe = regexp.MustCompile("`[^`\n]+`")
 )
 
 // mathPreprocessor extracts math expressions from markdown source before
@@ -80,7 +84,22 @@ func (m *mathPreprocessor) placeholder(expr string, display bool) string {
 
 // Extract finds all math expressions in the markdown source and replaces
 // them with HTML comment placeholders that goldmark will ignore.
+// Code blocks and inline code are protected from math extraction.
 func (m *mathPreprocessor) Extract(src string) string {
+	// Temporarily replace code blocks and inline code with placeholders
+	// so the math regexes don't match $ inside code.
+	var codeBlocks []string
+	src = fencedCodeRe.ReplaceAllStringFunc(src, func(match string) string {
+		idx := len(codeBlocks)
+		codeBlocks = append(codeBlocks, match)
+		return fmt.Sprintf("<!--CODE:%d-->", idx)
+	})
+	src = inlineCodeRe.ReplaceAllStringFunc(src, func(match string) string {
+		idx := len(codeBlocks)
+		codeBlocks = append(codeBlocks, match)
+		return fmt.Sprintf("<!--CODE:%d-->", idx)
+	})
+
 	// Block math first ($$...$$ on own lines).
 	src = blockMathRe.ReplaceAllStringFunc(src, func(match string) string {
 		inner := blockMathRe.FindStringSubmatch(match)
@@ -98,6 +117,11 @@ func (m *mathPreprocessor) Extract(src string) string {
 		}
 		return m.placeholder(strings.TrimSpace(inner[1]), false)
 	})
+
+	// Restore code blocks.
+	for i, code := range codeBlocks {
+		src = strings.Replace(src, fmt.Sprintf("<!--CODE:%d-->", i), code, 1)
+	}
 
 	return src
 }
