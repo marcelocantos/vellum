@@ -2,20 +2,7 @@
 
 ## Active
 
-### 🎯T6 Vellum v0.1.0 is released with CI-built binaries and a Homebrew formula
-- **Value**: 8
-- **Cost**: 3
-- **Acceptance**:
-  - `.github/workflows/release.yml` builds macOS arm64, Linux x86_64, Linux arm64 tarballs on release events
-  - GitHub release v0.1.0 exists with attached binaries
-  - `marcelocantos/homebrew-tap` has a working `vellum` formula (via homebrew-releaser)
-  - `brew install marcelocantos/tap/vellum` succeeds on a clean machine and `vellum --version` prints v0.1.0
-  - STABILITY.md exists cataloguing the CLI+MCP surface
-- **Context**: First public release. Depends on README, MCP server, tests, and agent guide being in place so the release is usable. Follow the pattern from mpe2pdf's release workflow; watch the homebrew-releaser gotchas (skip_checksum, explicit version, repo description).
-- **Tags**: release, ci
-- **Origin**: handover-doc-roadmap
-- **Status**: Identified
-- **Discovered**: 2026-04-11
+(none)
 
 ## Achieved
 
@@ -98,9 +85,19 @@
 - **Achieved**: 2026-04-11
 - **Actual-cost**: 2
 
-## Graph
-
-```mermaid
-graph TD
-    T6["Vellum v0.1.0 is released wit…"]
-```
+### 🎯T6 Vellum v0.1.0 is released with CI-built binaries and a Homebrew formula
+- **Value**: 8
+- **Cost**: 3
+- **Acceptance**:
+  - `.github/workflows/release.yml` builds macOS arm64, Linux x86_64, Linux arm64 tarballs on release events
+  - GitHub release v0.1.0 exists with attached binaries
+  - `marcelocantos/homebrew-tap` has a working `vellum` formula (via homebrew-releaser)
+  - `brew install marcelocantos/tap/vellum` succeeds on a clean machine and `vellum --version` prints v0.1.0
+  - STABILITY.md exists cataloguing the CLI+MCP surface
+- **Context**: First public release. Depends on README, MCP server, tests, and agent guide being in place so the release is usable. Follow the pattern from mpe2pdf's release workflow; watch the homebrew-releaser gotchas (skip_checksum, explicit version, repo description).
+- **Tags**: release, ci
+- **Origin**: handover-doc-roadmap
+- **Status**: Achieved
+- **Discovered**: 2026-04-11
+- **Achieved**: 2026-04-11
+- **Actual-cost**: 3
