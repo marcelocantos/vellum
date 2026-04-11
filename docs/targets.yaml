@@ -1,3 +1,4 @@
+schema_version: 1
 targets:
   T1:
     name: Vellum exposes a working MCP server over stdio
@@ -20,9 +21,10 @@ targets:
     achieved: 2026-04-11
   T2:
     name: Project has a README covering install, usage, and MCP configuration
-    status: identified
+    status: achieved
     value: 8.0
     cost: 2.0
+    actual_cost: 1.0
     acceptance:
     - README.md exists at repo root
     - 'Covers: what vellum is, prerequisites (Prince, Node+katex, mmdc+Chromium), install paths (go install, Homebrew when available, binary download), CLI quick start, MCP server config block for Claude Code, feature list with at least one example, licence'
@@ -32,11 +34,13 @@ targets:
     - docs
     origin: handover-doc-roadmap
     discovered: 2026-04-11
+    achieved: 2026-04-11
   T3:
     name: Vellum fails fast with clear errors when runtime dependencies are missing
-    status: identified
+    status: achieved
     value: 5.0
     cost: 2.0
+    actual_cost: 2.0
     acceptance:
     - Startup (CLI convert or MCP server mode) checks for `prince`, `node`, `katex`, and `mmdc` on PATH
     - Missing dependency produces an actionable error naming the tool and the install command
@@ -47,11 +51,13 @@ targets:
     - reliability
     origin: handover-doc-roadmap
     discovered: 2026-04-11
+    achieved: 2026-04-11
   T4:
     name: Vellum has a Go test suite covering preprocessors and the full pipeline
-    status: identified
+    status: achieved
     value: 8.0
     cost: 3.0
+    actual_cost: 2.0
     acceptance:
     - Unit tests for math preprocessor (including code-block protection and multi-line matrices)
     - Unit tests for mermaid preprocessor (including `<!-- vellum:scale N -->` hint)
@@ -64,11 +70,13 @@ targets:
     - quality
     origin: handover-doc-roadmap
     discovered: 2026-04-11
+    achieved: 2026-04-11
   T5:
     name: Vellum ships an agent guide accessible via --help-agent
-    status: identified
+    status: achieved
     value: 5.0
     cost: 2.0
+    actual_cost: 2.0
     acceptance:
     - '`docs/agents-guide.md` exists and is embedded via go:embed'
     - '`vellum --help-agent` prints usage plus the embedded agent guide'
@@ -79,6 +87,7 @@ targets:
     - agent
     origin: global-cli-convention
     discovered: 2026-04-11
+    achieved: 2026-04-11
   T6:
     name: Vellum v0.1.0 is released with CI-built binaries and a Homebrew formula
     status: identified
