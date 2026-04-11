@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/marcelocantos/vellum/convert"
+	"github.com/marcelocantos/vellum/docs"
 	vellummcp "github.com/marcelocantos/vellum/mcp"
 )
 
@@ -27,11 +28,12 @@ func run() error {
 	// Manual arg parsing to allow flags anywhere (Go's flag package
 	// stops at the first non-flag argument).
 	var (
-		showHelp    bool
-		showVersion bool
-		mcpMode     bool
-		output      string
-		positional  []string
+		showHelp      bool
+		showHelpAgent bool
+		showVersion   bool
+		mcpMode       bool
+		output        string
+		positional    []string
 	)
 
 	args := os.Args[1:]
@@ -40,6 +42,8 @@ func run() error {
 		switch {
 		case a == "--help" || a == "-help":
 			showHelp = true
+		case a == "--help-agent" || a == "-help-agent":
+			showHelpAgent = true
 		case a == "--version" || a == "-version":
 			showVersion = true
 		case a == "--mcp" || a == "-mcp":
@@ -66,6 +70,16 @@ func run() error {
 		return nil
 	}
 
+	if showHelpAgent {
+		printUsage()
+		fmt.Println()
+		fmt.Print(docs.AgentGuide)
+		if !strings.HasSuffix(docs.AgentGuide, "\n") {
+			fmt.Println()
+		}
+		return nil
+	}
+
 	if showVersion {
 		fmt.Println(version)
 		return nil
@@ -85,10 +99,11 @@ func printUsage() {
 Document preparation — convert Markdown to PDF via goldmark + Prince.
 
 Options:
-  --help       Show this help message
-  --version    Print version number
-  --mcp        Run as an MCP (Model Context Protocol) server on stdio
-  -o <path>    Output PDF path (single input file only)
+  --help         Show this help message
+  --help-agent   Show this help plus the embedded agent guide
+  --version      Print version number
+  --mcp          Run as an MCP (Model Context Protocol) server on stdio
+  -o <path>      Output PDF path (single input file only)
 
 Examples:
   vellum report.md                   # produces report.pdf
@@ -107,6 +122,10 @@ func runCLI(args []string, output string) error {
 
 	if output != "" && len(args) > 1 {
 		return fmt.Errorf("-o flag is only allowed with a single input file")
+	}
+
+	if err := convert.CheckDeps(); err != nil {
+		return err
 	}
 
 	ctx := context.Background()
@@ -138,5 +157,8 @@ func runCLI(args []string, output string) error {
 }
 
 func runMCP() error {
+	if err := convert.CheckDeps(); err != nil {
+		return err
+	}
 	return vellummcp.Serve(context.Background(), version)
 }
