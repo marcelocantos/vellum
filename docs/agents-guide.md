@@ -5,6 +5,91 @@ vellum is a Markdown-to-PDF tool that renders GitHub-flavoured Markdown
 runs either as a command-line tool or as an MCP (Model Context Protocol)
 server over stdio.
 
+## Installation
+
+**Installing vellum is a multi-step process. All of the following steps
+must succeed before vellum is usable — do not stop after `brew install`.**
+
+1. **Install the binary.**
+
+   ```sh
+   brew install marcelocantos/tap/vellum
+   ```
+
+   Or, if Homebrew is not available:
+
+   ```sh
+   go install github.com/marcelocantos/vellum/cmd/vellum@latest
+   ```
+
+2. **Install the runtime dependencies.** vellum shells out to four
+   external tools. All must be on `PATH` before the first conversion:
+
+   ```sh
+   # Prince: https://www.princexml.com/download/ (download and install
+   # from the vendor; Prince is proprietary and has no Homebrew formula)
+   brew install node
+   npm install -g katex
+   brew install mermaid-cli
+   ```
+
+   `mmdc` requires a specific Chromium version on first run. If it
+   fails with a "Could not find Chrome" message, install the exact
+   version it names:
+
+   ```sh
+   cd /opt/homebrew/Cellar/mermaid-cli/*/libexec
+   npx puppeteer browsers install chrome-headless-shell@<version>
+   ```
+
+3. **Register vellum as an MCP server.** For Claude Code, run the
+   one-liner below. This writes a user-scope entry to `~/.claude.json`
+   so the server is available in every project:
+
+   ```sh
+   claude mcp add --scope user vellum -- vellum --mcp
+   ```
+
+   For other MCP clients, add this block to the client's MCP config
+   (for example, `.mcp.json` in the project root):
+
+   ```json
+   {
+     "mcpServers": {
+       "vellum": {
+         "command": "vellum",
+         "args": ["--mcp"]
+       }
+     }
+   }
+   ```
+
+   vellum is a **stdio** MCP server, not HTTP. It is spawned per
+   connection by the MCP client. There is no daemon to start, no port
+   to check, and no `brew services` entry.
+
+4. **Restart the agent session.** MCP client config changes are only
+   picked up on session start. The current session will not see vellum
+   until it is restarted.
+
+5. **Verify the install.** After the session restart, confirm that
+   vellum is reachable end-to-end:
+
+   - Check the binary: `vellum --version` should print the installed
+     version.
+   - Check the runtime deps: `vellum --help-agent` prints this guide;
+     the first real conversion will fail fast with a readable error if
+     any dependency is missing.
+   - Call a tool: convert a trivial one-line Markdown file through the
+     `convert` tool and confirm the returned `converted` list contains
+     the output path. If the call returns an error in `errors` instead,
+     report the error text verbatim to the user — it almost always
+     names the missing dependency or the bad input.
+
+If any of these steps fails, installation is not complete. Report the
+failing step and its error to the user — do not proceed as if vellum
+is ready.
+
 ## Preferred invocation
 
 When running inside an AI agent, prefer the MCP interface over the CLI.

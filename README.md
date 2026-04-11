@@ -32,6 +32,12 @@ Substitute `<version>` with the value printed in the error message.
 
 ## Installation
 
+### Homebrew
+
+```sh
+brew install marcelocantos/tap/vellum
+```
+
 ### go install
 
 ```sh
@@ -40,7 +46,13 @@ go install github.com/marcelocantos/vellum/cmd/vellum@latest
 
 ### Binary download
 
-Prebuilt binaries are published on the [releases page](https://github.com/marcelocantos/vellum/releases) once v0.1.0 ships.
+Prebuilt binaries for macOS arm64, Linux x86_64, and Linux arm64 are attached to each [GitHub release](https://github.com/marcelocantos/vellum/releases).
+
+### Quick start for agentic coding tools
+
+If you use an AI coding agent (Claude Code, Cursor, etc.), paste this prompt to install vellum end-to-end:
+
+> Install vellum from https://github.com/marcelocantos/vellum. Run `brew install marcelocantos/tap/vellum`, register it as a stdio MCP server with `claude mcp add --scope user vellum -- vellum --mcp`, then restart this session. After the restart, read the agent guide at `docs/agents-guide.md` in the vellum repo (or run `vellum --help-agent` locally) and confirm the `convert` tool is callable.
 
 ## CLI usage
 
@@ -124,6 +136,10 @@ Markdown
   → PDF
 ```
 
+## Agent guide
+
+An agent-facing reference lives at [`docs/agents-guide.md`](docs/agents-guide.md) and is embedded into the `vellum` binary. Coding agents can read it directly or call `vellum --help-agent` to print usage plus the embedded guide.
+
 ## License
 
-Apache 2.0 — see [LICENSE](LICENSE).
+Apache 2.0 — see [LICENSE](LICENSE). Third-party dependencies are attributed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

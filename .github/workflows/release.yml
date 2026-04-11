@@ -1,0 +1,88 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: go vet
+        run: go vet ./...
+      - name: go test (preprocessor + CLI unit tests only; pipeline test is skipped without Prince)
+        run: go test ./...
+
+  build:
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            goos: darwin
+            goarch: arm64
+            asset_os: darwin
+            asset_arch: arm64
+          - os: ubuntu-latest
+            goos: linux
+            goarch: amd64
+            asset_os: linux
+            asset_arch: amd64
+          - os: ubuntu-24.04-arm
+            goos: linux
+            goarch: arm64
+            asset_os: linux
+            asset_arch: arm64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Build
+        env:
+          CGO_ENABLED: '0'
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          mkdir -p dist
+          go build -trimpath -ldflags="-s -w" -o dist/vellum ./cmd/vellum
+      - name: Package
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          ASSET="vellum-${VERSION}-${{ matrix.asset_os }}-${{ matrix.asset_arch }}.tar.gz"
+          tar -czf "${ASSET}" -C dist vellum -C .. LICENSE README.md
+          echo "ASSET=${ASSET}" >> "$GITHUB_ENV"
+      - name: Upload to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${GITHUB_REF_NAME}" "${ASSET}" --clobber
+
+  homebrew:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: Justintime50/homebrew-releaser@v3
+        with:
+          homebrew_owner: marcelocantos
+          homebrew_tap: homebrew-tap
+          github_token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          formula_folder: Formula
+          version: ${{ github.event.release.tag_name }}
+          install: 'bin.install "vellum" => "vellum"'
+          target_darwin_arm64: true
+          target_linux_amd64: true
+          target_linux_arm64: true
+          test: 'system bin/"vellum", "--version"'
+          skip_checksum: true
+          update_readme_table: true
