@@ -10,15 +10,21 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
-var mermaidBlockRe = regexp.MustCompile("(?m)^```mermaid\\s*\n([\\s\\S]+?)^```\\s*$")
+var mermaidBlockRe = regexp.MustCompile("(?m)(?:^<!--\\s*vellum:scale\\s+([0-9.]+)\\s*-->\\s*\n)?^```mermaid\\s*\n([\\s\\S]+?)^```\\s*$")
+
+type mermaidDiagram struct {
+	source string
+	scale  float64 // CSS scale factor (1.0 = default)
+}
 
 // mermaidPreprocessor extracts ```mermaid code blocks from markdown source,
-// renders each to SVG via mmdc, and replaces them with HTML placeholders.
+// renders each to PNG via mmdc, and replaces them with HTML placeholders.
 type mermaidPreprocessor struct {
-	diagrams     []string // mermaid source for each diagram
+	diagrams     []mermaidDiagram
 	placeholders []string
 }
 
@@ -26,15 +32,25 @@ func newMermaidPreprocessor() *mermaidPreprocessor {
 	return &mermaidPreprocessor{}
 }
 
-// Extract finds all mermaid code blocks and replaces them with placeholders.
+// Extract finds all mermaid code blocks (with optional <!-- vellum:scale N -->
+// hints) and replaces them with placeholders.
 func (m *mermaidPreprocessor) Extract(src string) string {
 	return mermaidBlockRe.ReplaceAllStringFunc(src, func(match string) string {
 		inner := mermaidBlockRe.FindStringSubmatch(match)
-		if len(inner) < 2 {
+		if len(inner) < 3 {
 			return match
 		}
+		scale := 1.0
+		if inner[1] != "" {
+			if v, err := strconv.ParseFloat(inner[1], 64); err == nil && v > 0 {
+				scale = v
+			}
+		}
 		idx := len(m.diagrams)
-		m.diagrams = append(m.diagrams, strings.TrimSpace(inner[1]))
+		m.diagrams = append(m.diagrams, mermaidDiagram{
+			source: strings.TrimSpace(inner[2]),
+			scale:  scale,
+		})
 		p := fmt.Sprintf("<!--MERMAID:%d-->", idx)
 		m.placeholders = append(m.placeholders, p)
 		return p
@@ -48,13 +64,17 @@ func (m *mermaidPreprocessor) ReplaceAll(ctx context.Context, html string) (stri
 		return html, nil
 	}
 
-	for i, src := range m.diagrams {
-		svg, err := renderMermaid(ctx, src)
+	for i, d := range m.diagrams {
+		img, err := renderMermaid(ctx, d.source)
 		if err != nil {
-			// On failure, fall back to showing the source in a pre block.
-			svg = `<pre class="mermaid-error">` + src + `</pre>`
+			img = `<pre class="mermaid-error">` + d.source + `</pre>`
 		}
-		wrapped := `<div class="mermaid-svg">` + svg + `</div>`
+		// Apply scale via CSS width percentage if not default.
+		style := ""
+		if d.scale != 1.0 {
+			style = fmt.Sprintf(` style="max-width: %.0f%%"`, d.scale*100)
+		}
+		wrapped := fmt.Sprintf(`<div class="mermaid-svg"%s>%s</div>`, style, img)
 		html = strings.Replace(html, m.placeholders[i], wrapped, 1)
 	}
 

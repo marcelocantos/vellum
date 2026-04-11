@@ -324,6 +324,7 @@ $$
 
 ### Mermaid — Flowchart
 
+<!-- vellum:scale 0.6 -->
 ```mermaid
 flowchart TD
     A[Start] --> B{Is input valid?}
