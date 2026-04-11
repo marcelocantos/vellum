@@ -1,0 +1,15 @@
+# Build
+/vellum
+/dist/
+
+# IDE
+.vscode/
+.idea/
+.claude/
+
+# OS
+.DS_Store
+
+# Test artifacts
+/test/output/
+*.pdf
