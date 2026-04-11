@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/marcelocantos/vellum/convert"
+	vellummcp "github.com/marcelocantos/vellum/mcp"
 )
 
 const version = "0.1.0"
@@ -137,6 +138,5 @@ func runCLI(args []string, output string) error {
 }
 
 func runMCP() error {
-	// TODO: implement MCP server
-	return fmt.Errorf("MCP server not yet implemented")
+	return vellummcp.Serve(context.Background(), version)
 }
