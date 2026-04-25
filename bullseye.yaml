@@ -109,10 +109,11 @@ targets:
     achieved: 2026-04-11
   T7:
     name: Convert can deliver output to the system clipboard with multiple type representations, suitable for pasting into rich-text composers (Slack, Mail, etc.) without formatting loss
-    status: identified
+    status: achieved
     value: 0.0
     cost: 0.0
     showcase: true
+    demonstration: 'User pasted vellum-rendered Markdown (cert-renewal instructions sample) into Slack, Gmail, TextEdit, and VS Code after the v2 fix. Slack and Gmail rendered with full formatting (bold, numbered list, blockquote, code block, emoji); TextEdit accepted RTF cleanly; VS Code took plain text without the "unusual line terminators" dialog. First showcase round revealed two regressions (Slack rejected full HTML doc; VS Code flagged U+2028/U+2029); both fixed in c4ca2c1 and re-tested green. Merged as PR #7.'
     acceptance:
     - '`vellum convert <input> --to-clipboard` (and equivalent MCP tool invocation) places the converted content on the system clipboard with at least RTF, HTML, and plain-text representations set in a single atomic transaction.'
     - Pasting into Slack, Mail, and TextEdit immediately after the command returns produces correctly formatted output (bold, lists, blockquotes, links) without raw RTF source leaking through.
@@ -138,6 +139,7 @@ targets:
     - ux
     origin: forked-from stock-car-racing/Slack-instructions-for-cert-renewal session, 2026-04-25
     discovered: 2026-04-25
+    achieved: 2026-04-26
   T7.1:
     name: Windows clipboard backend for `convert_to_clipboard` (CF_HTML, CF_UNICODETEXT, CF_RTF via SetClipboardData)
     status: set_aside
