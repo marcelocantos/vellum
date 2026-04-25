@@ -11,7 +11,11 @@
 // [ErrUnsupported] rather than silent failure.
 package clipboard
 
-import "errors"
+import (
+	"errors"
+	"regexp"
+	"strings"
+)
 
 // ErrUnsupported indicates the current platform has no clipboard backend.
 var ErrUnsupported = errors.New("clipboard: platform not supported")
@@ -34,4 +38,20 @@ func Write(p Payload) error {
 		return errors.New("clipboard: HTML payload is empty")
 	}
 	return writePayload(p)
+}
+
+var bodyRe = regexp.MustCompile(`(?is)<body[^>]*>(.*)</body>`)
+
+// htmlBodyFragment extracts the inner content of <body>…</body> from a
+// full HTML document. Slack and other rich-paste targets expect a body
+// fragment, not a complete document with <head><style> blocks (which
+// they reject outright). Returns the input unchanged when no <body>
+// tag is found, on the assumption that the caller already supplied a
+// fragment.
+func htmlBodyFragment(html string) string {
+	m := bodyRe.FindStringSubmatch(html)
+	if m == nil {
+		return html
+	}
+	return strings.TrimSpace(m[1])
 }

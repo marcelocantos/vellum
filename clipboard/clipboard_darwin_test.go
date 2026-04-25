@@ -60,6 +60,42 @@ func TestWriteRoundTrip(t *testing.T) {
 	}
 }
 
+// TestWriteFragmentsHTMLAndStripsLineSeparators covers the two
+// regressions that surfaced from the first round of paste-target
+// testing:
+//   - Slack rejects a full HTML document with <head><style>; the
+//     pasteboard's public.html rep must be a body fragment.
+//   - VS Code (and other editors) flag U+2028 LINE SEPARATOR / U+2029
+//     PARAGRAPH SEPARATOR as "unusual line terminators". The plain-text
+//     rep must use ordinary U+000A newlines.
+func TestWriteFragmentsHTMLAndStripsLineSeparators(t *testing.T) {
+	const marker = "vellum-fragment-marker"
+	full := `<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{color:red}</style></head><body><p>` + marker + `</p><p>second paragraph</p></body></html>`
+
+	if err := Write(Payload{HTML: full}); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+
+	htmlData := readPasteboardData(utiHTML)
+	htmlStr := string(htmlData)
+	if !strings.Contains(htmlStr, marker) {
+		t.Errorf("HTML rep missing marker; got %q", htmlStr)
+	}
+	for _, forbidden := range []string{"<head>", "<style>", "<!DOCTYPE", "<html>"} {
+		if strings.Contains(htmlStr, forbidden) {
+			t.Errorf("HTML rep should be a body fragment, but contains %q; got %q", forbidden, htmlStr)
+		}
+	}
+
+	plain := string(readPasteboardData(utiPlain))
+	if strings.ContainsRune(plain, ' ') {
+		t.Errorf("plain-text rep contains U+2028 LINE SEPARATOR; should have been normalised to \\n; got %q", plain)
+	}
+	if strings.ContainsRune(plain, ' ') {
+		t.Errorf("plain-text rep contains U+2029 PARAGRAPH SEPARATOR; should have been normalised to \\n; got %q", plain)
+	}
+}
+
 func TestWriteEmptyHTMLRejected(t *testing.T) {
 	if err := Write(Payload{}); err == nil {
 		t.Fatal("expected error for empty payload, got nil")

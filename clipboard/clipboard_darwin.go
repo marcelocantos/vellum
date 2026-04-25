@@ -41,10 +41,21 @@ static const void *vellum_read_pasteboard_data(const char *uti, int *outLen) {
     }
 }
 
-static vellum_clip_result vellum_set_clipboard_html(const void *htmlBytes, int htmlLen) {
+// vellum_set_clipboard_html drives the full transaction. Parameters:
+//   rtfSrcBytes / rtfSrcLen   — full HTML document (with <head><style>);
+//                               passed to NSAttributedString so the
+//                               resulting RTF inherits CSS styling.
+//   clipHTMLBytes / clipHTMLLen — body fragment placed on the
+//                                 pasteboard under public.html. Slack
+//                                 and similar rich-paste targets reject
+//                                 full documents but accept fragments.
+static vellum_clip_result vellum_set_clipboard_html(
+    const void *rtfSrcBytes, int rtfSrcLen,
+    const void *clipHTMLBytes, int clipHTMLLen) {
     vellum_clip_result r = {0};
     @autoreleasepool {
-        NSData *htmlData = [NSData dataWithBytes:htmlBytes length:htmlLen];
+        NSData *rtfSrcData  = [NSData dataWithBytes:rtfSrcBytes  length:rtfSrcLen];
+        NSData *clipHTMLData = [NSData dataWithBytes:clipHTMLBytes length:clipHTMLLen];
 
         NSDictionary *parseOpts = @{
             NSDocumentTypeDocumentAttribute: NSHTMLTextDocumentType,
@@ -52,7 +63,7 @@ static vellum_clip_result vellum_set_clipboard_html(const void *htmlBytes, int h
         };
         NSError *err = nil;
         NSAttributedString *attr = [[NSAttributedString alloc]
-            initWithData:htmlData
+            initWithData:rtfSrcData
                  options:parseOpts
       documentAttributes:NULL
                    error:&err];
@@ -66,7 +77,17 @@ static vellum_clip_result vellum_set_clipboard_html(const void *htmlBytes, int h
                                         error:&err];
         if (!rtfData) { r.changeCount = -2; return r; }
 
-        NSString *plain = [attr string];
+        // NSAttributedString uses U+2028 (LINE SEPARATOR) and U+2029
+        // (PARAGRAPH SEPARATOR) in its plain-text projection. These are
+        // technically valid Unicode line terminators but trip editor
+        // heuristics (VS Code flags them as "unusual line terminators").
+        // Normalise to U+000A so plain-text consumers see ordinary
+        // newlines.
+        NSMutableString *plain = [[attr string] mutableCopy];
+        [plain replaceOccurrencesOfString:@" " withString:@"\n"
+                                  options:0 range:NSMakeRange(0, [plain length])];
+        [plain replaceOccurrencesOfString:@" " withString:@"\n"
+                                  options:0 range:NSMakeRange(0, [plain length])];
         NSData *plainData = [plain dataUsingEncoding:NSUTF8StringEncoding];
 
         NSPasteboard *pb = [NSPasteboard generalPasteboard];
@@ -78,9 +99,9 @@ static vellum_clip_result vellum_set_clipboard_html(const void *htmlBytes, int h
         long newCount = [pb declareTypes:types owner:nil];
 
         BOOL ok = YES;
-        ok = ok && [pb setData:rtfData   forType:NSPasteboardTypeRTF];
-        ok = ok && [pb setData:htmlData  forType:NSPasteboardTypeHTML];
-        ok = ok && [pb setData:plainData forType:NSPasteboardTypeString];
+        ok = ok && [pb setData:rtfData      forType:NSPasteboardTypeRTF];
+        ok = ok && [pb setData:clipHTMLData forType:NSPasteboardTypeHTML];
+        ok = ok && [pb setData:plainData    forType:NSPasteboardTypeString];
         if (!ok) { r.changeCount = -3; return r; }
 
         r.changeCount = newCount;
@@ -96,8 +117,15 @@ import (
 )
 
 func writePayload(p Payload) error {
-	html := []byte(p.HTML)
-	res := C.vellum_set_clipboard_html(unsafe.Pointer(&html[0]), C.int(len(html)))
+	rtfSrc := []byte(p.HTML)
+	clipHTML := []byte(htmlBodyFragment(p.HTML))
+	if len(clipHTML) == 0 {
+		clipHTML = rtfSrc
+	}
+	res := C.vellum_set_clipboard_html(
+		unsafe.Pointer(&rtfSrc[0]), C.int(len(rtfSrc)),
+		unsafe.Pointer(&clipHTML[0]), C.int(len(clipHTML)),
+	)
 	switch {
 	case res.changeCount > 0:
 		return nil
