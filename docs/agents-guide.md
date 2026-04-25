@@ -100,7 +100,9 @@ easier to consume programmatically.
 
 ## Tool schema
 
-The MCP server exposes one tool:
+The MCP server exposes two tools:
+
+### `convert` — Markdown → PDF (batch)
 
 - `convert({ files: [{ input, output? }] })`
   - `input` — absolute path to a `.md` file (required)
@@ -129,6 +131,52 @@ Response shape:
   "errors": []
 }
 ```
+
+### `convert_to_clipboard` — Markdown → system clipboard
+
+Renders a single Markdown file and places **RTF + HTML + plain text**
+on the system clipboard in a single atomic transaction. Designed for
+handing formatted content to rich-text composers (Slack, Mail, …)
+without the brittle `textutil` + `osascript` pipeline.
+
+- `convert_to_clipboard({ input })`
+  - `input` — absolute path to a `.md` file (required)
+
+Example call:
+
+```json
+{
+  "name": "convert_to_clipboard",
+  "arguments": {"input": "/abs/path/to/slack-message.md"}
+}
+```
+
+The tool returns once the underlying NSPasteboard has confirmed the
+write (`changeCount` advanced) — there is no race window where the
+agent should `sleep` before paste.
+
+**Why this exists.** Naive shells of `textutil` + `osascript` to put
+formatted content on the macOS clipboard have three well-known
+failure modes:
+
+1. **Single representation only.** `osascript` sets `«class RTF »`
+   and nothing else. Apps that prefer plain text fall back to the
+   raw RTF source (`{\rtf1\ansi…`) and paste gibberish.
+2. **No commit confirmation.** AppleScript returns before the
+   pasteboard daemon has committed the data; combined with Universal
+   Clipboard sync, this leaves a 30–60 s window where `Cmd+V`
+   silently does nothing or pastes the previous clipboard.
+3. **Lossy round-trip.** `pbpaste | pbcopy` strips rich types
+   because `pbpaste` defaults to plain text.
+
+Reach for `convert_to_clipboard` when an agent needs to deliver
+formatted content for a human to paste — not just to display it. The
+tool replaces the four-line `textutil → osascript` recipe with one
+call.
+
+**Platform support.** macOS only currently. Linux (X11/Wayland) and
+Windows backends are tracked but not yet implemented; on those
+platforms the tool returns an `unsupported` error.
 
 ## Input rules
 

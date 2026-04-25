@@ -14,6 +14,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/marcelocantos/vellum/clipboard"
 	"github.com/marcelocantos/vellum/convert"
 )
 
@@ -47,6 +48,12 @@ func Serve(ctx context.Context, version string) error {
 		Title:       "Convert Markdown to PDF",
 		Description: "Convert one or more Markdown files to PDF. Input paths must be absolute. Each file is rendered via goldmark (GFM + extensions), with server-side KaTeX math and Mermaid diagrams, then typeset by Prince. Returns the list of written PDFs and any errors.",
 	}, convertHandler)
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "convert_to_clipboard",
+		Title:       "Convert Markdown to clipboard",
+		Description: "Render a single Markdown file and place RTF + HTML + plain-text representations on the system clipboard in a single atomic transaction. Designed for handing formatted content to rich-text composers (Slack, Mail, …) without the textutil+osascript dance. Returns when the underlying pasteboard has committed the data — there is no race window where a subsequent paste sees stale content. macOS only currently; other platforms return an unsupported error.",
+	}, convertToClipboardHandler)
 
 	return server.Run(ctx, &mcp.StdioTransport{})
 }
@@ -92,6 +99,47 @@ func convertHandler(ctx context.Context, _ *mcp.CallToolRequest, input ConvertIn
 		IsError: len(out.Converted) == 0 && len(out.Errors) > 0,
 	}
 	return result, out, nil
+}
+
+// ClipboardInput is the input schema for the convert_to_clipboard tool.
+type ClipboardInput struct {
+	Input string `json:"input" jsonschema:"absolute path to a .md file"`
+}
+
+// ClipboardOutput is the structured output schema for convert_to_clipboard.
+type ClipboardOutput struct {
+	Input string `json:"input" jsonschema:"the input path that was rendered"`
+}
+
+func convertToClipboardHandler(ctx context.Context, _ *mcp.CallToolRequest, in ClipboardInput) (*mcp.CallToolResult, ClipboardOutput, error) {
+	out := ClipboardOutput{Input: in.Input}
+
+	inputPath, err := resolveInput(in.Input)
+	if err != nil {
+		return errorResult(err), out, nil
+	}
+	if _, err := os.Stat(inputPath); err != nil {
+		return errorResult(err), out, nil
+	}
+
+	html, err := convert.RenderFile(ctx, inputPath, nil)
+	if err != nil {
+		return errorResult(err), out, nil
+	}
+	if err := clipboard.Write(clipboard.Payload{HTML: html}); err != nil {
+		return errorResult(err), out, nil
+	}
+
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("Copied %s to clipboard (RTF + HTML + plain text).", inputPath)}},
+	}, out, nil
+}
+
+func errorResult(err error) *mcp.CallToolResult {
+	return &mcp.CallToolResult{
+		IsError: true,
+		Content: []mcp.Content{&mcp.TextContent{Text: err.Error()}},
+	}
 }
 
 // resolveInput returns an absolute path for an input file. MCP clients are
