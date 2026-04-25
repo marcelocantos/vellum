@@ -1,4 +1,4 @@
-schema_version: 1
+schema_version: 2
 targets:
   T1:
     name: Vellum exposes a working MCP server over stdio
@@ -112,6 +112,7 @@ targets:
     status: identified
     value: 0.0
     cost: 0.0
+    showcase: true
     acceptance:
     - '`vellum convert <input> --to-clipboard` (and equivalent MCP tool invocation) places the converted content on the system clipboard with at least RTF, HTML, and plain-text representations set in a single atomic transaction.'
     - Pasting into Slack, Mail, and TextEdit immediately after the command returns produces correctly formatted output (bold, lists, blockquotes, links) without raw RTF source leaking through.
