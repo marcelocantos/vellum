@@ -107,3 +107,35 @@ targets:
     origin: handover-doc-roadmap
     discovered: 2026-04-11
     achieved: 2026-04-11
+  T7:
+    name: Convert can deliver output to the system clipboard with multiple type representations, suitable for pasting into rich-text composers (Slack, Mail, etc.) without formatting loss
+    status: identified
+    value: 0.0
+    cost: 0.0
+    acceptance:
+    - '`vellum convert <input> --to-clipboard` (and equivalent MCP tool invocation) places the converted content on the system clipboard with at least RTF, HTML, and plain-text representations set in a single atomic transaction.'
+    - Pasting into Slack, Mail, and TextEdit immediately after the command returns produces correctly formatted output (bold, lists, blockquotes, links) without raw RTF source leaking through.
+    - On macOS, the command does not return until NSPasteboard `changeCount` has advanced — no race window where Cmd+V pastes stale content.
+    - Documented in vellum's docs with the failure modes of `pbcopy`/`osascript` it replaces, so agents and humans know when to reach for it.
+    - 'Cross-platform: works on macOS, Linux (X11 and Wayland), and Windows. Linux/Windows backends may degrade gracefully (e.g., no RTF on Wayland) but at minimum HTML + plain text must round-trip.'
+    context: |-
+      Putting markdown-formatted content onto the macOS clipboard for paste into Slack/Mail today requires shelling out to `textutil` + `osascript` with `«class RTF »`, which has well-documented failure modes:
+
+      1. **Single representation only**: `osascript` sets only the RTF type. Apps that prefer plain text fall back to the raw RTF source (`{\rtf1\ansi...`) and paste gibberish.
+      2. **No commit confirmation**: AppleScript returns before the pasteboard daemon has actually committed the data. Combined with Universal Clipboard sync, this leaves a 30–60s window where Cmd+V silently does nothing or pastes the previous clipboard.
+      3. **Lossy round-trip**: `pbpaste | pbcopy` strips rich types because `pbpaste` defaults to plain-text representation.
+
+      vellum already does the conversion half (markdown → HTML → RTF). Adding clipboard as an output target ("convert + deliver") closes the loop natively rather than via fragile shell pipes. Encountered while drafting Slack instructions for a non-technical site owner — a common agent task.
+
+      Implementation sketch:
+      - Add `--clipboard` / `output: clipboard` mode to the `convert` command and `vellum_convert` MCP tool.
+      - macOS: native NSPasteboard via cgo or a small Swift helper. Set `public.rtf`, `public.html`, and `public.utf8-plain-text` in one `declareTypes`/`setData` transaction. Read `changeCount` before and after; return only when it advances (synchronous commit confirmation).
+      - Linux: `wl-copy --type text/html` (Wayland) / `xclip -t text/html -selection clipboard` (X11), with plain-text fallback set via a second invocation.
+      - Windows: `SetClipboardData` with `CF_HTML` (the CF_HTML header format) and `CF_UNICODETEXT`. RTF via `CF_RTF` registered format.
+      - The MCP tool should return immediately after commit confirmation so agents don't need to insert artificial sleeps.
+    tags:
+    - mcp
+    - clipboard
+    - ux
+    origin: forked-from stock-car-racing/Slack-instructions-for-cert-renewal session, 2026-04-25
+    discovered: 2026-04-25
