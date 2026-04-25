@@ -174,9 +174,10 @@ formatted content for a human to paste — not just to display it. The
 tool replaces the four-line `textutil → osascript` recipe with one
 call.
 
-**Platform support.** macOS only currently. Linux (X11/Wayland) and
-Windows backends are tracked but not yet implemented; on those
-platforms the tool returns an `unsupported` error.
+**Platform support.** macOS only. Linux is out of scope. Windows is
+parked (see 🎯T7.1) — pick it up when there's concrete demand. On
+non-macOS platforms the tool returns an `unsupported` error rather
+than failing silently.
 
 ## Input rules
 

@@ -13,6 +13,3 @@
 # Test artifacts
 /test/output/
 *.pdf
-
-# bullseye runtime
-bullseye.yaml.lock

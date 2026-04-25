@@ -6,8 +6,9 @@
 //
 // The macOS backend uses NSPasteboard via cgo and writes RTF, HTML, and
 // plain-text representations together so paste targets (Slack, Mail,
-// TextEdit, …) receive content in their preferred format. Other platforms
-// currently return [ErrUnsupported]; see 🎯T7 in bullseye.yaml.
+// TextEdit, …) receive content in their preferred format. Linux is out
+// of scope; Windows is parked (🎯T7.1). Non-macOS callers receive
+// [ErrUnsupported] rather than silent failure.
 package clipboard
 
 import "errors"
