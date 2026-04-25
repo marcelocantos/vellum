@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/marcelocantos/vellum/clipboard"
 	"github.com/marcelocantos/vellum/convert"
 	"github.com/marcelocantos/vellum/docs"
 	vellummcp "github.com/marcelocantos/vellum/mcp"
@@ -32,6 +33,7 @@ func run() error {
 		showHelpAgent bool
 		showVersion   bool
 		mcpMode       bool
+		toClipboard   bool
 		output        string
 		positional    []string
 	)
@@ -48,6 +50,8 @@ func run() error {
 			showVersion = true
 		case a == "--mcp" || a == "-mcp":
 			mcpMode = true
+		case a == "--to-clipboard" || a == "-to-clipboard":
+			toClipboard = true
 		case a == "-o" || a == "--output":
 			if i+1 >= len(args) {
 				return fmt.Errorf("%s requires an argument", a)
@@ -89,7 +93,42 @@ func run() error {
 		return runMCP()
 	}
 
+	if toClipboard {
+		return runClipboard(positional, output)
+	}
+
 	return runCLI(positional, output)
+}
+
+func runClipboard(args []string, output string) error {
+	if len(args) == 0 {
+		printUsage()
+		return fmt.Errorf("no input files specified")
+	}
+	if len(args) > 1 {
+		return fmt.Errorf("--to-clipboard accepts a single input file")
+	}
+	if output != "" {
+		return fmt.Errorf("--to-clipboard and -o are mutually exclusive")
+	}
+
+	ctx := context.Background()
+	absInput, err := filepath.Abs(args[0])
+	if err != nil {
+		return err
+	}
+
+	html, err := convert.RenderFile(ctx, absInput, nil)
+	if err != nil {
+		return fmt.Errorf("%s: %w", args[0], err)
+	}
+
+	if err := clipboard.Write(clipboard.Payload{HTML: html}); err != nil {
+		return fmt.Errorf("clipboard: %w", err)
+	}
+
+	fmt.Fprintln(os.Stderr, "Copied to clipboard.")
+	return nil
 }
 
 func printUsage() {
@@ -99,16 +138,19 @@ func printUsage() {
 Document preparation — convert Markdown to PDF via goldmark + Prince.
 
 Options:
-  --help         Show this help message
-  --help-agent   Show this help plus the embedded agent guide
-  --version      Print version number
-  --mcp          Run as an MCP (Model Context Protocol) server on stdio
-  -o <path>      Output PDF path (single input file only)
+  --help           Show this help message
+  --help-agent     Show this help plus the embedded agent guide
+  --version        Print version number
+  --mcp            Run as an MCP (Model Context Protocol) server on stdio
+  --to-clipboard   Render and place RTF + HTML + plain text on the system
+                   clipboard (single input file; macOS only currently)
+  -o <path>        Output PDF path (single input file only)
 
 Examples:
   vellum report.md                   # produces report.pdf
   vellum -o out.pdf report.md        # explicit output path
   vellum ch1.md ch2.md ch3.md        # batch conversion
+  vellum --to-clipboard slack.md     # ready to paste into Slack/Mail
 
 Requires Prince (https://www.princexml.com/) on PATH.
 `)

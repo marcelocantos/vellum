@@ -1,4 +1,4 @@
-schema_version: 1
+schema_version: 3
 targets:
   T1:
     name: Vellum exposes a working MCP server over stdio
@@ -112,12 +112,13 @@ targets:
     status: identified
     value: 0.0
     cost: 0.0
+    showcase: true
     acceptance:
     - '`vellum convert <input> --to-clipboard` (and equivalent MCP tool invocation) places the converted content on the system clipboard with at least RTF, HTML, and plain-text representations set in a single atomic transaction.'
     - Pasting into Slack, Mail, and TextEdit immediately after the command returns produces correctly formatted output (bold, lists, blockquotes, links) without raw RTF source leaking through.
     - On macOS, the command does not return until NSPasteboard `changeCount` has advanced — no race window where Cmd+V pastes stale content.
     - Documented in vellum's docs with the failure modes of `pbcopy`/`osascript` it replaces, so agents and humans know when to reach for it.
-    - 'Cross-platform: works on macOS, Linux (X11 and Wayland), and Windows. Linux/Windows backends may degrade gracefully (e.g., no RTF on Wayland) but at minimum HTML + plain text must round-trip.'
+    - macOS is the supported platform. Linux is explicitly out of scope. Windows is parked under 🎯T7.1 and may be picked up later; the package returns a typed unsupported error there in the meantime.
     context: |-
       Putting markdown-formatted content onto the macOS clipboard for paste into Slack/Mail today requires shelling out to `textutil` + `osascript` with `«class RTF »`, which has well-documented failure modes:
 
@@ -125,17 +126,37 @@ targets:
       2. **No commit confirmation**: AppleScript returns before the pasteboard daemon has actually committed the data. Combined with Universal Clipboard sync, this leaves a 30–60s window where Cmd+V silently does nothing or pastes the previous clipboard.
       3. **Lossy round-trip**: `pbpaste | pbcopy` strips rich types because `pbpaste` defaults to plain-text representation.
 
-      vellum already does the conversion half (markdown → HTML → RTF). Adding clipboard as an output target ("convert + deliver") closes the loop natively rather than via fragile shell pipes. Encountered while drafting Slack instructions for a non-technical site owner — a common agent task.
+      vellum already does the conversion half (markdown → HTML). Adding clipboard as an output target ("convert + deliver") closes the loop natively rather than via fragile shell pipes. Encountered while drafting Slack instructions for a non-technical site owner — a common agent task.
 
-      Implementation sketch:
-      - Add `--clipboard` / `output: clipboard` mode to the `convert` command and `vellum_convert` MCP tool.
-      - macOS: native NSPasteboard via cgo or a small Swift helper. Set `public.rtf`, `public.html`, and `public.utf8-plain-text` in one `declareTypes`/`setData` transaction. Read `changeCount` before and after; return only when it advances (synchronous commit confirmation).
-      - Linux: `wl-copy --type text/html` (Wayland) / `xclip -t text/html -selection clipboard` (X11), with plain-text fallback set via a second invocation.
-      - Windows: `SetClipboardData` with `CF_HTML` (the CF_HTML header format) and `CF_UNICODETEXT`. RTF via `CF_RTF` registered format.
-      - The MCP tool should return immediately after commit confirmation so agents don't need to insert artificial sleeps.
+      Implementation notes:
+      - macOS: native NSPasteboard via cgo. NSAttributedString converts the assembled HTML to RTF in-process; plain text comes from the same NSAttributedString. Single `declareTypes`/`setData` transaction; NSPasteboard's API is synchronous so commit confirmation comes for free.
+      - Linux: dropped as a target. Markdown-paste-to-Slack-on-Linux is not a workflow this project commits to support; users on Linux compose differently.
+      - Windows: parked under 🎯T7.1 (CF_HTML, CF_UNICODETEXT, CF_RTF via SetClipboardData). The clipboard package returns a typed `ErrUnsupported` so non-macOS callers see a clear error rather than silent failure.
     tags:
     - mcp
     - clipboard
     - ux
     origin: forked-from stock-car-racing/Slack-instructions-for-cert-renewal session, 2026-04-25
+    discovered: 2026-04-25
+  T7.1:
+    name: Windows clipboard backend for `convert_to_clipboard` (CF_HTML, CF_UNICODETEXT, CF_RTF via SetClipboardData)
+    status: set_aside
+    value: 0.0
+    cost: 0.0
+    set_aside_reason: Parked. macOS is the supported platform; Windows is plausible but not a current need. Pick up when there's a concrete demand or a willing tester. Until then `clipboard.ErrUnsupported` is the clear error.
+    acceptance:
+    - '`clipboard.Write` on Windows places HTML, plain-text, and RTF representations on the system clipboard via SetClipboardData with CF_HTML, CF_UNICODETEXT, and the registered CF_RTF format.'
+    - Pasting from the clipboard into a Windows rich-text target (Outlook / Word / WordPad) produces correctly formatted output, not raw RTF source or HTML markup.
+    - Cross-compiling vellum from macOS to windows/amd64 still succeeds — the Windows backend uses syscall, not cgo, so CGO_ENABLED=0 builds are unaffected.
+    context: |-
+      Forked from 🎯T7 when scope was tightened to macOS only. Windows users are a plausible audience but not the project's primary target — landing this is worthwhile when there's a concrete demand or a willing tester. Until then the package returns `ErrUnsupported` on Windows so the error is loud rather than silent.
+
+      Implementation sketch: use `golang.org/x/sys/windows` to call `OpenClipboard`, `EmptyClipboard`, `SetClipboardData`, `CloseClipboard`. CF_HTML wants the prefix-header format documented at https://learn.microsoft.com/en-us/windows/win32/dataxchg/html-clipboard-format. CF_RTF is a registered format obtained via `RegisterClipboardFormat("Rich Text Format")`. Plain text is UTF-16 LE under CF_UNICODETEXT.
+
+      The HTML→RTF conversion that NSAttributedString does for free on macOS has no Win32 equivalent — either ship without RTF (CF_HTML alone covers Outlook/Word) or pull in a Go HTML→RTF library.
+    tags:
+    - clipboard
+    - windows
+    - platform
+    origin: forked-from 🎯T7 when Linux was dropped and Windows parked, 2026-04-25
     discovered: 2026-04-25

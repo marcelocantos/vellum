@@ -63,11 +63,32 @@ var md = goldmark.New(
 
 // Convert reads a Markdown file at inputPath and writes a PDF to outputPath.
 func Convert(ctx context.Context, inputPath, outputPath string, opts *Options) error {
+	html, err := RenderFile(ctx, inputPath, opts)
+	if err != nil {
+		return err
+	}
+	if err := prince(ctx, html, outputPath); err != nil {
+		return fmt.Errorf("prince: %w", err)
+	}
+	return nil
+}
+
+// RenderFile reads a Markdown file and returns the fully assembled HTML
+// page (template + CSS + body), ready to hand to Prince or to a clipboard
+// backend that expects rich HTML.
+func RenderFile(ctx context.Context, inputPath string, opts *Options) (string, error) {
 	src, err := os.ReadFile(inputPath)
 	if err != nil {
-		return fmt.Errorf("reading input: %w", err)
+		return "", fmt.Errorf("reading input: %w", err)
 	}
+	return Render(ctx, src, opts)
+}
 
+// Render runs the conversion pipeline on src and returns the assembled
+// HTML page. Math and Mermaid blocks are pre-extracted, rendered, and
+// reinjected; chroma syntax-highlighting CSS is appended; the result is
+// wrapped in the embedded HTML template.
+func Render(ctx context.Context, src []byte, opts *Options) (string, error) {
 	// Pre-process: extract math and mermaid blocks before goldmark sees them.
 	// This prevents goldmark from mangling backslashes in LaTeX and from
 	// treating mermaid blocks as regular code.
@@ -78,17 +99,16 @@ func Convert(ctx context.Context, inputPath, outputPath string, opts *Options) e
 
 	htmlContent, title, err := renderMarkdown([]byte(processed))
 	if err != nil {
-		return fmt.Errorf("rendering markdown: %w", err)
+		return "", fmt.Errorf("rendering markdown: %w", err)
 	}
 
-	// Render math and mermaid, replacing placeholders in HTML.
 	htmlContent, err = math.ReplaceAll(ctx, htmlContent)
 	if err != nil {
-		return fmt.Errorf("rendering math: %w", err)
+		return "", fmt.Errorf("rendering math: %w", err)
 	}
 	htmlContent, err = mermaid.ReplaceAll(ctx, htmlContent)
 	if err != nil {
-		return fmt.Errorf("rendering mermaid: %w", err)
+		return "", fmt.Errorf("rendering mermaid: %w", err)
 	}
 
 	css := embed.GitHubCSS
@@ -102,29 +122,23 @@ func Convert(ctx context.Context, inputPath, outputPath string, opts *Options) e
 		}
 	}
 
-	// Generate syntax highlighting CSS from chroma.
 	var chromaBuf bytes.Buffer
 	formatter := chromahtml.New(chromahtml.WithClasses(true), chromahtml.WithAllClasses(true))
 	if err := formatter.WriteCSS(&chromaBuf, styles.Get("github")); err != nil {
-		return fmt.Errorf("generating chroma CSS: %w", err)
+		return "", fmt.Errorf("generating chroma CSS: %w", err)
 	}
 	css += "\n" + chromaBuf.String()
 
 	fullHTML, err := assembleHTML(title, css, headExtra, htmlContent)
 	if err != nil {
-		return fmt.Errorf("assembling HTML: %w", err)
+		return "", fmt.Errorf("assembling HTML: %w", err)
 	}
 
-	// Debug: save HTML for inspection.
 	if debugPath := os.Getenv("VELLUM_DEBUG_HTML"); debugPath != "" {
 		os.WriteFile(debugPath, []byte(fullHTML), 0o644)
 	}
 
-	if err := prince(ctx, fullHTML, outputPath); err != nil {
-		return fmt.Errorf("prince: %w", err)
-	}
-
-	return nil
+	return fullHTML, nil
 }
 
 func renderMarkdown(src []byte) (htmlContent string, title string, err error) {
