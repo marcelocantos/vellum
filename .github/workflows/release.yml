@@ -86,3 +86,35 @@ jobs:
           test: 'system bin/"vellum", "--version"'
           skip_checksum: true
           update_readme_table: true
+          formula_includes: |
+            depends_on "mermaid-cli"
+            depends_on "node"
+
+            def caveats
+              <<~EOS
+                vellum requires Prince (HTML→PDF) which is not in Homebrew core.
+                Install via cask:
+                  brew install --cask prince
+                or download from https://www.princexml.com/download/
+              EOS
+            end
+
+            service do
+              run [opt_bin/"vellum", "--mcp"]
+              keep_alive true
+              log_path var/"log/vellum.log"
+              error_log_path var/"log/vellum.log"
+              environment_variables PATH: [
+                "#{HOMEBREW_PREFIX}/bin",
+                "#{HOMEBREW_PREFIX}/sbin",
+                "/usr/local/bin",
+                "#{Dir.home}/.cargo/bin",
+                "#{Dir.home}/.local/bin",
+                "#{Dir.home}/.py/bin",
+                "#{Dir.home}/go/bin",
+                "/usr/bin",
+                "/bin",
+                "/usr/sbin",
+                "/sbin",
+              ].join(":")
+            end

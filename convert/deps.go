@@ -45,6 +45,12 @@ func RequiredDeps() []Dep {
 
 // CheckDeps returns an error if any required dep is missing from PATH. The
 // error message lists every missing dep with its install instructions.
+//
+// The Homebrew formula declares node and mermaid-cli as dependencies and
+// pins PATH in its launchd service block, which covers the brew-services
+// install path. CheckDeps is the safety net for everything else: direct CLI
+// invocation outside Homebrew, manual installs, broken/incomplete setups,
+// and Prince (which has no Homebrew formula).
 func CheckDeps() error {
 	var missing []Dep
 	for _, d := range RequiredDeps() {

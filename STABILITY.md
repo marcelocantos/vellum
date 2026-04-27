@@ -21,7 +21,7 @@ change between minor releases — though in practice we aim to minimise churn.
 
 ## Interaction surface catalogue
 
-Snapshot as of **v0.1.0**. Annotations: **stable** (unlikely to change),
+Snapshot as of **v0.2.0**. Annotations: **stable** (unlikely to change),
 **needs review** (functional but may be refined), **fluid** (actively
 evolving).
 
@@ -32,6 +32,8 @@ Package paths are under `github.com/marcelocantos/vellum/…`.
 **`convert`** — the Markdown → PDF pipeline.
 
 - `func Convert(ctx context.Context, inputPath, outputPath string, opts *Options) error` — **stable**
+- `func RenderFile(ctx context.Context, inputPath string, opts *Options) (string, error)` — **needs review** (added in v0.2.0 for clipboard delivery; returns the post-pipeline HTML; consumers other than `convert_to_clipboard` may shake out a more ergonomic shape)
+- `func Render(ctx context.Context, src []byte, opts *Options) (string, error)` — **needs review** (same)
 - `type Options struct { CSS string; HeadExtra string }` — **needs review** (`HeadExtra` is a leaky abstraction; may fold into a richer options type)
 - `type Dep struct { Name, Purpose, Install string }` — **stable**
 - `func RequiredDeps() []Dep` — **stable**
@@ -43,6 +45,14 @@ Package paths are under `github.com/marcelocantos/vellum/…`.
 - `type ConvertFile struct { Input, Output string }` — **stable** (mirrors the JSON schema)
 - `type ConvertInput struct { Files []ConvertFile }` — **stable**
 - `type ConvertOutput struct { Converted, Errors []string }` — **stable**
+- `type ClipboardInput struct { Input string }` — **needs review** (added in v0.2.0; macOS-only tool, may grow fields once non-macOS support is decided)
+- `type ClipboardOutput struct { Input string }` — **needs review** (same; currently echoes the input for confirmation)
+
+**`clipboard`** — system-clipboard delivery (added in v0.2.0).
+
+- `type Payload struct { HTML string }` — **needs review** (single-field today; RTF + plain text are derived; may grow explicit fields)
+- `func Write(p Payload) error` — **needs review** (macOS implementation only; non-macOS returns `ErrUnsupported`)
+- `var ErrUnsupported error` — **stable**
 
 **`embed`** — compile-time assets.
 
@@ -70,6 +80,7 @@ Binary: `vellum`.
 | `--help-agent`   | Print usage + embedded agent guide, exit 0          | stable    |
 | `--version`      | Print version string to stdout, exit 0              | stable    |
 | `--mcp`          | Run as stdio MCP server                             | stable    |
+| `--to-clipboard` | Render single input and place RTF + HTML + plain text on clipboard (macOS only) | needs review |
 | `-o <path>`      | Output PDF path (single-input only)                 | stable    |
 | `--output <path>`| Same as `-o`                                        | stable    |
 | `-o=<path>`      | Same as `-o` (inline form)                          | stable    |
@@ -97,6 +108,9 @@ Binary: `vellum`.
 - Server info: `{ name: "vellum", version: <build version> }`. **stable**.
 - Protocol version: whatever the embedded `github.com/modelcontextprotocol/go-sdk` version negotiates. **needs review** (SDK is pre-1.x on its own track; bumping it may shift the minimum protocol version).
 
+**Tools**: `convert` (Markdown → PDF batch) and `convert_to_clipboard` (single
+Markdown → system clipboard, macOS only, added in v0.2.0).
+
 **Tool: `convert`**
 
 - **Description**: "Convert one or more Markdown files to PDF. Input paths must be absolute. Each file is rendered via goldmark (GFM + extensions), with server-side KaTeX math and Mermaid diagrams, then typeset by Prince. Returns the list of written PDFs and any errors."
@@ -121,6 +135,24 @@ Binary: `vellum`.
 
 - **Text content**: human-readable summary ("Converted N file(s): …" / "Errors: …"). **needs review** (format may be tweaked for readability; structured output is the load-bearing part).
 - **`isError`**: set to `true` only when every file failed. **stable**.
+
+**Tool: `convert_to_clipboard`** (added in v0.2.0)
+
+- **Description**: "Render a Markdown file and place RTF + HTML + plain text on the system clipboard (macOS only). Returns once the underlying NSPasteboard has confirmed the write."
+- **Input schema**: **needs review**
+
+  ```json
+  { "input": "<absolute path to .md file>" }
+  ```
+
+- **Structured output**: **needs review**
+
+  ```json
+  { "input": "<echoed input path>" }
+  ```
+
+- **Platform**: macOS only. Non-macOS returns an `unsupported` error.
+- **`isError`**: set to `true` on any failure (unsupported platform, missing file, render error, pasteboard write failure). **needs review** (semantics may shift as multi-platform support is decided).
 
 ### Markdown syntax extensions
 
@@ -224,5 +256,8 @@ Not eligible.
 
 - **Checklist**: not clear (see *Gaps and prerequisites*).
 - **Settling threshold**: counting surface items (Go API + CLI flags +
-  MCP tool schema + Markdown extensions + env vars ≈ 40 items) → 2-month
-  minimum settling period. Clock has not started; v0.1.0 is the baseline.
+  MCP tool schema + Markdown extensions + env vars ≈ 50 items after the
+  v0.2.0 clipboard additions) → 3-month minimum settling period. Clock
+  reset on 2026-04-27 by the v0.2.0 surface additions
+  (`convert.Render`/`RenderFile`, `clipboard` package, `--to-clipboard`,
+  `convert_to_clipboard` MCP tool).

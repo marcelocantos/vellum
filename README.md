@@ -61,10 +61,13 @@ Usage: vellum [options] <input.md...>
        vellum --mcp
 
 Options:
-  --help       Show help
-  --version    Print version
-  --mcp        Run as an MCP server on stdio
-  -o <path>    Output PDF path (single input file only)
+  --help          Show help
+  --help-agent    Show help plus the embedded agent guide
+  --version       Print version
+  --mcp           Run as an MCP server on stdio
+  --to-clipboard  Render and place RTF + HTML + plain text on the system
+                  clipboard (single input file; macOS only)
+  -o <path>       Output PDF path (single input file only)
 ```
 
 Examples:

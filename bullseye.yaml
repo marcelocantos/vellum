@@ -162,3 +162,59 @@ targets:
     - platform
     origin: forked-from 🎯T7 when Linux was dropped and Windows parked, 2026-04-25
     discovered: 2026-04-25
+  T8:
+    name: Homebrew formula declares runtime tool deps and sets service-block PATH so the launchd-spawned vellum daemon resolves node, mmdc, and prince without manual setup
+    status: achieved
+    value: 0.0
+    cost: 0.0
+    acceptance:
+    - Formula's `service do` block sets `environment_variables PATH:` to `"/opt/homebrew/bin:/opt/homebrew/sbin:#{Dir.home}/.cargo/bin:#{Dir.home}/.local/bin:#{Dir.home}/.py/bin:#{Dir.home}/go/bin:/usr/bin:/bin:/usr/sbin:/sbin"`
+    - Formula declares `depends_on "node"` and `depends_on "mermaid-cli"`
+    - Prince stays a documented manual install (not in Homebrew); the service-block PATH includes `/usr/local/bin` (default Prince install location) — verify it's covered or add to PATH
+    - '`convert/deps.go:51` LookPath-then-fail code is reviewed; if redundant after the formula fix lands, remove it. If kept, document why (e.g., for non-Homebrew install paths)'
+    - '`brew services restart vellum` followed by a Markdown-to-PDF conversion exercising KaTeX (node) and Mermaid (mmdc) succeeds with no manual PATH workaround'
+    context: |-
+      Background: launchd-spawned MCP daemons (started via `brew services`) inherit a minimal PATH (`/usr/bin:/bin:/usr/sbin:/sbin`). Any external tool the daemon shells out to that lives in `/opt/homebrew/bin`, `~/.cargo/bin`, `~/.local/bin`, `~/.py/bin`, or `~/go/bin` fails to resolve at runtime. Spyder hit this first (with pmd3) and is already fixed via a different mechanism (bundled binary). The cross-repo fix design decision was made in ~/think on 2026-04-27.
+
+      Design decision — fix at the Homebrew formula's `service` block, NOT:
+      - in code (per-server PATH augmentation): buries the fix far from the daemon's environment config.
+      - via global `launchctl setenv PATH`: pollutes user-domain environment for every GUI app.
+      - via wrapper script: `brew services` is what spawns the daemon; wrapping the launch belongs in the formula.
+
+      Reasons the formula's `service` block is correct:
+      - Per-daemon scope, no collateral.
+      - `brew services` regenerates the launchd plist from the formula on install/upgrade/restart, so the fix survives upgrades.
+      - No code change in the server.
+      - `depends_on` makes `brew install vellum` self-sufficient (modulo Prince).
+
+      Audit findings for vellum (from ~/think investigation 2026-04-27):
+      - `convert/convert.go:203` — calls `prince` (NOT in Homebrew; manual install, lives in `/usr/local/bin/prince` typically. Service-block PATH should include `/usr/local/bin` — already does in the template above).
+      - `convert/katex.go:160` — calls `node` (homebrew)
+      - `convert/mermaid.go:107` — calls `mmdc` (homebrew via `mermaid-cli`)
+      - `convert/deps.go:51` — does `LookPath` for advertised deps and fails cleanly with a useful error. Review whether this still adds value once the formula fix lands; it may still be useful for users running outside the launchd path (e.g., CLI invocation), in which case keep it but document the rationale.
+
+      Tools available in Homebrew (verified 2026-04-27): `node`, `mermaid-cli` (provides `mmdc`).
+
+      Tools NOT in Homebrew, kept as service-block-PATH expectations: `prince` (manual install from princexml.com — has no Homebrew formula and shouldn't gain one). The default install path `/usr/local/bin` is already in the template service-block PATH. If Prince is installed elsewhere on Marcelo's machine, verify and adjust.
+
+      Formula shape (template):
+      ```ruby
+      depends_on "node"
+      depends_on "mermaid-cli"
+      # prince: manual install required (caveats can document this)
+
+      service do
+        run [opt_bin/"vellum"]
+        environment_variables PATH: "/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:#{Dir.home}/.cargo/bin:#{Dir.home}/.local/bin:#{Dir.home}/.py/bin:#{Dir.home}/go/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+        keep_alive true
+        log_path var/"log/vellum.log"
+        error_log_path var/"log/vellum.log"
+      end
+      ```
+
+      Note `/usr/local/bin` is included for Prince. The other sibling formulas (mnemo, sawmill) don't need it, but having it everywhere is harmless and may be worth standardising.
+
+      Sibling targets exist on mnemo and sawmill repos with the same design context. If a shared PATH constant is later defined in the tap, refactor to reference it.
+    origin: forked-from spyder PATH-bug investigation in ~/think on 2026-04-27
+    discovered: 2026-04-27
+    achieved: 2026-04-27
