@@ -14,7 +14,7 @@ maintenance activities. Append-only — newest entries at the bottom.
 
 ## 2026-04-28 — /release v0.3.0
 
-- **Commit**: `pending`
+- **Commit**: `f40514a`
 - **Outcome**: Released v0.3.0. Homebrew formula no longer declares a `service do` block; instead `def install` writes a thin `sh` wrapper (`bin/vellum`) that prepends the canonical tool dirs and execs `bin/vellum-bin` (the renamed binary). Fixes the v0.2.0 launch-context limitation: the service block only set PATH for `brew services`-spawned processes, but Claude Code and other MCP clients launched from a GUI inherit the same minimal PATH and were not covered. Per-binary wrapper covers all launch contexts and removes the `brew services list` entry that tempted users to start vellum as a daemon (which fails because stdio MCP has nothing to talk to under launchd). No public-surface change; STABILITY.md settling clock unchanged. Release-workflow risk: release.yml `install:` parameter is now multi-line (was one-line) — cut as `v0.3.0-rc.1` prerelease first to validate homebrew-releaser handles the heredoc-in-yaml correctly, then real `v0.3.0`. Also incidentally cleans up homebrew-releaser's v0.2.0 duplicate-methods quirk.
 - **Deferred**:
   - Standardise NOTICE-file naming across the portfolio (`~/think` 🎯T2). v0.3.0 ships with `THIRD_PARTY_NOTICES.md` unchanged; rename will land in a future release once the convention target lands portfolio-wide.
