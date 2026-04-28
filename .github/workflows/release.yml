@@ -82,7 +82,17 @@ jobs:
           github_token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           formula_folder: Formula
           version: ${{ github.event.release.tag_name }}
-          install: 'bin.install "vellum" => "vellum"'
+          install: |
+            bin.install "vellum" => "vellum-bin"
+            (bin/"vellum").write <<~SH
+              #!/bin/sh
+              # Prepend the canonical tool dirs so node, mmdc, and prince
+              # resolve regardless of how vellum is launched (terminal,
+              # MCP client with a stripped PATH inherited from launchd, …).
+              export PATH="#{HOMEBREW_PREFIX}/bin:#{HOMEBREW_PREFIX}/sbin:/usr/local/bin:$HOME/.cargo/bin:$HOME/.local/bin:$HOME/.py/bin:$HOME/go/bin:$PATH"
+              exec "#{opt_bin}/vellum-bin" "$@"
+            SH
+            (bin/"vellum").chmod 0755
           target_darwin_arm64: true
           target_linux_amd64: true
           target_linux_arm64: true
@@ -100,24 +110,4 @@ jobs:
                   brew install --cask prince
                 or download from https://www.princexml.com/download/
               EOS
-            end
-
-            service do
-              run [opt_bin/"vellum", "--mcp"]
-              keep_alive true
-              log_path var/"log/vellum.log"
-              error_log_path var/"log/vellum.log"
-              environment_variables PATH: [
-                "#{HOMEBREW_PREFIX}/bin",
-                "#{HOMEBREW_PREFIX}/sbin",
-                "/usr/local/bin",
-                "#{Dir.home}/.cargo/bin",
-                "#{Dir.home}/.local/bin",
-                "#{Dir.home}/.py/bin",
-                "#{Dir.home}/go/bin",
-                "/usr/bin",
-                "/bin",
-                "/usr/sbin",
-                "/sbin",
-              ].join(":")
             end

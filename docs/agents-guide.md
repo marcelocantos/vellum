@@ -65,12 +65,13 @@ must succeed before vellum is usable — do not stop after `brew install`.**
    ```
 
    vellum is a **stdio** MCP server, not HTTP. It is spawned per
-   connection by the MCP client — do not start it as a daemon. The
-   Homebrew formula does declare a `service` block (so `brew services`
-   knows the right `PATH` for resolving `node`, `mmdc`, and `prince`),
-   but running vellum under `brew services` provides no benefit: with
-   stdio piped to `/dev/null` it has nothing to talk to. Leave the
-   service stopped.
+   connection by the MCP client. There is no daemon to start, no port
+   to check, and no `brew services` entry. The Homebrew formula
+   installs a thin shell wrapper as `vellum` that prepends the
+   canonical tool dirs (`#{HOMEBREW_PREFIX}/bin`, `/usr/local/bin`,
+   `$HOME/.cargo/bin`, etc.) before exec'ing the real binary, so
+   `node`, `mmdc`, and `prince` resolve regardless of how the MCP
+   client's environment was set up.
 
 4. **Restart the agent session.** MCP client config changes are only
    picked up on session start. The current session will not see vellum
