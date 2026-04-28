@@ -21,7 +21,7 @@ change between minor releases — though in practice we aim to minimise churn.
 
 ## Interaction surface catalogue
 
-Snapshot as of **v0.2.0**. Annotations: **stable** (unlikely to change),
+Snapshot as of **v0.3.0**. Annotations: **stable** (unlikely to change),
 **needs review** (functional but may be refined), **fluid** (actively
 evolving).
 
@@ -256,8 +256,9 @@ Not eligible.
 
 - **Checklist**: not clear (see *Gaps and prerequisites*).
 - **Settling threshold**: counting surface items (Go API + CLI flags +
-  MCP tool schema + Markdown extensions + env vars ≈ 50 items after the
-  v0.2.0 clipboard additions) → 3-month minimum settling period. Clock
-  reset on 2026-04-27 by the v0.2.0 surface additions
-  (`convert.Render`/`RenderFile`, `clipboard` package, `--to-clipboard`,
-  `convert_to_clipboard` MCP tool).
+  MCP tool schema + Markdown extensions + env vars ≈ 50 items) →
+  3-month minimum settling period. Clock last reset on 2026-04-27 by
+  the v0.2.0 surface additions (`convert.Render`/`RenderFile`,
+  `clipboard` package, `--to-clipboard`, `convert_to_clipboard` MCP
+  tool). v0.3.0 is install-mechanism only (Homebrew formula wrapper)
+  — no public-surface change; clock unchanged.
