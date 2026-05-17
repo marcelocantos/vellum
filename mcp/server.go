@@ -15,6 +15,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/marcelocantos/vellum/clipboard"
+	"github.com/marcelocantos/vellum/config"
 	"github.com/marcelocantos/vellum/convert"
 )
 
@@ -26,7 +27,9 @@ type ConvertFile struct {
 
 // ConvertInput is the input schema for the convert tool.
 type ConvertInput struct {
-	Files []ConvertFile `json:"files" jsonschema:"files to convert (at least one)"`
+	Files   []ConvertFile  `json:"files" jsonschema:"files to convert (at least one)"`
+	Style   *convert.Style `json:"style,omitempty" jsonschema:"per-call style overrides; each field overlays the corresponding config-file value"`
+	Backend string         `json:"backend,omitempty" jsonschema:"renderer backend for this call: \"weasyprint\" (default, BSD-3) or \"prince\" (proprietary, opt-in); empty falls through to the config file or built-in default"`
 }
 
 // ConvertOutput is the structured output schema for the convert tool.
@@ -38,6 +41,13 @@ type ConvertOutput struct {
 // Serve runs a vellum MCP server on stdio until the client disconnects.
 // version is reported in the Implementation info sent to the client.
 func Serve(ctx context.Context, version string) error {
+	cfg, err := config.Load()
+	if err != nil {
+		return fmt.Errorf("loading config: %w", err)
+	}
+	baseStyle := cfg.Style
+	baseBackend := cfg.Backend
+
 	server := mcp.NewServer(&mcp.Implementation{
 		Name:    "vellum",
 		Version: version,
@@ -46,64 +56,73 @@ func Serve(ctx context.Context, version string) error {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "convert",
 		Title:       "Convert Markdown to PDF",
-		Description: "Convert one or more Markdown files to PDF. Input paths must be absolute. Each file is rendered via goldmark (GFM + extensions), with server-side KaTeX math and Mermaid diagrams, then typeset by Prince. Returns the list of written PDFs and any errors.",
-	}, convertHandler)
+		Description: "Convert one or more Markdown files to PDF. Input paths must be absolute. Each file is rendered via goldmark (GFM + extensions), with server-side KaTeX math and Mermaid diagrams, then typeset by the selected backend (WeasyPrint by default, Prince opt-in). Returns the list of written PDFs and any errors. Optional 'style' and 'backend' fields override the user's config file for this call only.",
+	}, makeConvertHandler(baseStyle, baseBackend))
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "convert_to_clipboard",
 		Title:       "Convert Markdown to clipboard",
-		Description: "Render a single Markdown file and place RTF + HTML + plain-text representations on the system clipboard in a single atomic transaction. Designed for handing formatted content to rich-text composers (Slack, Mail, …) without the textutil+osascript dance. Returns when the underlying pasteboard has committed the data — there is no race window where a subsequent paste sees stale content. macOS only currently; other platforms return an unsupported error.",
-	}, convertToClipboardHandler)
+		Description: "Render a single Markdown file and place RTF + HTML + plain-text representations on the system clipboard in a single atomic transaction. Designed for handing formatted content to rich-text composers (Slack, Mail, …) without the textutil+osascript dance. Returns when the underlying pasteboard has committed the data — there is no race window where a subsequent paste sees stale content. macOS only currently; other platforms return an unsupported error. Optional 'style' and 'backend' fields override the user's config file for this call only.",
+	}, makeClipboardHandler(baseStyle, baseBackend))
 
 	return server.Run(ctx, &mcp.StdioTransport{})
 }
 
-func convertHandler(ctx context.Context, _ *mcp.CallToolRequest, input ConvertInput) (*mcp.CallToolResult, ConvertOutput, error) {
-	if len(input.Files) == 0 {
-		return &mcp.CallToolResult{
-			IsError: true,
-			Content: []mcp.Content{&mcp.TextContent{Text: "no files specified"}},
-		}, ConvertOutput{}, nil
+func makeConvertHandler(baseStyle *convert.Style, baseBackend string) func(context.Context, *mcp.CallToolRequest, ConvertInput) (*mcp.CallToolResult, ConvertOutput, error) {
+	return func(ctx context.Context, _ *mcp.CallToolRequest, input ConvertInput) (*mcp.CallToolResult, ConvertOutput, error) {
+		if len(input.Files) == 0 {
+			return &mcp.CallToolResult{
+				IsError: true,
+				Content: []mcp.Content{&mcp.TextContent{Text: "no files specified"}},
+			}, ConvertOutput{}, nil
+		}
+
+		backend := input.Backend
+		if backend == "" {
+			backend = baseBackend
+		}
+		opts := &convert.Options{Style: input.Style.OverlayOn(baseStyle), Backend: backend}
+
+		var out ConvertOutput
+		for _, f := range input.Files {
+			inputPath, err := resolveInput(f.Input)
+			if err != nil {
+				out.Errors = append(out.Errors, fmt.Sprintf("%s: %v", f.Input, err))
+				continue
+			}
+
+			outputPath, err := resolveOutput(inputPath, f.Output)
+			if err != nil {
+				out.Errors = append(out.Errors, fmt.Sprintf("%s: %v", f.Input, err))
+				continue
+			}
+
+			if _, err := os.Stat(inputPath); err != nil {
+				out.Errors = append(out.Errors, fmt.Sprintf("%s: %v", f.Input, err))
+				continue
+			}
+
+			if err := convert.Convert(ctx, inputPath, outputPath, opts); err != nil {
+				out.Errors = append(out.Errors, fmt.Sprintf("%s: %v", f.Input, err))
+				continue
+			}
+
+			out.Converted = append(out.Converted, outputPath)
+		}
+
+		result := &mcp.CallToolResult{
+			Content: []mcp.Content{&mcp.TextContent{Text: formatSummary(out)}},
+			IsError: len(out.Converted) == 0 && len(out.Errors) > 0,
+		}
+		return result, out, nil
 	}
-
-	var out ConvertOutput
-
-	for _, f := range input.Files {
-		inputPath, err := resolveInput(f.Input)
-		if err != nil {
-			out.Errors = append(out.Errors, fmt.Sprintf("%s: %v", f.Input, err))
-			continue
-		}
-
-		outputPath, err := resolveOutput(inputPath, f.Output)
-		if err != nil {
-			out.Errors = append(out.Errors, fmt.Sprintf("%s: %v", f.Input, err))
-			continue
-		}
-
-		if _, err := os.Stat(inputPath); err != nil {
-			out.Errors = append(out.Errors, fmt.Sprintf("%s: %v", f.Input, err))
-			continue
-		}
-
-		if err := convert.Convert(ctx, inputPath, outputPath, nil); err != nil {
-			out.Errors = append(out.Errors, fmt.Sprintf("%s: %v", f.Input, err))
-			continue
-		}
-
-		out.Converted = append(out.Converted, outputPath)
-	}
-
-	result := &mcp.CallToolResult{
-		Content: []mcp.Content{&mcp.TextContent{Text: formatSummary(out)}},
-		IsError: len(out.Converted) == 0 && len(out.Errors) > 0,
-	}
-	return result, out, nil
 }
 
 // ClipboardInput is the input schema for the convert_to_clipboard tool.
 type ClipboardInput struct {
-	Input string `json:"input" jsonschema:"absolute path to a .md file"`
+	Input   string         `json:"input" jsonschema:"absolute path to a .md file"`
+	Style   *convert.Style `json:"style,omitempty" jsonschema:"per-call style overrides; each field overlays the corresponding config-file value"`
+	Backend string         `json:"backend,omitempty" jsonschema:"renderer backend for this call: \"weasyprint\" (default) or \"prince\"; empty falls through to the config file"`
 }
 
 // ClipboardOutput is the structured output schema for convert_to_clipboard.
@@ -111,28 +130,35 @@ type ClipboardOutput struct {
 	Input string `json:"input" jsonschema:"the input path that was rendered"`
 }
 
-func convertToClipboardHandler(ctx context.Context, _ *mcp.CallToolRequest, in ClipboardInput) (*mcp.CallToolResult, ClipboardOutput, error) {
-	out := ClipboardOutput{Input: in.Input}
+func makeClipboardHandler(baseStyle *convert.Style, baseBackend string) func(context.Context, *mcp.CallToolRequest, ClipboardInput) (*mcp.CallToolResult, ClipboardOutput, error) {
+	return func(ctx context.Context, _ *mcp.CallToolRequest, in ClipboardInput) (*mcp.CallToolResult, ClipboardOutput, error) {
+		out := ClipboardOutput{Input: in.Input}
 
-	inputPath, err := resolveInput(in.Input)
-	if err != nil {
-		return errorResult(err), out, nil
-	}
-	if _, err := os.Stat(inputPath); err != nil {
-		return errorResult(err), out, nil
-	}
+		inputPath, err := resolveInput(in.Input)
+		if err != nil {
+			return errorResult(err), out, nil
+		}
+		if _, err := os.Stat(inputPath); err != nil {
+			return errorResult(err), out, nil
+		}
 
-	html, err := convert.RenderFile(ctx, inputPath, nil)
-	if err != nil {
-		return errorResult(err), out, nil
-	}
-	if err := clipboard.Write(clipboard.Payload{HTML: html}); err != nil {
-		return errorResult(err), out, nil
-	}
+		backend := in.Backend
+		if backend == "" {
+			backend = baseBackend
+		}
+		opts := &convert.Options{Style: in.Style.OverlayOn(baseStyle), Backend: backend}
+		html, err := convert.RenderFile(ctx, inputPath, opts)
+		if err != nil {
+			return errorResult(err), out, nil
+		}
+		if err := clipboard.Write(clipboard.Payload{HTML: html}); err != nil {
+			return errorResult(err), out, nil
+		}
 
-	return &mcp.CallToolResult{
-		Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("Copied %s to clipboard (RTF + HTML + plain text).", inputPath)}},
-	}, out, nil
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("Copied %s to clipboard (RTF + HTML + plain text).", inputPath)}},
+		}, out, nil
+	}
 }
 
 func errorResult(err error) *mcp.CallToolResult {

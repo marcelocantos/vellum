@@ -10,9 +10,7 @@ import (
 	"fmt"
 	"html/template"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"strings"
 
 	chromahtml "github.com/alecthomas/chroma/v2/formatters/html"
 	"github.com/alecthomas/chroma/v2/styles"
@@ -34,6 +32,12 @@ type Options struct {
 	CSS string
 	// HeadExtra is additional HTML to inject into <head> (e.g., KaTeX CSS).
 	HeadExtra string
+	// Style applies a small set of CSS overrides on top of the base
+	// stylesheet (whether default or supplied via CSS).
+	Style *Style
+	// Backend names the renderer engine. Empty resolves to DefaultBackend
+	// (WeasyPrint). Use BackendPrince to opt into Prince.
+	Backend string
 }
 
 var htmlTmpl = template.Must(template.New("page").Parse(embed.HTMLTemplate))
@@ -61,14 +65,34 @@ var md = goldmark.New(
 	),
 )
 
-// Convert reads a Markdown file at inputPath and writes a PDF to outputPath.
+// Convert reads a Markdown file at inputPath and writes a PDF to outputPath
+// using the backend selected via opts.Backend (defaults to WeasyPrint).
 func Convert(ctx context.Context, inputPath, outputPath string, opts *Options) error {
-	html, err := RenderFile(ctx, inputPath, opts)
+	absInput, err := filepath.Abs(inputPath)
+	if err != nil {
+		return fmt.Errorf("resolving input path: %w", err)
+	}
+	html, err := RenderFile(ctx, absInput, opts)
 	if err != nil {
 		return err
 	}
-	if err := prince(ctx, html, outputPath); err != nil {
-		return fmt.Errorf("prince: %w", err)
+
+	var (
+		backendName string
+		pdfa        string
+	)
+	if opts != nil {
+		backendName = opts.Backend
+		if opts.Style != nil {
+			pdfa = opts.Style.PDFA
+		}
+	}
+	backend, err := ResolveBackend(backendName)
+	if err != nil {
+		return err
+	}
+	if err := backend.Render(ctx, html, outputPath, filepath.Dir(absInput), pdfa); err != nil {
+		return fmt.Errorf("%s: %w", backend.Name(), err)
 	}
 	return nil
 }
@@ -129,7 +153,19 @@ func Render(ctx context.Context, src []byte, opts *Options) (string, error) {
 	}
 	css += "\n" + chromaBuf.String()
 
-	fullHTML, err := assembleHTML(title, css, headExtra, htmlContent)
+	// Style overrides cascade last so they win regardless of how the base CSS
+	// was supplied (default or via opts.CSS).
+	if opts != nil {
+		if override := opts.Style.CSS(); override != "" {
+			css += "\n" + override
+		}
+	}
+
+	var lang string
+	if opts != nil {
+		lang = opts.Style.EffectiveLang()
+	}
+	fullHTML, err := assembleHTML(title, lang, css, headExtra, htmlContent)
 	if err != nil {
 		return "", fmt.Errorf("assembling HTML: %w", err)
 	}
@@ -159,14 +195,16 @@ func renderMarkdown(src []byte) (htmlContent string, title string, err error) {
 	return buf.String(), title, nil
 }
 
-func assembleHTML(title, css, headExtra, body string) (string, error) {
+func assembleHTML(title, lang, css, headExtra, body string) (string, error) {
 	data := struct {
 		Title     string
+		Lang      string
 		CSS       template.CSS
 		HeadExtra template.HTML
 		Body      template.HTML
 	}{
 		Title:     title,
+		Lang:      lang,
 		CSS:       template.CSS(css),
 		HeadExtra: template.HTML(headExtra),
 		Body:      template.HTML(body),
@@ -179,38 +217,3 @@ func assembleHTML(title, css, headExtra, body string) (string, error) {
 	return buf.String(), nil
 }
 
-func prince(ctx context.Context, htmlContent, outputPath string) error {
-	// Ensure output directory exists.
-	if dir := filepath.Dir(outputPath); dir != "." {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return err
-		}
-	}
-
-	// Write HTML to a temp file for Prince to consume.
-	tmpFile, err := os.CreateTemp("", "vellum-*.html")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(tmpFile.Name())
-
-	if _, err := tmpFile.WriteString(htmlContent); err != nil {
-		tmpFile.Close()
-		return err
-	}
-	tmpFile.Close()
-
-	cmd := exec.CommandContext(ctx, "prince", tmpFile.Name(), "-o", outputPath)
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
-		msg := strings.TrimSpace(stderr.String())
-		if msg != "" {
-			return fmt.Errorf("%w: %s", err, msg)
-		}
-		return err
-	}
-
-	return nil
-}

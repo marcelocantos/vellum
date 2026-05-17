@@ -113,7 +113,7 @@ Markdown → system clipboard, macOS only, added in v0.2.0).
 
 **Tool: `convert`**
 
-- **Description**: "Convert one or more Markdown files to PDF. Input paths must be absolute. Each file is rendered via goldmark (GFM + extensions), with server-side KaTeX math and Mermaid diagrams, then typeset by Prince. Returns the list of written PDFs and any errors."
+- **Description**: "Convert one or more Markdown files to PDF. Input paths must be absolute. Each file is rendered via goldmark (GFM + extensions), with server-side KaTeX math and Mermaid diagrams, then typeset by the selected backend (WeasyPrint by default, Prince opt-in). Returns the list of written PDFs and any errors. Optional 'style' and 'backend' fields override the user's config file for this call only."
 - **Input schema**: **stable**
 
   ```json
@@ -189,7 +189,9 @@ not listed here is either GFM (via goldmark's GFM extension) or not supported.
 
 Required external binaries on `PATH`:
 
-- `prince` — Prince 16.2 or later. **stable**.
+- **One renderer backend** (selectable via config or per-call):
+  - `weasyprint` — WeasyPrint 60 or later. **stable** (default).
+  - `prince` — Prince 16.2 or later. **stable** (opt-in via `backend: prince`).
 - `node` — any recent Node.js. **stable**.
 - `mmdc` — mermaid-cli. **stable**.
 
@@ -242,9 +244,9 @@ Features and changes explicitly deferred past 1.0.
   release and introduces a security-update treadmill. Stays external.
 - **Alternative output formats.** Markdown → HTML and Markdown → EPUB
   are plausible but not in scope. 1.0 is Markdown → PDF.
-- **Additional renderers.** No plans to add WeasyPrint, wkhtmltopdf, or
-  headless Chrome as alternative backends. Prince is the single
-  typesetting pipeline.
+- **Additional renderers.** vellum now supports WeasyPrint (default) and
+  Prince (opt-in). No plans to add wkhtmltopdf (deprecated/abandoned) or
+  headless Chrome (Chromium footprint is prohibitive for a CLI tool).
 - **Plugin architecture.** No goldmark extension plugin API, no custom
   preprocessor registration. Users who need this can fork.
 - **Non-squash merges.** Release history is linear by policy. Not a
