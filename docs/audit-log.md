@@ -12,6 +12,14 @@ maintenance activities. Append-only — newest entries at the bottom.
   - Bundled Chromium for `mmdc` (STABILITY.md out-of-scope — too much footprint)
   - `vellum doctor` one-shot dependency installer (STABILITY.md gap)
 
+## 2026-05-17 — /release v0.4.0
+
+- **Commit**: `pending` (will be rewritten to the squash-merge SHA in a follow-up PR after merge, per the v0.2.0/v0.3.0 pattern).
+- **Outcome**: Released v0.4.0. Replaces Prince with WeasyPrint as the default renderer backend (🎯T9: open-source default + Prince opt-in; corporate-licensing reputational risk drove the flip — Prince remains available via `backend: prince`). Adds a `convert.Backend` interface with two implementations, a `config` package reading `~/.config/vellum/config.yaml`, and a 13-field `convert.Style` customisation surface (`font_size`, `line_height`, `font_family`, `code_font_family`, `page_size`, `page_margin`, `page_first_top_margin`, `page_numbers`, `running_head`, `bookmarks` default on, `hyphenate`, `lang`, `pdfa`). CLI gains `--backend`; MCP `convert` and `convert_to_clipboard` tools gain optional `style` and `backend` per-call overrides. Fixes long-standing relative-path image bug by passing `--baseurl` / `--base-url` to the renderer. Default `font-size` reduced to 14px and `@page margin` to 1cm for more usable horizontal space. Tests parameterized across both backends. Homebrew formula now `depends_on "weasyprint"`; caveats rewritten to position Prince as opt-in. STABILITY.md re-baselined to v0.4.0 because of the new `Style`/`Backend`/`Config` surface; pre-1.0 still. Release-workflow risk: release.yml's homebrew block grew (added weasyprint dep + rewrote caveats) — homebrew-releaser has handled multi-line `install:` and `formula_includes:` before (v0.3.0 introduced both), so direct release without an rc tag should be fine, but watch the homebrew job on first run.
+- **Deferred**:
+  - 🎯T10 *Mermaid render failures surface loudly* — filed this session; the silent-fallback-to-source-as-code is the recurring symptom of Chromium-version drift in mmdc. Not blocking the release.
+  - Chromium auto-resolve for mmdc (potential 🎯T11) — discussed but not filed; the auto-install-on-error path is the right shape once T10 ships.
+
 ## 2026-04-28 — /release v0.3.0
 
 - **Commit**: `f40514a`
