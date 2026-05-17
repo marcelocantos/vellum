@@ -1,9 +1,9 @@
 # vellum agent guide
 
 vellum is a Markdown-to-PDF tool that renders GitHub-flavoured Markdown
-(with KaTeX math and Mermaid diagrams) to typeset PDFs via Prince. It
-runs either as a command-line tool or as an MCP (Model Context Protocol)
-server over stdio.
+(with KaTeX math and Mermaid diagrams) to typeset PDFs via WeasyPrint
+(default, BSD-3) or Prince (opt-in, proprietary). It runs either as a
+command-line tool or as an MCP (Model Context Protocol) server over stdio.
 
 ## Installation
 
@@ -22,12 +22,15 @@ must succeed before vellum is usable — do not stop after `brew install`.**
    go install github.com/marcelocantos/vellum/cmd/vellum@latest
    ```
 
-2. **Install the runtime dependencies.** vellum shells out to four
-   external tools. All must be on `PATH` before the first conversion:
+2. **Install the runtime dependencies.** vellum shells out to external
+   tools. All must be on `PATH` before the first conversion:
 
    ```sh
-   # Prince: https://www.princexml.com/download/ (download and install
-   # from the vendor; Prince is proprietary and has no Homebrew formula)
+   # Renderer: WeasyPrint (default, BSD-3). Alternatively/additionally
+   # install Prince — proprietary, opt-in via --backend prince or config.
+   brew install weasyprint
+   # Optional: Prince from https://www.princexml.com/download/
+
    brew install node
    npm install -g katex
    brew install mermaid-cli
@@ -109,10 +112,13 @@ The MCP server exposes two tools:
 
 ### `convert` — Markdown → PDF (batch)
 
-- `convert({ files: [{ input, output? }] })`
+- `convert({ files: [{ input, output? }], style?, backend? })`
   - `input` — absolute path to a `.md` file (required)
   - `output` — absolute path for the output PDF (optional; defaults to
     the input path with its extension replaced by `.pdf`)
+  - `style` — optional style overrides; see [Style overrides](#style-overrides)
+  - `backend` — optional renderer override: `"weasyprint"` (default) or
+    `"prince"`. Empty falls through to the user's config file
 
 Example call:
 
@@ -144,8 +150,10 @@ on the system clipboard in a single atomic transaction. Designed for
 handing formatted content to rich-text composers (Slack, Mail, …)
 without the brittle `textutil` + `osascript` pipeline.
 
-- `convert_to_clipboard({ input })`
+- `convert_to_clipboard({ input, style?, backend? })`
   - `input` — absolute path to a `.md` file (required)
+  - `style` — optional style overrides; see [Style overrides](#style-overrides)
+  - `backend` — optional renderer override (`"weasyprint"` or `"prince"`)
 
 Example call:
 
@@ -195,6 +203,48 @@ than failing silently.
 - Multiple files can be converted in a single call; each is processed
   independently and errors are reported per-file.
 
+## Style overrides
+
+Both tools accept an optional `style` object. Each field is a CSS-valued
+string; empty fields fall through to the user's config file
+(`~/.config/vellum/config.yaml` or `$XDG_CONFIG_HOME/vellum/config.yaml`),
+which in turn falls through to vellum's built-in defaults.
+
+Fields:
+
+| Field                   | Example       | Notes                                  |
+|-------------------------|---------------|----------------------------------------|
+| `font_size`             | `12px`        | Body font size                         |
+| `line_height`           | `1.4`         | Body line height                       |
+| `font_family`           | `Georgia, serif` | Body font family                    |
+| `code_font_family`      | `Menlo, monospace` | Applied to `code` and `pre`       |
+| `page_size`             | `Letter`      | `@page size`                           |
+| `page_margin`           | `1.2cm`       | `@page margin`                         |
+| `page_first_top_margin` | `2cm`         | `@page :first margin-top`              |
+| `page_numbers`          | `true`        | Page number at bottom-centre (default off) |
+| `running_head`          | `true`        | Current H1 text at top-centre (default off) |
+| `bookmarks`             | `false`       | PDF outline from H1..H6 (default **on**); set false to suppress |
+| `hyphenate`             | `true`        | Auto-hyphenate body text (default off; plug-and-play on WeasyPrint, needs dictionary on Prince) |
+| `lang`                  | `en-GB`       | BCP-47 language tag; required for hyphenation |
+| `pdfa`                  | `PDF/A-3b`    | Emit PDF/A-compliant archival PDF (default off) |
+
+Example with per-call overrides:
+
+```json
+{
+  "name": "convert",
+  "arguments": {
+    "files": [{"input": "/abs/path/to/report.md"}],
+    "style": {"font_size": "12px", "page_margin": "1.2cm"}
+  }
+}
+```
+
+Reach for `style` overrides when a specific document needs a different
+look than the user's default — e.g., a wide-table document that benefits
+from a smaller font, or a print-targeted document on US Letter rather
+than A4. For persistent preferences, edit the config file instead.
+
 ## Mermaid scale hint
 
 Mermaid diagrams can overflow the PDF page when they are dense. To
@@ -213,11 +263,12 @@ diagram does not fit; most diagrams render correctly at 1.0.
 
 ## Security notes
 
-- vellum invokes three external binaries: `prince` (HTML to PDF),
-  `node` (KaTeX math rendering), and `mmdc` (Mermaid diagrams). All
-  rendering happens locally; no data is sent to external services.
-- Prince's JavaScript engine is not enabled by default, so arbitrary
-  JS in HTML will not execute during typesetting.
+- vellum invokes three external binaries: the renderer (`weasyprint`
+  by default, optionally `prince`), `node` (KaTeX math rendering), and
+  `mmdc` (Mermaid diagrams). All rendering happens locally; no data is
+  sent to external services.
+- Neither renderer executes JavaScript from the input HTML during
+  typesetting (Prince's JS engine is off by default; WeasyPrint has none).
 - KaTeX runs in `throwOnError: false` mode, so malformed math
   expressions render as an error span rather than crashing the build.
 - Mermaid and math rendering are performed server-side before Prince

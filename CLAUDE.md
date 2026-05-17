@@ -1,6 +1,6 @@
 # vellum
 
-Document preparation MCP server — Markdown to PDF via goldmark + Prince.
+Document preparation MCP server — Markdown to PDF via goldmark + WeasyPrint (Prince opt-in).
 
 ## Architecture
 
@@ -12,7 +12,9 @@ Go binary with two modes:
 
 ```
 Markdown → goldmark (GFM + extensions) → HTML fragment
-  → wrap in HTML template (embedded CSS) → Prince → PDF
+  → wrap in HTML template (embedded CSS)
+  → WeasyPrint (default, BSD-3) or Prince (opt-in, proprietary)
+  → PDF
 ```
 
 ### Key packages
@@ -20,15 +22,17 @@ Markdown → goldmark (GFM + extensions) → HTML fragment
 | Package | Role |
 |---------|------|
 | `cmd/vellum/` | CLI entry point |
-| `convert/` | Markdown → PDF conversion pipeline |
+| `convert/` | Markdown → PDF conversion pipeline; `Backend` interface + WeasyPrint/Prince implementations |
 | `convert/extensions/` | Custom goldmark extensions (Mermaid, etc.) |
+| `config/` | User configuration loaded from `~/.config/vellum/config.yaml` |
 | `mcp/` | MCP server setup and tool registration |
 | `embed/` | Embedded assets (CSS, HTML templates) |
 
 ### External dependencies
 
-- **Prince** — HTML → PDF (must be on PATH)
-- **mmdc** — Mermaid CLI for diagram SVG rendering (optional, on PATH)
+- **WeasyPrint** (default) — HTML → PDF, BSD-3 (must be on PATH; `brew install weasyprint`)
+- **Prince** (opt-in via `backend: prince`) — HTML → PDF, proprietary (must be on PATH)
+- **mmdc** — Mermaid CLI for diagram rendering (optional, on PATH)
 
 ## Delivery
 

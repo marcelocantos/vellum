@@ -11,12 +11,13 @@ import (
 	"strings"
 
 	"github.com/marcelocantos/vellum/clipboard"
+	"github.com/marcelocantos/vellum/config"
 	"github.com/marcelocantos/vellum/convert"
 	"github.com/marcelocantos/vellum/docs"
 	vellummcp "github.com/marcelocantos/vellum/mcp"
 )
 
-const version = "0.3.0"
+const version = "0.4.0"
 
 func main() {
 	if err := run(); err != nil {
@@ -35,6 +36,7 @@ func run() error {
 		mcpMode       bool
 		toClipboard   bool
 		output        string
+		backend       string
 		positional    []string
 	)
 
@@ -62,6 +64,14 @@ func run() error {
 			output = a[len("-o="):]
 		case strings.HasPrefix(a, "--output="):
 			output = a[len("--output="):]
+		case a == "--backend":
+			if i+1 >= len(args) {
+				return fmt.Errorf("%s requires an argument", a)
+			}
+			i++
+			backend = args[i]
+		case strings.HasPrefix(a, "--backend="):
+			backend = a[len("--backend="):]
 		case strings.HasPrefix(a, "-"):
 			return fmt.Errorf("unknown flag: %s", a)
 		default:
@@ -90,17 +100,27 @@ func run() error {
 	}
 
 	if mcpMode {
-		return runMCP()
+		return runMCP(backend)
 	}
 
 	if toClipboard {
-		return runClipboard(positional, output)
+		return runClipboard(positional, output, backend)
 	}
 
-	return runCLI(positional, output)
+	return runCLI(positional, output, backend)
 }
 
-func runClipboard(args []string, output string) error {
+// effectiveBackend resolves the backend name as: CLI flag > config > default.
+// Returns the empty string when nothing is set so callers can use it directly
+// — convert.ResolveBackend treats "" as DefaultBackend.
+func effectiveBackend(flag, fromConfig string) string {
+	if flag != "" {
+		return flag
+	}
+	return fromConfig
+}
+
+func runClipboard(args []string, output, backendFlag string) error {
 	if len(args) == 0 {
 		printUsage()
 		return fmt.Errorf("no input files specified")
@@ -112,13 +132,19 @@ func runClipboard(args []string, output string) error {
 		return fmt.Errorf("--to-clipboard and -o are mutually exclusive")
 	}
 
+	cfg, err := config.Load()
+	if err != nil {
+		return err
+	}
+	backendName := effectiveBackend(backendFlag, cfg.Backend)
+
 	ctx := context.Background()
 	absInput, err := filepath.Abs(args[0])
 	if err != nil {
 		return err
 	}
 
-	html, err := convert.RenderFile(ctx, absInput, nil)
+	html, err := convert.RenderFile(ctx, absInput, &convert.Options{Style: cfg.Style, Backend: backendName})
 	if err != nil {
 		return fmt.Errorf("%s: %w", args[0], err)
 	}
@@ -156,7 +182,7 @@ Requires Prince (https://www.princexml.com/) on PATH.
 `)
 }
 
-func runCLI(args []string, output string) error {
+func runCLI(args []string, output, backendFlag string) error {
 	if len(args) == 0 {
 		printUsage()
 		return fmt.Errorf("no input files specified")
@@ -166,9 +192,17 @@ func runCLI(args []string, output string) error {
 		return fmt.Errorf("-o flag is only allowed with a single input file")
 	}
 
-	if err := convert.CheckDeps(); err != nil {
+	cfg, err := config.Load()
+	if err != nil {
 		return err
 	}
+	backendName := effectiveBackend(backendFlag, cfg.Backend)
+
+	if err := convert.CheckDeps(backendName); err != nil {
+		return err
+	}
+
+	opts := &convert.Options{Style: cfg.Style, Backend: backendName}
 
 	ctx := context.Background()
 
@@ -188,7 +222,7 @@ func runCLI(args []string, output string) error {
 			}
 		}
 
-		if err := convert.Convert(ctx, absInput, outputPath, nil); err != nil {
+		if err := convert.Convert(ctx, absInput, outputPath, opts); err != nil {
 			return fmt.Errorf("%s: %w", inputPath, err)
 		}
 
@@ -198,8 +232,16 @@ func runCLI(args []string, output string) error {
 	return nil
 }
 
-func runMCP() error {
-	if err := convert.CheckDeps(); err != nil {
+func runMCP(backendFlag string) error {
+	cfg, err := config.Load()
+	if err != nil {
+		return err
+	}
+	// For the MCP server's dep check, use the configured default backend.
+	// Per-call backend overrides (set via MCP tool input) still work — the
+	// per-call value just becomes a runtime require, not a startup gate.
+	backendName := effectiveBackend(backendFlag, cfg.Backend)
+	if err := convert.CheckDeps(backendName); err != nil {
 		return err
 	}
 	return vellummcp.Serve(context.Background(), version)

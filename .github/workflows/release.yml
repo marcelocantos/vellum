@@ -102,12 +102,20 @@ jobs:
           formula_includes: |
             depends_on "mermaid-cli"
             depends_on "node"
+            depends_on "weasyprint"
 
             def caveats
               <<~EOS
-                vellum requires Prince (HTML→PDF) which is not in Homebrew core.
-                Install via cask:
-                  brew install --cask prince
-                or download from https://www.princexml.com/download/
+                vellum is installed with WeasyPrint as the default renderer (BSD-3, open-source).
+
+                To opt into Prince (proprietary, slightly better typography), either:
+                  - install it from https://www.princexml.com/download/ (free with watermark
+                    for non-commercial use; commercial licence required otherwise), and
+                  - set "backend: prince" in ~/.config/vellum/config.yaml, or pass
+                    --backend prince on the CLI, or supply "backend": "prince" in an
+                    MCP tool call.
+
+                KaTeX is needed for math rendering:
+                  npm install -g katex
               EOS
             end

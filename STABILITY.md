@@ -21,7 +21,7 @@ change between minor releases — though in practice we aim to minimise churn.
 
 ## Interaction surface catalogue
 
-Snapshot as of **v0.3.0**. Annotations: **stable** (unlikely to change),
+Snapshot as of **v0.4.0**. Annotations: **stable** (unlikely to change),
 **needs review** (functional but may be refined), **fluid** (actively
 evolving).
 
@@ -34,19 +34,23 @@ Package paths are under `github.com/marcelocantos/vellum/…`.
 - `func Convert(ctx context.Context, inputPath, outputPath string, opts *Options) error` — **stable**
 - `func RenderFile(ctx context.Context, inputPath string, opts *Options) (string, error)` — **needs review** (added in v0.2.0 for clipboard delivery; returns the post-pipeline HTML; consumers other than `convert_to_clipboard` may shake out a more ergonomic shape)
 - `func Render(ctx context.Context, src []byte, opts *Options) (string, error)` — **needs review** (same)
-- `type Options struct { CSS string; HeadExtra string }` — **needs review** (`HeadExtra` is a leaky abstraction; may fold into a richer options type)
+- `type Options struct { CSS string; HeadExtra string; Style *Style; Backend string }` — **needs review** (Style + Backend added in v0.4.0; CSS + HeadExtra preserved as escape hatches)
+- `type Style struct { ... }` — **needs review** (13-field customisation surface added in v0.4.0; field set likely to grow before 1.0)
+- `type Backend interface` — **needs review** (added in v0.4.0; the surface is small but extension shape may evolve)
+- `func ResolveBackend(name string) (Backend, error)` — **needs review** (same)
+- `const BackendWeasyPrint, BackendPrince, DefaultBackend` — **needs review** (default name may change pre-1.0)
 - `type Dep struct { Name, Purpose, Install string }` — **stable**
-- `func RequiredDeps() []Dep` — **stable**
-- `func CheckDeps() error` — **stable**
+- `func RequiredDeps(backendName string) []Dep` — **stable** (signature changed in v0.4.0 to take backend name)
+- `func CheckDeps(backendName string) error` — **stable** (signature changed in v0.4.0 to take backend name)
 
 **`mcp`** — the stdio MCP server.
 
 - `func Serve(ctx context.Context, version string) error` — **stable**
 - `type ConvertFile struct { Input, Output string }` — **stable** (mirrors the JSON schema)
-- `type ConvertInput struct { Files []ConvertFile }` — **stable**
+- `type ConvertInput struct { Files []ConvertFile; Style *convert.Style; Backend string }` — **needs review** (Style + Backend added in v0.4.0)
 - `type ConvertOutput struct { Converted, Errors []string }` — **stable**
-- `type ClipboardInput struct { Input string }` — **needs review** (added in v0.2.0; macOS-only tool, may grow fields once non-macOS support is decided)
-- `type ClipboardOutput struct { Input string }` — **needs review** (same; currently echoes the input for confirmation)
+- `type ClipboardInput struct { Input string; Style *convert.Style; Backend string }` — **needs review** (Style + Backend added in v0.4.0; macOS-only tool, may grow fields once non-macOS support is decided)
+- `type ClipboardOutput struct { Input string }` — **needs review** (currently echoes the input for confirmation)
 
 **`clipboard`** — system-clipboard delivery (added in v0.2.0).
 
@@ -62,6 +66,12 @@ Package paths are under `github.com/marcelocantos/vellum/…`.
 **`docs`** — embedded documentation.
 
 - `var AgentGuide string` — **stable** (embedded text of `docs/agents-guide.md`)
+
+**`config`** — on-disk configuration (added in v0.4.0).
+
+- `type Config struct { Backend string; Style *convert.Style }` — **needs review**
+- `func Path() (string, error)` — **needs review** (XDG-aware path resolution)
+- `func Load() (*Config, error)` — **needs review** (missing file returns empty Config, not error)
 
 ### CLI surface
 
@@ -85,6 +95,8 @@ Binary: `vellum`.
 | `--output <path>`| Same as `-o`                                        | stable    |
 | `-o=<path>`      | Same as `-o` (inline form)                          | stable    |
 | `--output=<path>`| Same as `-o` (inline form)                          | stable    |
+| `--backend <name>` | Renderer: `weasyprint` (default) or `prince` (added in v0.4.0) | needs review |
+| `--backend=<name>` | Same as `--backend <name>` (inline form)          | needs review |
 
 **Positional arguments**
 
@@ -113,7 +125,7 @@ Markdown → system clipboard, macOS only, added in v0.2.0).
 
 **Tool: `convert`**
 
-- **Description**: "Convert one or more Markdown files to PDF. Input paths must be absolute. Each file is rendered via goldmark (GFM + extensions), with server-side KaTeX math and Mermaid diagrams, then typeset by Prince. Returns the list of written PDFs and any errors."
+- **Description**: "Convert one or more Markdown files to PDF. Input paths must be absolute. Each file is rendered via goldmark (GFM + extensions), with server-side KaTeX math and Mermaid diagrams, then typeset by the selected backend (WeasyPrint by default, Prince opt-in). Returns the list of written PDFs and any errors. Optional 'style' and 'backend' fields override the user's config file for this call only."
 - **Input schema**: **stable**
 
   ```json
@@ -189,7 +201,9 @@ not listed here is either GFM (via goldmark's GFM extension) or not supported.
 
 Required external binaries on `PATH`:
 
-- `prince` — Prince 16.2 or later. **stable**.
+- **One renderer backend** (selectable via config or per-call):
+  - `weasyprint` — WeasyPrint 60 or later. **stable** (default).
+  - `prince` — Prince 16.2 or later. **stable** (opt-in via `backend: prince`).
 - `node` — any recent Node.js. **stable**.
 - `mmdc` — mermaid-cli. **stable**.
 
@@ -242,9 +256,9 @@ Features and changes explicitly deferred past 1.0.
   release and introduces a security-update treadmill. Stays external.
 - **Alternative output formats.** Markdown → HTML and Markdown → EPUB
   are plausible but not in scope. 1.0 is Markdown → PDF.
-- **Additional renderers.** No plans to add WeasyPrint, wkhtmltopdf, or
-  headless Chrome as alternative backends. Prince is the single
-  typesetting pipeline.
+- **Additional renderers.** vellum now supports WeasyPrint (default) and
+  Prince (opt-in). No plans to add wkhtmltopdf (deprecated/abandoned) or
+  headless Chrome (Chromium footprint is prohibitive for a CLI tool).
 - **Plugin architecture.** No goldmark extension plugin API, no custom
   preprocessor registration. Users who need this can fork.
 - **Non-squash merges.** Release history is linear by policy. Not a

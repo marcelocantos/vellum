@@ -1,4 +1,4 @@
-schema_version: 3
+schema_version: 4
 targets:
   T1:
     name: Vellum exposes a working MCP server over stdio
@@ -19,6 +19,23 @@ targets:
     origin: handover-doc-roadmap
     discovered: 2026-04-11
     achieved: 2026-04-11
+  T10:
+    name: Mermaid render failures surface loudly instead of silently falling back to source-as-code
+    status: identified
+    value: 0.0
+    cost: 0.0
+    acceptance:
+    - When `mmdc` fails on a diagram (any reason), the error is logged to stderr with the diagram index and the underlying error text
+    - MCP `convert` tool propagates per-diagram render failures into the per-file `errors` array, not just success
+    - CLI exits non-zero if any Mermaid diagram failed (or, alternatively, prints a clear warning summary to stderr)
+    - The source-as-code fallback in the PDF is retained (so the document still renders), but is no longer the *only* signal
+    context: 'Today, `convert/mermaid.go:69-71` swallows any `mmdc` error and substitutes `<pre class="mermaid-error">{source}</pre>`. The PDF still renders, but the user can''t tell from the output whether the diagram pipeline ran successfully or every single diagram fell through to the source-block fallback. Witnessed in this session: a Chrome-version drift caused every Mermaid block in `test/sample.md` to fall through silently, and only direct HTML inspection revealed the failure. Loud failure mode would have caught it immediately.'
+    tags:
+    - ux
+    - reliability
+    - mermaid
+    origin: manual
+    discovered: 2026-05-15
   T2:
     name: Project has a README covering install, usage, and MCP configuration
     status: achieved
@@ -112,8 +129,6 @@ targets:
     status: achieved
     value: 0.0
     cost: 0.0
-    showcase: true
-    demonstration: 'User pasted vellum-rendered Markdown (cert-renewal instructions sample) into Slack, Gmail, TextEdit, and VS Code after the v2 fix. Slack and Gmail rendered with full formatting (bold, numbered list, blockquote, code block, emoji); TextEdit accepted RTF cleanly; VS Code took plain text without the "unusual line terminators" dialog. First showcase round revealed two regressions (Slack rejected full HTML doc; VS Code flagged U+2028/U+2029); both fixed in c4ca2c1 and re-tested green. Merged as PR #7.'
     acceptance:
     - '`vellum convert <input> --to-clipboard` (and equivalent MCP tool invocation) places the converted content on the system clipboard with at least RTF, HTML, and plain-text representations set in a single atomic transaction.'
     - Pasting into Slack, Mail, and TextEdit immediately after the command returns produces correctly formatted output (bold, lists, blockquotes, links) without raw RTF source leaking through.
@@ -218,3 +233,22 @@ targets:
     origin: forked-from spyder PATH-bug investigation in ~/think on 2026-04-27
     discovered: 2026-04-27
     achieved: 2026-04-27
+  T9:
+    name: Default Markdown→PDF rendering uses an open-source backend, with Prince as an opt-in upgrade
+    status: achieved
+    value: 0.0
+    cost: 0.0
+    acceptance:
+    - '`vellum convert` on a fresh install with no Prince present produces a PDF (using WeasyPrint by default)'
+    - 'User can opt into Prince via `~/.config/vellum/config.yaml` (`backend: prince`), MCP per-call `style.backend`, or CLI `--backend prince`'
+    - Homebrew formula declares `weasyprint` as a runtime dep; Prince remains an optional install documented in README
+    - '`THIRD_PARTY_NOTICES.md` and `STABILITY.md` reflect the renderer-default change'
+    - End-to-end test suite parameterized over both backends; each test skips if its backend's binary is missing
+    context: 'User cannot use Prince at work (large bank; absent a corporate license purchase, the proprietary-software reputational risk is a non-starter). Vellum''s default install path must be fully open-source so it''s safe to use in corporate contexts. Prince remains genuinely better for some typography work, so it stays as an opt-in for users who have a commercial Prince license. WeasyPrint (BSD-3) is the chosen open-source default: same HTML-in contract, decent CSS Paged Media support, smoke-tested against vellum''s existing github.css with no document-breaking issues.'
+    tags:
+    - renderer
+    - licensing
+    - feature
+    origin: manual
+    discovered: 2026-05-15
+    achieved: 2026-05-17

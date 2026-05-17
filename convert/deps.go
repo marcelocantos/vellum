@@ -16,44 +16,41 @@ type Dep struct {
 	Install string // install command or URL
 }
 
-// RequiredDeps returns the list of external binaries vellum needs at runtime.
+// RequiredDeps returns the list of external binaries vellum needs at runtime
+// when the given backend is selected. An empty backendName resolves to the
+// default backend.
 //
 // Note: the katex package is loaded by node via require("katex") from an
 // embedded script (see convert/katex.go), so there is no standalone katex
 // binary to look up. If node is present but katex cannot be resolved, the
 // underlying conversion will fail at runtime with a node error. Install
 // katex globally with `npm install -g katex`.
-func RequiredDeps() []Dep {
-	return []Dep{
-		{
-			Name:    "prince",
-			Purpose: "HTML to PDF typesetting",
-			Install: "https://www.princexml.com/download/",
-		},
-		{
+func RequiredDeps(backendName string) []Dep {
+	deps := []Dep{}
+	if backend, err := ResolveBackend(backendName); err == nil {
+		deps = append(deps, backend.Dep())
+	}
+	deps = append(deps,
+		Dep{
 			Name:    "node",
 			Purpose: "runs the KaTeX math renderer (requires global katex package: npm install -g katex)",
 			Install: "https://nodejs.org/ (then: npm install -g katex)",
 		},
-		{
+		Dep{
 			Name:    "mmdc",
 			Purpose: "Mermaid diagram rendering",
 			Install: "npm install -g @mermaid-js/mermaid-cli",
 		},
-	}
+	)
+	return deps
 }
 
-// CheckDeps returns an error if any required dep is missing from PATH. The
-// error message lists every missing dep with its install instructions.
-//
-// The Homebrew formula declares node and mermaid-cli as dependencies and
-// pins PATH in its launchd service block, which covers the brew-services
-// install path. CheckDeps is the safety net for everything else: direct CLI
-// invocation outside Homebrew, manual installs, broken/incomplete setups,
-// and Prince (which has no Homebrew formula).
-func CheckDeps() error {
+// CheckDeps returns an error if any required dep for the selected backend is
+// missing from PATH. The error message lists every missing dep with its
+// install instructions.
+func CheckDeps(backendName string) error {
 	var missing []Dep
-	for _, d := range RequiredDeps() {
+	for _, d := range RequiredDeps(backendName) {
 		if _, err := exec.LookPath(d.Name); err != nil {
 			missing = append(missing, d)
 		}
