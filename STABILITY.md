@@ -21,7 +21,7 @@ change between minor releases — though in practice we aim to minimise churn.
 
 ## Interaction surface catalogue
 
-Snapshot as of **v0.4.0**. Annotations: **stable** (unlikely to change),
+Snapshot as of **v0.5.0**. Annotations: **stable** (unlikely to change),
 **needs review** (functional but may be refined), **fluid** (actively
 evolving).
 
@@ -52,10 +52,14 @@ Package paths are under `github.com/marcelocantos/vellum/…`.
 - `type ClipboardInput struct { Input string; Style *convert.Style; Backend string }` — **needs review** (Style + Backend added in v0.4.0; macOS-only tool, may grow fields once non-macOS support is decided)
 - `type ClipboardOutput struct { Input string }` — **needs review** (currently echoes the input for confirmation)
 
-**`clipboard`** — system-clipboard delivery (added in v0.2.0).
+**`clipboard`** — system-clipboard read/write (added in v0.2.0; reads added in v0.5.0).
 
 - `type Payload struct { HTML string }` — **needs review** (single-field today; RTF + plain text are derived; may grow explicit fields)
 - `func Write(p Payload) error` — **needs review** (macOS implementation only; non-macOS returns `ErrUnsupported`)
+- `func ReadRTF() ([]byte, error)` — **needs review** (added in v0.5.0; macOS only)
+- `func ReadHTML() ([]byte, error)` — **needs review** (same)
+- `func ReadRichText() (data []byte, format string, err error)` — **needs review** (RTF preferred, HTML fallback; format is "rtf"/"html"/"")
+- `const FormatRTF, FormatHTML` — **needs review**
 - `var ErrUnsupported error` — **stable**
 
 **`embed`** — compile-time assets.
@@ -72,6 +76,13 @@ Package paths are under `github.com/marcelocantos/vellum/…`.
 - `type Config struct { Backend string; Style *convert.Style }` — **needs review**
 - `func Path() (string, error)` — **needs review** (XDG-aware path resolution)
 - `func Load() (*Config, error)` — **needs review** (missing file returns empty Config, not error)
+
+**`importer`** — rich-text → Markdown via pandoc (added in v0.5.0).
+
+- `func ImportFile(ctx context.Context, inputPath, format string) (string, error)` — **needs review**
+- `func ImportBytes(ctx context.Context, data []byte, format string) (string, error)` — **needs review**
+- `func CheckDep() error` — **needs review** (lazy pandoc dependency check)
+- `var PandocDep struct { Name, Purpose, Install string }` — **needs review**
 
 ### CLI surface
 
@@ -98,6 +109,15 @@ Binary: `vellum`.
 | `--backend <name>` | Renderer: `weasyprint` (default) or `prince` (added in v0.4.0) | needs review |
 | `--backend=<name>` | Same as `--backend <name>` (inline form)          | needs review |
 
+**Subcommands**
+
+| Subcommand        | Purpose                                              | Stability    |
+|-------------------|------------------------------------------------------|--------------|
+| `vellum import <file>` | Read rich-text → Markdown (RTF, DOCX, HTML, ODT, EPUB, LaTeX, …, via pandoc). Added in v0.5.0. | needs review |
+| `vellum import --from-clipboard` | Read rich-text from system clipboard → Markdown (macOS only). Added in v0.5.0. | needs review |
+| `vellum import … -o <path>` | Write the Markdown to a file instead of stdout. Added in v0.5.0. | needs review |
+| `vellum import … --from <fmt>` | Override pandoc format autodetection. Added in v0.5.0. | needs review |
+
 **Positional arguments**
 
 - One or more input `.md` files. **stable**.
@@ -120,8 +140,11 @@ Binary: `vellum`.
 - Server info: `{ name: "vellum", version: <build version> }`. **stable**.
 - Protocol version: whatever the embedded `github.com/modelcontextprotocol/go-sdk` version negotiates. **needs review** (SDK is pre-1.x on its own track; bumping it may shift the minimum protocol version).
 
-**Tools**: `convert` (Markdown → PDF batch) and `convert_to_clipboard` (single
-Markdown → system clipboard, macOS only, added in v0.2.0).
+**Tools**: `convert` (Markdown → PDF batch), `convert_to_clipboard`
+(single Markdown → system clipboard, macOS only, added in v0.2.0),
+`convert_from_clipboard` (clipboard rich text → Markdown, macOS only,
+added in v0.5.0), and `import` (rich-text file → Markdown, added in
+v0.5.0).
 
 **Tool: `convert`**
 
@@ -206,6 +229,7 @@ Required external binaries on `PATH`:
   - `prince` — Prince 16.2 or later. **stable** (opt-in via `backend: prince`).
 - `node` — any recent Node.js. **stable**.
 - `mmdc` — mermaid-cli. **stable**.
+- `pandoc` — Pandoc 3.x. **needs review** (required for `vellum import` and the `convert_from_clipboard` / `import` MCP tools; lazily checked).
 
 Required Node package (installed globally):
 

@@ -141,9 +141,7 @@ func writePayload(p Payload) error {
 }
 
 // readPasteboardData returns the raw bytes for the given UTI on the
-// general pasteboard, or nil if the type is not present. It exists for
-// the round-trip test — production code does not need to read back what
-// it just wrote.
+// general pasteboard, or nil if the type is not present.
 func readPasteboardData(uti string) []byte {
 	cUTI := C.CString(uti)
 	defer C.free(unsafe.Pointer(cUTI))
@@ -154,4 +152,19 @@ func readPasteboardData(uti string) []byte {
 	}
 	defer C.free(unsafe.Pointer(ptr))
 	return C.GoBytes(unsafe.Pointer(ptr), n)
+}
+
+// readClipboard returns the clipboard data for the named [Format], or nil
+// if absent. macOS-specific UTI mapping happens here.
+func readClipboard(format string) ([]byte, error) {
+	var uti string
+	switch format {
+	case FormatRTF:
+		uti = "public.rtf"
+	case FormatHTML:
+		uti = "public.html"
+	default:
+		return nil, fmt.Errorf("clipboard: unknown format %q", format)
+	}
+	return readPasteboardData(uti), nil
 }

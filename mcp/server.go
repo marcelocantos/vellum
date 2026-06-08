@@ -17,6 +17,7 @@ import (
 	"github.com/marcelocantos/vellum/clipboard"
 	"github.com/marcelocantos/vellum/config"
 	"github.com/marcelocantos/vellum/convert"
+	"github.com/marcelocantos/vellum/importer"
 )
 
 // ConvertFile describes a single file to convert.
@@ -64,6 +65,18 @@ func Serve(ctx context.Context, version string) error {
 		Title:       "Convert Markdown to clipboard",
 		Description: "Render a single Markdown file and place RTF + HTML + plain-text representations on the system clipboard in a single atomic transaction. Designed for handing formatted content to rich-text composers (Slack, Mail, …) without the textutil+osascript dance. Returns when the underlying pasteboard has committed the data — there is no race window where a subsequent paste sees stale content. macOS only currently; other platforms return an unsupported error. Optional 'style' and 'backend' fields override the user's config file for this call only.",
 	}, makeClipboardHandler(baseStyle, baseBackend))
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "convert_from_clipboard",
+		Title:       "Convert clipboard rich text to Markdown",
+		Description: "Read the system clipboard's rich-text representation (RTF preferred, HTML fallback) and convert it to GitHub-Flavoured Markdown. Designed for ingesting content copied from rich-text apps (Word, Pages, Mail, Slack composer, browsers) into a Markdown-native working set. Returns the Markdown text directly — no file is written. macOS only currently; other platforms return an unsupported error. Requires pandoc on PATH.",
+	}, convertFromClipboardHandler)
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "import",
+		Title:       "Import a rich-text file to Markdown",
+		Description: "Read a rich-text file (RTF, DOCX, HTML, ODT, EPUB, LaTeX, and any other format pandoc accepts) and convert it to GitHub-Flavoured Markdown. Format is auto-detected from the file extension; pass an explicit 'format' field to override. If 'output' is supplied, the Markdown is written to that path; otherwise it's returned in the response. Requires pandoc on PATH.",
+	}, importHandler)
 
 	return server.Run(ctx, &mcp.StdioTransport{})
 }
@@ -159,6 +172,95 @@ func makeClipboardHandler(baseStyle *convert.Style, baseBackend string) func(con
 			Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("Copied %s to clipboard (RTF + HTML + plain text).", inputPath)}},
 		}, out, nil
 	}
+}
+
+// ImportInput is the input schema for the `import` tool.
+type ImportInput struct {
+	Input  string `json:"input" jsonschema:"absolute path to the rich-text file"`
+	Output string `json:"output,omitempty" jsonschema:"optional absolute path to write the Markdown to; when omitted, the Markdown is returned in the response"`
+	Format string `json:"format,omitempty" jsonschema:"input format override (e.g., rtf, docx, html, odt, epub, latex); defaults to pandoc's auto-detection from file extension"`
+}
+
+// ImportOutput is the structured output schema for the `import` tool.
+type ImportOutput struct {
+	Markdown string `json:"markdown,omitempty" jsonschema:"the Markdown text (present when output was not supplied)"`
+	Output   string `json:"output,omitempty" jsonschema:"the path the Markdown was written to (present when output was supplied)"`
+}
+
+// ClipboardImportOutput is the structured output schema for the
+// `convert_from_clipboard` tool.
+type ClipboardImportOutput struct {
+	Markdown string `json:"markdown" jsonschema:"the Markdown text extracted from the clipboard"`
+	Format   string `json:"format,omitempty" jsonschema:"the clipboard format that was read (\"rtf\" or \"html\")"`
+}
+
+func importHandler(ctx context.Context, _ *mcp.CallToolRequest, in ImportInput) (*mcp.CallToolResult, ImportOutput, error) {
+	var out ImportOutput
+
+	inputPath, err := resolveInput(in.Input)
+	if err != nil {
+		return errorResult(err), out, nil
+	}
+	if _, err := os.Stat(inputPath); err != nil {
+		return errorResult(err), out, nil
+	}
+	if err := importer.CheckDep(); err != nil {
+		return errorResult(err), out, nil
+	}
+
+	md, err := importer.ImportFile(ctx, inputPath, in.Format)
+	if err != nil {
+		return errorResult(err), out, nil
+	}
+
+	if in.Output != "" {
+		outputPath, err := filepath.Abs(in.Output)
+		if err != nil {
+			return errorResult(err), out, nil
+		}
+		if dir := filepath.Dir(outputPath); dir != "." {
+			if err := os.MkdirAll(dir, 0o755); err != nil {
+				return errorResult(err), out, nil
+			}
+		}
+		if err := os.WriteFile(outputPath, []byte(md), 0o644); err != nil {
+			return errorResult(err), out, nil
+		}
+		out.Output = outputPath
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("Imported %s → %s", inputPath, outputPath)}},
+		}, out, nil
+	}
+
+	out.Markdown = md
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{&mcp.TextContent{Text: md}},
+	}, out, nil
+}
+
+func convertFromClipboardHandler(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, ClipboardImportOutput, error) {
+	var out ClipboardImportOutput
+
+	if err := importer.CheckDep(); err != nil {
+		return errorResult(err), out, nil
+	}
+	data, format, err := clipboard.ReadRichText()
+	if err != nil {
+		return errorResult(err), out, nil
+	}
+	if len(data) == 0 {
+		return errorResult(fmt.Errorf("clipboard: no RTF or HTML content found")), out, nil
+	}
+
+	md, err := importer.ImportBytes(ctx, data, format)
+	if err != nil {
+		return errorResult(err), out, nil
+	}
+	out.Markdown = md
+	out.Format = format
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{&mcp.TextContent{Text: md}},
+	}, out, nil
 }
 
 func errorResult(err error) *mcp.CallToolResult {

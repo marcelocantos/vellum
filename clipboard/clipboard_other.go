@@ -8,3 +8,7 @@ package clipboard
 func writePayload(_ Payload) error {
 	return ErrUnsupported
 }
+
+func readClipboard(_ string) ([]byte, error) {
+	return nil, ErrUnsupported
+}
