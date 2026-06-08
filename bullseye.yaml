@@ -1,4 +1,4 @@
-schema_version: 4
+schema_version: 5
 targets:
   T1:
     name: Vellum exposes a working MCP server over stdio
@@ -36,6 +36,29 @@ targets:
     - mermaid
     origin: manual
     discovered: 2026-05-15
+  T11:
+    name: Vellum imports rich-text formats back to Markdown via `vellum import` and a `convert_from_clipboard` MCP tool
+    status: achieved
+    value: 0.0
+    cost: 0.0
+    acceptance:
+    - '`vellum import file.rtf` writes GFM Markdown to stdout (or to -o output)'
+    - '`vellum import --from-clipboard` reads the macOS clipboard''s RTF representation and writes GFM Markdown to stdout'
+    - '`vellum import` autodetects format from file extension and supports anything pandoc handles out of the box (rtf, docx, odt, html, epub, latex, …); `--from <fmt>` overrides'
+    - MCP tool `convert_from_clipboard` reads the clipboard and returns Markdown text (no output file)
+    - MCP tool `import` (or equivalent) takes a file path and optional output path and returns Markdown text
+    - Pandoc is documented as a runtime dependency (Homebrew formula `depends_on "pandoc"`)
+    - End-to-end test renders a small RTF fixture through `vellum import` and asserts key fragments in the Markdown output
+    - Clipboard read on non-macOS returns a clear `unsupported` error (symmetric with the existing clipboard write)
+    context: 'Natural complement to v0.2.0''s `convert_to_clipboard` direction. The dominant use case is: user copies content from a rich-text app (Word, Pages, Mail, Slack composer, browser) and wants it as Markdown in their LLM working set. The CLI is for scripted import flows; the MCP `convert_from_clipboard` tool is the dominant usage, matching the user''s stated intent. Pandoc is the only mature engine that handles RTF → GFM cleanly (alternatives — textutil + html-to-markdown, or a pure-Go RTF parser — are either lossy on lists/tables or non-existent), and using pandoc opens the door to docx/odt/html/epub for free.'
+    tags:
+    - feature
+    - import
+    - clipboard
+    - mcp
+    origin: manual
+    discovered: 2026-06-09
+    achieved: 2026-06-09
   T2:
     name: Project has a README covering install, usage, and MCP configuration
     status: achieved

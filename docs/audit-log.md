@@ -12,9 +12,18 @@ maintenance activities. Append-only — newest entries at the bottom.
   - Bundled Chromium for `mmdc` (STABILITY.md out-of-scope — too much footprint)
   - `vellum doctor` one-shot dependency installer (STABILITY.md gap)
 
+## 2026-05-17 — /release v0.5.0
+
+- **Commit**: `pending` (rewritten to the squash-merge SHA in a follow-up bundled with the next release, per the established pattern).
+- **Outcome**: Released v0.5.0. Adds the inverse direction: rich-text → Markdown (🎯T11). New `vellum import <file>` subcommand handles RTF, DOCX, HTML, ODT, EPUB, LaTeX and anything else pandoc supports out of the box; `vellum import --from-clipboard` ingests the system clipboard's rich-text representation (RTF preferred, HTML fallback) on macOS. Two new MCP tools — `convert_from_clipboard` (the dominant usage per the user's framing) and `import` (file-based, with optional `output` write path) — symmetric to the existing `convert_to_clipboard` and `convert` tools. New `importer` package shells to pandoc; pandoc is documented as a runtime dep and added to the Homebrew formula via `depends_on "pandoc"`. New `clipboard` reads: `ReadRTF`, `ReadHTML`, `ReadRichText`. Dependency check is **lazy** — PDF-only users never get a pandoc error at startup; the check fires only inside `vellum import` and the import MCP tools. STABILITY.md re-baselined to v0.5.0 because of the new surface; pre-1.0 still. Drive-by: rewrites the v0.4.0 audit-log entry's `pending` hash to `a4aa81b`, consolidating the typical post-release pending-hash-rewrite PR into this release's PR per the one-PR-at-a-time policy.
+- **Deferred**:
+  - Linux/Windows clipboard read (paired with the parked 🎯T7.1 write).
+  - 🎯T10 *Mermaid render failures surface loudly* — still open.
+  - CI Node.js 20 deprecation (actions/checkout@v4, actions/setup-go@v5) — noted in v0.4.0; still not actioned.
+
 ## 2026-05-17 — /release v0.4.0
 
-- **Commit**: `pending` (will be rewritten to the squash-merge SHA in a follow-up PR after merge, per the v0.2.0/v0.3.0 pattern).
+- **Commit**: `a4aa81b`
 - **Outcome**: Released v0.4.0. Replaces Prince with WeasyPrint as the default renderer backend (🎯T9: open-source default + Prince opt-in; corporate-licensing reputational risk drove the flip — Prince remains available via `backend: prince`). Adds a `convert.Backend` interface with two implementations, a `config` package reading `~/.config/vellum/config.yaml`, and a 13-field `convert.Style` customisation surface (`font_size`, `line_height`, `font_family`, `code_font_family`, `page_size`, `page_margin`, `page_first_top_margin`, `page_numbers`, `running_head`, `bookmarks` default on, `hyphenate`, `lang`, `pdfa`). CLI gains `--backend`; MCP `convert` and `convert_to_clipboard` tools gain optional `style` and `backend` per-call overrides. Fixes long-standing relative-path image bug by passing `--baseurl` / `--base-url` to the renderer. Default `font-size` reduced to 14px and `@page margin` to 1cm for more usable horizontal space. Tests parameterized across both backends. Homebrew formula now `depends_on "weasyprint"`; caveats rewritten to position Prince as opt-in. STABILITY.md re-baselined to v0.4.0 because of the new `Style`/`Backend`/`Config` surface; pre-1.0 still. Release-workflow risk: release.yml's homebrew block grew (added weasyprint dep + rewrote caveats) — homebrew-releaser has handled multi-line `install:` and `formula_includes:` before (v0.3.0 introduced both), so direct release without an rc tag should be fine, but watch the homebrew job on first run.
 - **Deferred**:
   - 🎯T10 *Mermaid render failures surface loudly* — filed this session; the silent-fallback-to-source-as-code is the recurring symptom of Chromium-version drift in mmdc. Not blocking the release.

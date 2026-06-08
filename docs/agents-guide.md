@@ -1,9 +1,16 @@
 # vellum agent guide
 
-vellum is a Markdown-to-PDF tool that renders GitHub-flavoured Markdown
-(with KaTeX math and Mermaid diagrams) to typeset PDFs via WeasyPrint
-(default, BSD-3) or Prince (opt-in, proprietary). It runs either as a
-command-line tool or as an MCP (Model Context Protocol) server over stdio.
+vellum has two directions:
+
+1. **Markdown → PDF.** GitHub-flavoured Markdown (with KaTeX math and
+   Mermaid diagrams) is typeset to PDF via WeasyPrint (default, BSD-3)
+   or Prince (opt-in, proprietary).
+2. **Rich text → Markdown.** RTF, DOCX, HTML, ODT, EPUB, LaTeX, and
+   anything else pandoc supports is converted back to GitHub-Flavoured
+   Markdown via pandoc. Source can be a file or the system clipboard.
+
+Both directions run as either a command-line tool or as MCP (Model
+Context Protocol) tools over stdio.
 
 ## Installation
 
@@ -34,6 +41,10 @@ must succeed before vellum is usable — do not stop after `brew install`.**
    brew install node
    npm install -g katex
    brew install mermaid-cli
+
+   # Pandoc for the inverse direction (rich text → Markdown via
+   # `vellum import` and the `convert_from_clipboard` MCP tool).
+   brew install pandoc
    ```
 
    `mmdc` requires a specific Chromium version on first run. If it
@@ -191,6 +202,62 @@ call.
 parked (see 🎯T7.1) — pick it up when there's concrete demand. On
 non-macOS platforms the tool returns an `unsupported` error rather
 than failing silently.
+
+### `convert_from_clipboard` — clipboard rich text → Markdown
+
+Read the system clipboard's rich-text content (RTF preferred, HTML
+fallback) and return GitHub-Flavoured Markdown. This is the dominant
+flow for ingesting content copied from Word, Pages, Mail, Slack's
+composer, or a browser into a Markdown-native working set.
+
+- `convert_from_clipboard({})` — no input fields
+
+Response:
+
+```json
+{ "markdown": "…GFM text…", "format": "rtf" }
+```
+
+`format` is `"rtf"` or `"html"` depending on which representation the
+clipboard provided. macOS only currently; other platforms return an
+unsupported error.
+
+### `import` — rich-text file → Markdown
+
+Read a rich-text file from disk and convert it to GitHub-Flavoured
+Markdown. Pandoc handles RTF, DOCX, HTML, ODT, EPUB, LaTeX, and every
+other format it supports out of the box; format is auto-detected from
+the file extension.
+
+- `import({ input, output?, format? })`
+  - `input` — absolute path to the file (required)
+  - `output` — absolute path to write Markdown to (optional; when
+    omitted, the Markdown is returned inline)
+  - `format` — explicit format hint (e.g., `"rtf"`, `"docx"`); only
+    needed when the file extension is missing or wrong
+
+Example call:
+
+```json
+{
+  "name": "import",
+  "arguments": { "input": "/abs/path/to/doc.docx" }
+}
+```
+
+Response when `output` is omitted:
+
+```json
+{ "markdown": "…GFM text…" }
+```
+
+Response when `output` is supplied:
+
+```json
+{ "output": "/abs/path/to/doc.md" }
+```
+
+Both `convert_from_clipboard` and `import` require `pandoc` on `PATH`.
 
 ## Input rules
 

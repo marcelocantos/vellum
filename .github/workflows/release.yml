@@ -102,6 +102,7 @@ jobs:
           formula_includes: |
             depends_on "mermaid-cli"
             depends_on "node"
+            depends_on "pandoc"
             depends_on "weasyprint"
 
             def caveats
@@ -117,5 +118,9 @@ jobs:
 
                 KaTeX is needed for math rendering:
                   npm install -g katex
+
+                Pandoc handles the inverse direction (rich-text → Markdown via
+                `vellum import` and the `convert_from_clipboard` MCP tool); it is
+                included as a dependency.
               EOS
             end
