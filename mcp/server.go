@@ -63,7 +63,7 @@ func Serve(ctx context.Context, version string) error {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "convert_to_clipboard",
 		Title:       "Convert Markdown to clipboard",
-		Description: "Render a single Markdown file and place RTF + HTML + plain-text representations on the system clipboard in a single atomic transaction. Designed for handing formatted content to rich-text composers (Slack, Mail, …) without the textutil+osascript dance. Returns when the underlying pasteboard has committed the data — there is no race window where a subsequent paste sees stale content. macOS only currently; other platforms return an unsupported error. Optional 'style' and 'backend' fields override the user's config file for this call only.",
+		Description: "Render Markdown and place RTF + HTML + plain-text representations on the system clipboard in a single atomic transaction. Designed for handing formatted content to rich-text composers (Slack, Mail, Teams, …) without the textutil+osascript dance. Accepts either 'input' (absolute path to a .md file) or 'content' (raw Markdown text) — exactly one is required. Prefer 'content' when the agent already has the text and does not need a temp file. Returns when the underlying pasteboard has committed the data — there is no race window where a subsequent paste sees stale content. macOS only currently; other platforms return an unsupported error. Optional 'style' and 'backend' fields override the user's config file for this call only.",
 	}, makeClipboardHandler(baseStyle, baseBackend))
 
 	mcp.AddTool(server, &mcp.Tool{
@@ -132,27 +132,29 @@ func makeConvertHandler(baseStyle *convert.Style, baseBackend string) func(conte
 }
 
 // ClipboardInput is the input schema for the convert_to_clipboard tool.
+// Exactly one of Input or Content must be set.
 type ClipboardInput struct {
-	Input   string         `json:"input" jsonschema:"absolute path to a .md file"`
+	Input   string         `json:"input,omitempty" jsonschema:"absolute path to a .md file (mutually exclusive with content)"`
+	Content string         `json:"content,omitempty" jsonschema:"raw Markdown text to render (mutually exclusive with input); preferred when the agent already has the text and does not want to write a temp file"`
 	Style   *convert.Style `json:"style,omitempty" jsonschema:"per-call style overrides; each field overlays the corresponding config-file value"`
 	Backend string         `json:"backend,omitempty" jsonschema:"renderer backend for this call: \"weasyprint\" (default) or \"prince\"; empty falls through to the config file"`
 }
 
 // ClipboardOutput is the structured output schema for convert_to_clipboard.
 type ClipboardOutput struct {
-	Input string `json:"input" jsonschema:"the input path that was rendered"`
+	Input   string `json:"input,omitempty" jsonschema:"the input path that was rendered (when input was used)"`
+	Source  string `json:"source,omitempty" jsonschema:"\"file\" or \"content\" depending on which input form was used"`
 }
 
 func makeClipboardHandler(baseStyle *convert.Style, baseBackend string) func(context.Context, *mcp.CallToolRequest, ClipboardInput) (*mcp.CallToolResult, ClipboardOutput, error) {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, in ClipboardInput) (*mcp.CallToolResult, ClipboardOutput, error) {
-		out := ClipboardOutput{Input: in.Input}
+		var out ClipboardOutput
 
-		inputPath, err := resolveInput(in.Input)
-		if err != nil {
-			return errorResult(err), out, nil
-		}
-		if _, err := os.Stat(inputPath); err != nil {
-			return errorResult(err), out, nil
+		hasInput := strings.TrimSpace(in.Input) != ""
+		hasContent := in.Content != ""
+		if hasInput == hasContent {
+			// both set or both empty
+			return errorResult(fmt.Errorf("convert_to_clipboard: provide exactly one of 'input' (file path) or 'content' (raw Markdown)")), out, nil
 		}
 
 		backend := in.Backend
@@ -160,7 +162,29 @@ func makeClipboardHandler(baseStyle *convert.Style, baseBackend string) func(con
 			backend = baseBackend
 		}
 		opts := &convert.Options{Style: in.Style.OverlayOn(baseStyle), Backend: backend}
-		html, err := convert.RenderFile(ctx, inputPath, opts)
+
+		var (
+			html string
+			err  error
+			msg  string
+		)
+		if hasContent {
+			out.Source = "content"
+			html, err = convert.Render(ctx, []byte(in.Content), opts)
+			msg = "Copied Markdown content to clipboard (RTF + HTML + plain text)."
+		} else {
+			out.Source = "file"
+			inputPath, rerr := resolveInput(in.Input)
+			if rerr != nil {
+				return errorResult(rerr), out, nil
+			}
+			if _, err := os.Stat(inputPath); err != nil {
+				return errorResult(err), out, nil
+			}
+			out.Input = inputPath
+			html, err = convert.RenderFile(ctx, inputPath, opts)
+			msg = fmt.Sprintf("Copied %s to clipboard (RTF + HTML + plain text).", inputPath)
+		}
 		if err != nil {
 			return errorResult(err), out, nil
 		}
@@ -169,7 +193,7 @@ func makeClipboardHandler(baseStyle *convert.Style, baseBackend string) func(con
 		}
 
 		return &mcp.CallToolResult{
-			Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("Copied %s to clipboard (RTF + HTML + plain text).", inputPath)}},
+			Content: []mcp.Content{&mcp.TextContent{Text: msg}},
 		}, out, nil
 	}
 }

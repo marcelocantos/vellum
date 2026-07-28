@@ -119,7 +119,8 @@ easier to consume programmatically.
 
 ## Tool schema
 
-The MCP server exposes two tools:
+The MCP server exposes four tools (`convert`, `convert_to_clipboard`,
+`convert_from_clipboard`, `import`):
 
 ### `convert` — Markdown → PDF (batch)
 
@@ -156,17 +157,31 @@ Response shape:
 
 ### `convert_to_clipboard` — Markdown → system clipboard
 
-Renders a single Markdown file and places **RTF + HTML + plain text**
-on the system clipboard in a single atomic transaction. Designed for
-handing formatted content to rich-text composers (Slack, Mail, …)
+Renders Markdown and places **RTF + HTML + plain text** on the system
+clipboard in a single atomic transaction. Designed for handing
+formatted content to rich-text composers (Slack, Mail, Teams, …)
 without the brittle `textutil` + `osascript` pipeline.
 
-- `convert_to_clipboard({ input, style?, backend? })`
-  - `input` — absolute path to a `.md` file (required)
+- `convert_to_clipboard({ input | content, style?, backend? })`
+  - **Exactly one of:**
+    - `input` — absolute path to a `.md` file
+    - `content` — raw Markdown text (preferred when the agent already
+      has the text — **do not write a temp file first**)
   - `style` — optional style overrides; see [Style overrides](#style-overrides)
   - `backend` — optional renderer override (`"weasyprint"` or `"prince"`)
 
-Example call:
+Example — raw content (typical agent path):
+
+```json
+{
+  "name": "convert_to_clipboard",
+  "arguments": {
+    "content": "## Status\n\n- Item one\n- Item two\n"
+  }
+}
+```
+
+Example — file path:
 
 ```json
 {
@@ -174,6 +189,9 @@ Example call:
   "arguments": {"input": "/abs/path/to/slack-message.md"}
 }
 ```
+
+CLI equivalent: `vellum --to-clipboard notes.md` or
+`echo '# Hi' | vellum --to-clipboard -` (stdin).
 
 The tool returns once the underlying NSPasteboard has confirmed the
 write (`changeCount` advanced) — there is no race window where the
@@ -259,6 +277,23 @@ Response when `output` is supplied:
 
 Both `convert_from_clipboard` and `import` require `pandoc` on `PATH`.
 
+## CLI: view and install-viewer (macOS)
+
+These are CLI-only (not MCP tools) — humans double-click Markdown; agents
+already work with files and the convert tools.
+
+- `vellum view <file.md>` / `vellum --open <file.md>` — render to a
+  cache location keyed by absolute path + mtime (never next to the
+  source) and open the result. **HTML default** (browser, fast); pass
+  `--pdf` for Preview-quality typography.
+- `vellum install-viewer` — write `~/Applications/Vellum Viewer.app`
+  whose launcher runs `vellum --open`, register it with Launch Services,
+  and set it as the default Markdown handler via `duti` (install with
+  `brew install duti` if missing). Re-run after `brew upgrade vellum` if
+  the baked-in binary path goes stale.
+- `vellum uninstall-viewer` — remove the app bundle. Does not restore
+  the previous default handler.
+
 ## Input rules
 
 - Input paths must be absolute. Relative paths are resolved against the
@@ -269,13 +304,16 @@ Both `convert_from_clipboard` and `import` require `pandoc` on `PATH`.
   `<input>.pdf` next to the input file.
 - Multiple files can be converted in a single call; each is processed
   independently and errors are reported per-file.
+- For clipboard delivery of ad-hoc text, pass `content` to
+  `convert_to_clipboard` — do not write a temporary `.md` file first.
 
 ## Style overrides
 
-Both tools accept an optional `style` object. Each field is a CSS-valued
-string; empty fields fall through to the user's config file
-(`~/.config/vellum/config.yaml` or `$XDG_CONFIG_HOME/vellum/config.yaml`),
-which in turn falls through to vellum's built-in defaults.
+`convert` and `convert_to_clipboard` accept an optional `style` object.
+Each field is a CSS-valued string; empty fields fall through to the
+user's config file (`~/.config/vellum/config.yaml` or
+`$XDG_CONFIG_HOME/vellum/config.yaml`), which in turn falls through to
+vellum's built-in defaults.
 
 Fields:
 

@@ -67,6 +67,8 @@ If you use an AI coding agent (Claude Code, Cursor, etc.), paste this prompt to 
 Usage: vellum [options] <input.md...>
        vellum --mcp
        vellum import [options] <file>
+       vellum view [options] <file.md>
+       vellum install-viewer | uninstall-viewer
 
 Options:
   --help              Show help
@@ -74,7 +76,8 @@ Options:
   --version           Print version
   --mcp               Run as an MCP server on stdio
   --to-clipboard      Render and place RTF + HTML + plain text on the system
-                      clipboard (single input file; macOS only)
+                      clipboard (file path or '-' for stdin; macOS only)
+  --open              Render to cache and open (alias for `view`)
   -o <path>           Output PDF path (single input file only)
   --backend <name>    Renderer backend: "weasyprint" (default) or "prince"
 
@@ -82,6 +85,10 @@ Subcommands:
   import              Read a rich-text file (RTF, DOCX, HTML, ODT, EPUB,
                       LaTeX, …) or the system clipboard and write
                       GitHub-Flavoured Markdown. See `vellum import --help`.
+  view                Render Markdown to a cache location and open it
+                      (HTML default; --pdf for PDF fidelity)
+  install-viewer      Install Vellum Viewer.app as the default .md handler
+  uninstall-viewer    Remove Vellum Viewer.app
 ```
 
 Examples:
@@ -90,10 +97,24 @@ Examples:
 vellum report.md                       # writes report.pdf
 vellum -o out.pdf report.md            # explicit output path
 vellum ch1.md ch2.md ch3.md            # batch conversion
+vellum --to-clipboard slack.md         # formatted paste into Teams/Mail
+echo '# Hi' | vellum --to-clipboard -  # raw Markdown → clipboard
 vellum import doc.docx                 # → Markdown on stdout
 vellum import doc.rtf -o doc.md        # → Markdown to a file
 vellum import --from-clipboard         # ingest rich-text clipboard content
+vellum view notes.md                   # open rendered HTML in the browser
+vellum install-viewer                  # double-click .md → rendered view
 ```
+
+### macOS Markdown viewer
+
+`vellum view` / `vellum --open` renders to a **cache** keyed by source path
++ mtime (never littering a PDF next to the source) and opens the result.
+HTML is the default (fast, no WeasyPrint needed for a casual read); pass
+`--pdf` for full typography in Preview.
+
+`vellum install-viewer` generates `~/Applications/Vellum Viewer.app`,
+registers it with Launch Services, and (with [`duti`](https://github.com/moretension/duti) on `PATH`) sets it as the default handler for Markdown. The app launcher calls `vellum --open`. Uninstall with `vellum uninstall-viewer`.
 
 With no `-o`, each input file is converted to a sibling `.pdf` with the same base name.
 
@@ -132,14 +153,13 @@ The server exposes a single tool, `convert`, which accepts a batch of file pairs
 
 The `convert` and `convert_to_clipboard` tools also accept an optional `style` object whose fields overlay the user's config-file defaults for that call only. See [Style customisation](#style-customisation) below for the field list.
 
-### MCP tools (inverse direction)
+### MCP tools (clipboard + import)
 
-vellum also exposes two tools for ingesting rich-text content back into Markdown:
-
+- **`convert_to_clipboard`** — renders Markdown to RTF + HTML + plain text on the system clipboard. Accepts **either** `input` (path to a `.md` file) **or** `content` (raw Markdown string). Prefer `content` when the agent already has the text — no temp file needed. macOS only.
 - **`convert_from_clipboard`** — reads the system clipboard's RTF (or HTML fallback) and returns Markdown. Designed for the common flow of copying a passage from Word, Pages, Mail, Slack's composer, or a browser, and getting clean Markdown into the agent's working set. macOS only currently.
 - **`import`** — takes a file path (and optional `format` override and `output` write path) and returns the file's content as Markdown. Pandoc handles RTF, DOCX, HTML, ODT, EPUB, LaTeX, and everything else it supports out of the box.
 
-Both tools require `pandoc` on `PATH`.
+The import tools require `pandoc` on `PATH`.
 
 ## Style customisation
 
