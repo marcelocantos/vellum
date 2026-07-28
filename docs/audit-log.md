@@ -45,3 +45,14 @@ maintenance activities. Append-only — newest entries at the bottom.
   - Bundled Chromium for `mmdc` (still STABILITY.md out-of-scope)
   - `vellum doctor` (still STABILITY.md gap)
   - Linux/Windows clipboard support (🎯T7.1 parked)
+
+## 2026-07-28 — /release v0.6.0
+
+- **Commit**: `pending` (rewritten to the squash-merge SHA in a follow-up if needed).
+- **Outcome**: Released v0.6.0. Two agent/user ergonomics features plus cache health.
+  1. **Raw clipboard content (🎯T12)**: MCP `convert_to_clipboard` accepts either `input` (path) or `content` (raw Markdown); CLI `vellum --to-clipboard -` reads stdin. Agents no longer need a temp `.md` file to paste into Teams/Mail.
+  2. **macOS Markdown viewer (🎯T13)**: `vellum view` / `--open` renders to a path+mtime cache (HTML default, `--pdf` optional) and opens the result; `install-viewer` / `uninstall-viewer` ship `Vellum Viewer.app` as the default `.md` handler via duti/lsregister.
+  3. **Cache health**: view cache pruned on each open — 7-day age expiry, then 50 MiB size cap (oldest-by-mtime). STABILITY.md re-baselined to v0.6.0 for the new surface.
+- **Deferred**:
+  - 🎯T10 *Mermaid render failures surface loudly* — still open.
+  - Windows clipboard backend (parked).

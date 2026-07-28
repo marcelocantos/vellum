@@ -21,7 +21,7 @@ change between minor releases — though in practice we aim to minimise churn.
 
 ## Interaction surface catalogue
 
-Snapshot as of **v0.5.0**. Annotations: **stable** (unlikely to change),
+Snapshot as of **v0.6.0**. Annotations: **stable** (unlikely to change),
 **needs review** (functional but may be refined), **fluid** (actively
 evolving).
 
@@ -49,8 +49,8 @@ Package paths are under `github.com/marcelocantos/vellum/…`.
 - `type ConvertFile struct { Input, Output string }` — **stable** (mirrors the JSON schema)
 - `type ConvertInput struct { Files []ConvertFile; Style *convert.Style; Backend string }` — **needs review** (Style + Backend added in v0.4.0)
 - `type ConvertOutput struct { Converted, Errors []string }` — **stable**
-- `type ClipboardInput struct { Input string; Style *convert.Style; Backend string }` — **needs review** (Style + Backend added in v0.4.0; macOS-only tool, may grow fields once non-macOS support is decided)
-- `type ClipboardOutput struct { Input string }` — **needs review** (currently echoes the input for confirmation)
+- `type ClipboardInput struct { Input, Content string; Style *convert.Style; Backend string }` — **needs review** (`Content` raw Markdown added in v0.6.0; exactly one of Input/Content required)
+- `type ClipboardOutput struct { Input, Source string }` — **needs review** (`Source` is `"file"` or `"content"` as of v0.6.0)
 
 **`clipboard`** — system-clipboard read/write (added in v0.2.0; reads added in v0.5.0).
 
@@ -82,6 +82,16 @@ Package paths are under `github.com/marcelocantos/vellum/…`.
 - `func ImportFile(ctx context.Context, inputPath, format string) (string, error)` — **needs review**
 - `func ImportBytes(ctx context.Context, data []byte, format string) (string, error)` — **needs review**
 - `func CheckDep() error` — **needs review** (lazy pandoc dependency check)
+
+**`viewer`** — cached render + open; macOS default Markdown handler (added in v0.6.0).
+
+- `func View(ctx context.Context, inputPath string, opts *ViewOptions) (string, error)` — **needs review**
+- `type ViewOptions struct { Format Format; Style *convert.Style; Backend string; Open func(string) error; CacheDir string; MaxBytes int64; MaxAge time.Duration; Now func() time.Time }` — **needs review**
+- `const FormatHTML, FormatPDF` — **needs review**
+- `const CacheMaxBytes, CacheMaxAge` — **needs review** (50 MiB / 7 days defaults)
+- `func InstallViewer(opts *InstallOptions) (appPath string, err error)` — **needs review** (macOS only)
+- `func UninstallViewer(opts *InstallOptions) error` — **needs review** (macOS only)
+- `const BundleID, AppName` — **needs review**
 - `var PandocDep struct { Name, Purpose, Install string }` — **needs review**
 
 ### CLI surface
@@ -101,7 +111,9 @@ Binary: `vellum`.
 | `--help-agent`   | Print usage + embedded agent guide, exit 0          | stable    |
 | `--version`      | Print version string to stdout, exit 0              | stable    |
 | `--mcp`          | Run as stdio MCP server                             | stable    |
-| `--to-clipboard` | Render single input and place RTF + HTML + plain text on clipboard (macOS only) | needs review |
+| `--to-clipboard` | Render file or stdin (`-`) and place RTF + HTML + plain text on clipboard (macOS only) | needs review |
+| `--open`         | Render to cache and open (alias for `view`). Added in v0.6.0. | needs review |
+| `--pdf`          | With `--open`/`view`: high-fidelity PDF instead of HTML. Added in v0.6.0. | needs review |
 | `-o <path>`      | Output PDF path (single-input only)                 | stable    |
 | `--output <path>`| Same as `-o`                                        | stable    |
 | `-o=<path>`      | Same as `-o` (inline form)                          | stable    |
@@ -117,6 +129,9 @@ Binary: `vellum`.
 | `vellum import --from-clipboard` | Read rich-text from system clipboard → Markdown (macOS only). Added in v0.5.0. | needs review |
 | `vellum import … -o <path>` | Write the Markdown to a file instead of stdout. Added in v0.5.0. | needs review |
 | `vellum import … --from <fmt>` | Override pandoc format autodetection. Added in v0.5.0. | needs review |
+| `vellum view <file>` | Render to cache (HTML default) and open. Added in v0.6.0. | needs review |
+| `vellum install-viewer` | Install Vellum Viewer.app as default .md handler (macOS). Added in v0.6.0. | needs review |
+| `vellum uninstall-viewer` | Remove Vellum Viewer.app. Added in v0.6.0. | needs review |
 
 **Positional arguments**
 
@@ -171,19 +186,23 @@ v0.5.0).
 - **Text content**: human-readable summary ("Converted N file(s): …" / "Errors: …"). **needs review** (format may be tweaked for readability; structured output is the load-bearing part).
 - **`isError`**: set to `true` only when every file failed. **stable**.
 
-**Tool: `convert_to_clipboard`** (added in v0.2.0)
+**Tool: `convert_to_clipboard`** (added in v0.2.0; `content` added in v0.6.0)
 
-- **Description**: "Render a Markdown file and place RTF + HTML + plain text on the system clipboard (macOS only). Returns once the underlying NSPasteboard has confirmed the write."
-- **Input schema**: **needs review**
+- **Description**: "Render Markdown (file path or raw content) and place RTF + HTML + plain text on the system clipboard (macOS only). Returns once the underlying NSPasteboard has confirmed the write."
+- **Input schema**: **needs review** — exactly one of `input` or `content` required
 
   ```json
   { "input": "<absolute path to .md file>" }
+  ```
+  or
+  ```json
+  { "content": "<raw Markdown text>" }
   ```
 
 - **Structured output**: **needs review**
 
   ```json
-  { "input": "<echoed input path>" }
+  { "input": "<echoed input path when file used>", "source": "file|content" }
   ```
 
 - **Platform**: macOS only. Non-macOS returns an `unsupported` error.

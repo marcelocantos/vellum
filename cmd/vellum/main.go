@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,9 +17,10 @@ import (
 	"github.com/marcelocantos/vellum/docs"
 	"github.com/marcelocantos/vellum/importer"
 	vellummcp "github.com/marcelocantos/vellum/mcp"
+	"github.com/marcelocantos/vellum/viewer"
 )
 
-const version = "0.5.0"
+const version = "0.6.0"
 
 func main() {
 	if err := run(); err != nil {
@@ -28,10 +30,18 @@ func main() {
 }
 
 func run() error {
-	// `vellum import …` is a separate subcommand with its own arg parsing.
 	args := os.Args[1:]
-	if len(args) > 0 && args[0] == "import" {
-		return runImport(args[1:])
+	if len(args) > 0 {
+		switch args[0] {
+		case "import":
+			return runImport(args[1:])
+		case "view":
+			return runView(args[1:])
+		case "install-viewer":
+			return runInstallViewer(args[1:])
+		case "uninstall-viewer":
+			return runUninstallViewer(args[1:])
+		}
 	}
 
 	// Manual arg parsing to allow flags anywhere (Go's flag package
@@ -42,6 +52,8 @@ func run() error {
 		showVersion   bool
 		mcpMode       bool
 		toClipboard   bool
+		openMode      bool
+		asPDF         bool
 		output        string
 		backend       string
 		positional    []string
@@ -60,6 +72,11 @@ func run() error {
 			mcpMode = true
 		case a == "--to-clipboard" || a == "-to-clipboard":
 			toClipboard = true
+		case a == "--open" || a == "-open":
+			openMode = true
+		case a == "--pdf" || a == "-pdf":
+			// Accepted with --open / view; rejected for other modes below.
+			asPDF = true
 		case a == "-o" || a == "--output":
 			if i+1 >= len(args) {
 				return fmt.Errorf("%s requires an argument", a)
@@ -78,6 +95,10 @@ func run() error {
 			backend = args[i]
 		case strings.HasPrefix(a, "--backend="):
 			backend = a[len("--backend="):]
+		case a == "-":
+			// Stdin sentinel for --to-clipboard (and similar). Must not
+			// fall through to the unknown-flag branch.
+			positional = append(positional, a)
 		case strings.HasPrefix(a, "-"):
 			return fmt.Errorf("unknown flag: %s", a)
 		default:
@@ -109,6 +130,21 @@ func run() error {
 		return runMCP(backend)
 	}
 
+	if openMode {
+		// --open is a flag form of `vellum view`.
+		viewArgs := append([]string{}, positional...)
+		if asPDF {
+			viewArgs = append([]string{"--pdf"}, viewArgs...)
+		}
+		if backend != "" {
+			viewArgs = append([]string{"--backend", backend}, viewArgs...)
+		}
+		return runView(viewArgs)
+	}
+	if asPDF {
+		return fmt.Errorf("--pdf is only valid with --open or the view subcommand")
+	}
+
 	if toClipboard {
 		return runClipboard(positional, output, backend)
 	}
@@ -129,10 +165,10 @@ func effectiveBackend(flag, fromConfig string) string {
 func runClipboard(args []string, output, backendFlag string) error {
 	if len(args) == 0 {
 		printUsage()
-		return fmt.Errorf("no input files specified")
+		return fmt.Errorf("no input specified (provide a .md file or '-' for stdin)")
 	}
 	if len(args) > 1 {
-		return fmt.Errorf("--to-clipboard accepts a single input file")
+		return fmt.Errorf("--to-clipboard accepts a single input (file path or '-')")
 	}
 	if output != "" {
 		return fmt.Errorf("--to-clipboard and -o are mutually exclusive")
@@ -143,16 +179,31 @@ func runClipboard(args []string, output, backendFlag string) error {
 		return err
 	}
 	backendName := effectiveBackend(backendFlag, cfg.Backend)
-
+	opts := &convert.Options{Style: cfg.Style, Backend: backendName}
 	ctx := context.Background()
-	absInput, err := filepath.Abs(args[0])
-	if err != nil {
-		return err
-	}
 
-	html, err := convert.RenderFile(ctx, absInput, &convert.Options{Style: cfg.Style, Backend: backendName})
-	if err != nil {
-		return fmt.Errorf("%s: %w", args[0], err)
+	var html string
+	if args[0] == "-" {
+		src, err := io.ReadAll(os.Stdin)
+		if err != nil {
+			return fmt.Errorf("reading stdin: %w", err)
+		}
+		if len(src) == 0 {
+			return fmt.Errorf("--to-clipboard: stdin is empty")
+		}
+		html, err = convert.Render(ctx, src, opts)
+		if err != nil {
+			return err
+		}
+	} else {
+		absInput, err := filepath.Abs(args[0])
+		if err != nil {
+			return err
+		}
+		html, err = convert.RenderFile(ctx, absInput, opts)
+		if err != nil {
+			return fmt.Errorf("%s: %w", args[0], err)
+		}
 	}
 
 	if err := clipboard.Write(clipboard.Payload{HTML: html}); err != nil {
@@ -161,6 +212,157 @@ func runClipboard(args []string, output, backendFlag string) error {
 
 	fmt.Fprintln(os.Stderr, "Copied to clipboard.")
 	return nil
+}
+
+func runView(args []string) error {
+	var (
+		showHelp bool
+		asPDF    bool
+		backend  string
+		positional []string
+	)
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		switch {
+		case a == "--help" || a == "-help":
+			showHelp = true
+		case a == "--pdf" || a == "-pdf":
+			asPDF = true
+		case a == "--backend":
+			if i+1 >= len(args) {
+				return fmt.Errorf("%s requires an argument", a)
+			}
+			i++
+			backend = args[i]
+		case strings.HasPrefix(a, "--backend="):
+			backend = a[len("--backend="):]
+		case strings.HasPrefix(a, "-"):
+			return fmt.Errorf("unknown flag for view: %s", a)
+		default:
+			positional = append(positional, a)
+		}
+	}
+	if showHelp {
+		printViewUsage()
+		return nil
+	}
+	if len(positional) == 0 {
+		printViewUsage()
+		return fmt.Errorf("view: no input file specified")
+	}
+	if len(positional) > 1 {
+		return fmt.Errorf("view: only one input file at a time")
+	}
+
+	cfg, err := config.Load()
+	if err != nil {
+		return err
+	}
+	format := viewer.FormatHTML
+	if asPDF {
+		format = viewer.FormatPDF
+	}
+	path, err := viewer.View(context.Background(), positional[0], &viewer.ViewOptions{
+		Format:  format,
+		Style:   cfg.Style,
+		Backend: effectiveBackend(backend, cfg.Backend),
+	})
+	if err != nil {
+		return err
+	}
+	fmt.Fprintln(os.Stderr, path)
+	return nil
+}
+
+func runInstallViewer(args []string) error {
+	for _, a := range args {
+		switch a {
+		case "--help", "-help":
+			printInstallViewerUsage()
+			return nil
+		default:
+			if strings.HasPrefix(a, "-") {
+				return fmt.Errorf("unknown flag for install-viewer: %s", a)
+			}
+			return fmt.Errorf("install-viewer takes no arguments")
+		}
+	}
+	appPath, err := viewer.InstallViewer(nil)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Installed %s and registered as default Markdown viewer.\n", appPath)
+	fmt.Println("Double-click a .md file to open it rendered. Re-run after brew upgrades if the launcher path goes stale.")
+	return nil
+}
+
+func runUninstallViewer(args []string) error {
+	for _, a := range args {
+		switch a {
+		case "--help", "-help":
+			printUninstallViewerUsage()
+			return nil
+		default:
+			if strings.HasPrefix(a, "-") {
+				return fmt.Errorf("unknown flag for uninstall-viewer: %s", a)
+			}
+			return fmt.Errorf("uninstall-viewer takes no arguments")
+		}
+	}
+	if err := viewer.UninstallViewer(nil); err != nil {
+		return err
+	}
+	fmt.Println("Removed Vellum Viewer.app. Previous default Markdown handler is not restored automatically — set it via Finder Get Info if needed.")
+	return nil
+}
+
+func printViewUsage() {
+	fmt.Print(`Usage: vellum view [options] <file.md>
+       vellum --open [options] <file.md>
+
+Render a Markdown file to a cache location and open it in the OS default
+viewer. Never writes a PDF/HTML next to the source file. Unchanged
+sources hit the cache (keyed by absolute path + mtime).
+
+Options:
+  --help              Show this help
+  --pdf               Render PDF (high fidelity) instead of HTML
+  --backend <name>    PDF backend: "weasyprint" (default) or "prince"
+                      (only relevant with --pdf)
+
+Examples:
+  vellum view notes.md            # HTML → browser (fast default)
+  vellum view --pdf notes.md      # PDF → Preview
+  vellum --open notes.md          # flag form of view
+
+Cache lives under the user cache dir (…/Caches/vellum/view on macOS).
+Pruned on each view: entries older than 7 days are dropped; if total
+size still exceeds 50 MB, oldest entries are evicted until under cap.
+`)
+}
+
+func printInstallViewerUsage() {
+	fmt.Print(`Usage: vellum install-viewer
+
+Generate ~/Applications/Vellum Viewer.app, register it with Launch
+Services, and set it as the default handler for Markdown (.md, etc.).
+The app's launcher calls 'vellum --open' so double-clicking a .md file
+opens it rendered (HTML by default).
+
+Requires macOS. Setting the default handler requires 'duti' on PATH
+(brew install duti). Without duti the bundle is still installed and can
+be chosen via Finder Get Info → Open with.
+
+Re-run after 'brew upgrade vellum' if the baked-in binary path changes.
+`)
+}
+
+func printUninstallViewerUsage() {
+	fmt.Print(`Usage: vellum uninstall-viewer
+
+Remove ~/Applications/Vellum Viewer.app. Does not restore the previous
+default Markdown handler — use Finder Get Info to reassign if needed.
+`)
 }
 
 func runImport(args []string) error {
@@ -299,9 +501,11 @@ func printUsage() {
 	fmt.Print(`Usage: vellum [options] <input.md...>
        vellum --mcp
        vellum import [options] <file>
+       vellum view [options] <file.md>
+       vellum install-viewer | uninstall-viewer
 
-Document preparation — Markdown to PDF (default direction) and rich-text
-to Markdown (via the import subcommand).
+Document preparation — Markdown to PDF (default direction), rich-text
+to Markdown (import), clipboard delivery, and macOS Markdown viewing.
 
 Options:
   --help              Show this help message
@@ -309,7 +513,8 @@ Options:
   --version           Print version number
   --mcp               Run as an MCP (Model Context Protocol) server on stdio
   --to-clipboard      Render and place RTF + HTML + plain text on the
-                      system clipboard (single input file; macOS only)
+                      system clipboard (file path or '-' for stdin; macOS)
+  --open              Alias for 'view': render to cache and open (macOS)
   -o <path>           Output PDF path (single input file only)
   --backend <name>    Renderer backend: "weasyprint" (default) or "prince"
 
@@ -317,14 +522,21 @@ Subcommands:
   import              Read a rich-text file (RTF, DOCX, HTML, ODT, EPUB,
                       LaTeX, …) or the system clipboard and write
                       GitHub-Flavoured Markdown. See "vellum import --help".
+  view                Render a Markdown file to cache and open it
+                      (HTML default; --pdf for PDF). See "vellum view --help".
+  install-viewer      Install Vellum Viewer.app as the default .md handler
+  uninstall-viewer    Remove Vellum Viewer.app
 
 Examples:
   vellum report.md                       # produces report.pdf
   vellum -o out.pdf report.md            # explicit output path
   vellum ch1.md ch2.md ch3.md            # batch conversion
   vellum --to-clipboard slack.md         # ready to paste into Slack/Mail
+  echo '# Hi' | vellum --to-clipboard -  # raw Markdown → clipboard
   vellum import doc.docx                 # → Markdown on stdout
   vellum import --from-clipboard         # → Markdown from clipboard
+  vellum view notes.md                   # rendered HTML in browser
+  vellum install-viewer                  # double-click .md → rendered
 
 Renderer (default WeasyPrint, optional Prince) must be on PATH for PDF
 output. pandoc must be on PATH for the import subcommand.
