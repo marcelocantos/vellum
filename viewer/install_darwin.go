@@ -6,12 +6,12 @@
 package viewer
 
 import (
+	_ "embed"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"text/template"
 )
 
 const (
@@ -21,12 +21,16 @@ const (
 	AppName = "Vellum Viewer.app"
 )
 
+//go:embed applet_darwin.m.src
+var appletSource string
+
 // InstallOptions configures InstallViewer.
 type InstallOptions struct {
 	// ApplicationsDir defaults to ~/Applications.
 	ApplicationsDir string
-	// VellumPath is the absolute path to the vellum binary baked into the
-	// app launcher. Empty resolves via os.Executable / LookPath.
+	// VellumPath is the absolute path to the vellum binary injected into
+	// the app via LSEnvironment VELLUM_BIN. Empty resolves via PATH
+	// (preferring the Homebrew shell wrapper) or os.Executable.
 	VellumPath string
 	// SkipDefaultHandler, when true, installs the bundle but does not
 	// claim the default .md handler via duti.
@@ -36,6 +40,11 @@ type InstallOptions struct {
 // InstallViewer generates Vellum Viewer.app, registers it with Launch
 // Services, and (unless SkipDefaultHandler) sets it as the default
 // handler for Markdown UTIs/extensions via duti.
+//
+// The app's CFBundleExecutable is a small Cocoa binary (compiled with
+// clang at install time). Launch Services delivers open-document paths
+// via Apple Events, not argv — a shell script launcher cannot receive
+// them, which is why the original double-click path appeared dead.
 func InstallViewer(opts *InstallOptions) (appPath string, err error) {
 	if opts == nil {
 		opts = &InstallOptions{}
@@ -58,7 +67,6 @@ func InstallViewer(opts *InstallOptions) (appPath string, err error) {
 		return "", err
 	}
 
-	// Refresh Launch Services so the new bundle is known.
 	if err := lsregister(appPath); err != nil {
 		return appPath, fmt.Errorf("registered bundle at %s but lsregister failed: %w", appPath, err)
 	}
@@ -88,8 +96,6 @@ func UninstallViewer(opts *InstallOptions) error {
 	if err := os.RemoveAll(appPath); err != nil {
 		return fmt.Errorf("removing %s: %w", appPath, err)
 	}
-	// Best-effort: clear duti claims if duti is available. Failure is
-	// non-fatal because the bundle is already gone.
 	_ = clearDefaultHandler()
 	return nil
 }
@@ -118,23 +124,22 @@ func resolveVellumPath(override string) (string, error) {
 	if override != "" {
 		return filepath.Abs(override)
 	}
-	// Prefer the running binary so brew upgrades still work only after
-	// re-running install-viewer (the path is baked in at install time).
+	// Prefer the `vellum` on PATH — for Homebrew that is the shell wrapper
+	// which prepends brew/tool dirs. Raw vellum-bin under launchd has a
+	// minimal PATH and may fail to find node/mmdc.
+	if p, err := exec.LookPath("vellum"); err == nil {
+		return filepath.Abs(p)
+	}
 	if exe, err := os.Executable(); err == nil {
 		if resolved, err := filepath.EvalSymlinks(exe); err == nil {
 			return resolved, nil
 		}
 		return exe, nil
 	}
-	p, err := exec.LookPath("vellum")
-	if err != nil {
-		return "", fmt.Errorf("cannot find vellum binary: %w", err)
-	}
-	return filepath.Abs(p)
+	return "", fmt.Errorf("cannot find vellum binary on PATH")
 }
 
 func writeAppBundle(appPath, vellumPath string) error {
-	// Rebuild cleanly so upgrades replace the launcher script and plist.
 	if err := os.RemoveAll(appPath); err != nil {
 		return fmt.Errorf("clearing old bundle: %w", err)
 	}
@@ -143,29 +148,66 @@ func writeAppBundle(appPath, vellumPath string) error {
 		return err
 	}
 
+	plist := strings.ReplaceAll(infoPlist, "{{VELLUM_BIN}}", xmlEscape(vellumPath))
 	plistPath := filepath.Join(appPath, "Contents", "Info.plist")
-	if err := os.WriteFile(plistPath, []byte(infoPlist), 0o644); err != nil {
+	if err := os.WriteFile(plistPath, []byte(plist), 0o644); err != nil {
 		return fmt.Errorf("writing Info.plist: %w", err)
 	}
 
 	launcherPath := filepath.Join(macosDir, "VellumViewer")
-	var buf strings.Builder
-	if err := launcherTmpl.Execute(&buf, map[string]string{
-		"VellumPath": vellumPath,
-	}); err != nil {
+	if err := compileApplet(launcherPath); err != nil {
 		return err
-	}
-	if err := os.WriteFile(launcherPath, []byte(buf.String()), 0o755); err != nil {
-		return fmt.Errorf("writing launcher: %w", err)
 	}
 	return nil
 }
 
+// compileApplet builds the Cocoa document handler into outPath using
+// the system clang. Requires Xcode Command Line Tools (or full Xcode).
+func compileApplet(outPath string) error {
+	clang, err := exec.LookPath("clang")
+	if err != nil {
+		return fmt.Errorf("clang not found — install Xcode Command Line Tools (`xcode-select --install`) to build Vellum Viewer.app: %w", err)
+	}
+	srcDir, err := os.MkdirTemp("", "vellum-viewer-src-")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(srcDir)
+	srcPath := filepath.Join(srcDir, "applet.m")
+	if err := os.WriteFile(srcPath, []byte(appletSource), 0o644); err != nil {
+		return err
+	}
+	cmd := exec.Command(clang,
+		"-fobjc-arc",
+		"-framework", "AppKit",
+		"-framework", "Foundation",
+		"-o", outPath,
+		srcPath,
+	)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("compiling VellumViewer applet: %v\n%s", err, strings.TrimSpace(string(out)))
+	}
+	if err := os.Chmod(outPath, 0o755); err != nil {
+		return err
+	}
+	return nil
+}
+
+func xmlEscape(s string) string {
+	r := strings.NewReplacer(
+		"&", "&amp;",
+		"<", "&lt;",
+		">", "&gt;",
+		`"`, "&quot;",
+		"'", "&apos;",
+	)
+	return r.Replace(s)
+}
+
 func lsregister(appPath string) error {
-	// Standard location on modern macOS.
 	ls := "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
 	if _, err := os.Stat(ls); err != nil {
-		// Older layout fallback.
 		ls = "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister"
 	}
 	cmd := exec.Command(ls, "-f", appPath)
@@ -176,16 +218,14 @@ func lsregister(appPath string) error {
 	return nil
 }
 
-// setDefaultHandler uses duti to claim Markdown UTIs and extensions.
 func setDefaultHandler() error {
 	if _, err := exec.LookPath("duti"); err != nil {
 		return fmt.Errorf("duti not found on PATH (install with `brew install duti`)")
 	}
-	// UTIs first, then extension fallbacks for files with no type metadata.
 	targets := []string{
 		"net.daringfireball.markdown",
 		"public.markdown",
-		"org.vim.markdown-file", // common alternate UTI
+		"org.vim.markdown-file",
 		".md",
 		".markdown",
 		".mdown",
@@ -201,7 +241,6 @@ func setDefaultHandler() error {
 	if len(errs) == len(targets) {
 		return fmt.Errorf("duti failed for all targets:\n  %s", strings.Join(errs, "\n  "))
 	}
-	// Partial success is fine (some UTIs may not exist on all systems).
 	return nil
 }
 
@@ -209,21 +248,12 @@ func clearDefaultHandler() error {
 	if _, err := exec.LookPath("duti"); err != nil {
 		return err
 	}
-	// duti has no explicit "unset"; re-claiming is the user's job.
-	// No-op beyond documentation — kept for symmetry.
 	return nil
 }
 
-var launcherTmpl = template.Must(template.New("launcher").Parse(`#!/bin/bash
-# Generated by vellum install-viewer. Do not edit.
-# Opens Markdown files via vellum's view mode (cached HTML by default).
-set -euo pipefail
-VELLUM={{printf "%q" .VellumPath}}
-exec "$VELLUM" --open "$@"
-`))
-
-// infoPlist declares Markdown document types so Launch Services will
-// offer Vellum Viewer as a handler for .md double-clicks.
+// infoPlist declares Markdown document types and injects VELLUM_BIN into
+// the app's environment so the Cocoa applet can find the CLI under the
+// minimal PATH launchd provides.
 const infoPlist = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -241,13 +271,20 @@ const infoPlist = `<?xml version="1.0" encoding="UTF-8"?>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.0</string>
+	<string>1.1</string>
 	<key>CFBundleVersion</key>
-	<string>1</string>
+	<string>2</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>12.0</string>
+	<key>LSUIElement</key>
+	<true/>
 	<key>NSHighResolutionCapable</key>
 	<true/>
+	<key>LSEnvironment</key>
+	<dict>
+		<key>VELLUM_BIN</key>
+		<string>{{VELLUM_BIN}}</string>
+	</dict>
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>

@@ -346,14 +346,19 @@ func printInstallViewerUsage() {
 
 Generate ~/Applications/Vellum Viewer.app, register it with Launch
 Services, and set it as the default handler for Markdown (.md, etc.).
-The app's launcher calls 'vellum --open' so double-clicking a .md file
-opens it rendered (HTML by default).
 
-Requires macOS. Setting the default handler requires 'duti' on PATH
-(brew install duti). Without duti the bundle is still installed and can
-be chosen via Finder Get Info → Open with.
+The app executable is a small Cocoa binary (compiled with clang at
+install time) that receives open-document Apple Events from Launch
+Services and runs 'vellum --open'. A shell-script launcher cannot
+receive those events — double-click would silently do nothing.
 
-Re-run after 'brew upgrade vellum' if the baked-in binary path changes.
+Requires macOS and Xcode Command Line Tools (clang). Setting the
+default handler requires 'duti' on PATH (brew install duti). Without
+duti the bundle is still installed and can be chosen via Finder Get
+Info → Open with.
+
+Re-run after 'brew upgrade vellum' so LSEnvironment points at the new
+CLI path. Debug log: ~/Library/Logs/vellum-viewer.log
 `)
 }
 

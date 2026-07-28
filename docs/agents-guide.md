@@ -289,10 +289,12 @@ already work with files and the convert tools.
   than 7 days are dropped on each view; if the cache still exceeds
   50 MB, oldest entries are evicted until under the cap.
 - `vellum install-viewer` — write `~/Applications/Vellum Viewer.app`
-  whose launcher runs `vellum --open`, register it with Launch Services,
-  and set it as the default Markdown handler via `duti` (install with
-  `brew install duti` if missing). Re-run after `brew upgrade vellum` if
-  the baked-in binary path goes stale.
+  (Cocoa document handler, compiled with clang at install time — shell
+  scripts cannot receive Launch Services open-document Apple Events),
+  register it with Launch Services, and set it as the default Markdown
+  handler via `duti` (install with `brew install duti` if missing).
+  Requires Xcode CLT. Re-run after `brew upgrade vellum`. Debug log:
+  `~/Library/Logs/vellum-viewer.log`.
 - `vellum uninstall-viewer` — remove the app bundle. Does not restore
   the previous default handler.
 
