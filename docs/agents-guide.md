@@ -285,7 +285,9 @@ already work with files and the convert tools.
 - `vellum view <file.md>` / `vellum --open <file.md>` — render to a
   cache location keyed by absolute path + mtime (never next to the
   source) and open the result. **HTML default** (browser, fast); pass
-  `--pdf` for Preview-quality typography.
+  `--pdf` for Preview-quality typography. Cache health: entries older
+  than 7 days are dropped on each view; if the cache still exceeds
+  50 MB, oldest entries are evicted until under the cap.
 - `vellum install-viewer` — write `~/Applications/Vellum Viewer.app`
   whose launcher runs `vellum --open`, register it with Launch Services,
   and set it as the default Markdown handler via `duti` (install with

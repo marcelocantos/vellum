@@ -20,7 +20,7 @@ import (
 	"github.com/marcelocantos/vellum/viewer"
 )
 
-const version = "0.5.0"
+const version = "0.6.0"
 
 func main() {
 	if err := run(); err != nil {
@@ -336,6 +336,8 @@ Examples:
   vellum --open notes.md          # flag form of view
 
 Cache lives under the user cache dir (…/Caches/vellum/view on macOS).
+Pruned on each view: entries older than 7 days are dropped; if total
+size still exceeds 50 MB, oldest entries are evicted until under cap.
 `)
 }
 
