@@ -111,7 +111,9 @@ vellum install-viewer                  # double-click .md → rendered view
 `vellum view` / `vellum --open` renders to a **cache** keyed by source path
 + mtime (never littering a PDF next to the source) and opens the result.
 HTML is the default (fast, no WeasyPrint needed for a casual read); pass
-`--pdf` for full typography in Preview.
+`--pdf` for full typography in Preview. The cache is pruned on each view:
+entries older than 7 days are dropped, then oldest entries are evicted
+until total size is under 50 MB.
 
 `vellum install-viewer` generates `~/Applications/Vellum Viewer.app`,
 registers it with Launch Services, and (with [`duti`](https://github.com/moretension/duti) on `PATH`) sets it as the default handler for Markdown. The app launcher calls `vellum --open`. Uninstall with `vellum uninstall-viewer`.
