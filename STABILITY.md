@@ -21,7 +21,7 @@ change between minor releases — though in practice we aim to minimise churn.
 
 ## Interaction surface catalogue
 
-Snapshot as of **v0.6.0**. Annotations: **stable** (unlikely to change),
+Snapshot as of **v0.7.0**. Annotations: **stable** (unlikely to change),
 **needs review** (functional but may be refined), **fluid** (actively
 evolving).
 
@@ -89,7 +89,7 @@ Package paths are under `github.com/marcelocantos/vellum/…`.
 - `type ViewOptions struct { Format Format; Style *convert.Style; Backend string; Open func(string) error; CacheDir string; MaxBytes int64; MaxAge time.Duration; Now func() time.Time }` — **needs review**
 - `const FormatHTML, FormatPDF` — **needs review**
 - `const CacheMaxBytes, CacheMaxAge` — **needs review** (50 MiB / 7 days defaults)
-- `func InstallViewer(opts *InstallOptions) (appPath string, err error)` — **needs review** (macOS only)
+- `func InstallViewer(opts *InstallOptions) (appPath string, err error)` — **needs review** (macOS only; v0.7.0 compiles a Cocoa document-handler binary at install time — shell-script CFBundleExecutable cannot receive Launch Services open-document Apple Events)
 - `func UninstallViewer(opts *InstallOptions) error` — **needs review** (macOS only)
 - `const BundleID, AppName` — **needs review**
 - `var PandocDep struct { Name, Purpose, Install string }` — **needs review**
