@@ -116,7 +116,7 @@ entries older than 7 days are dropped, then oldest entries are evicted
 until total size is under 50 MB.
 
 `vellum install-viewer` generates `~/Applications/Vellum Viewer.app`,
-registers it with Launch Services, and (with [`duti`](https://github.com/moretension/duti) on `PATH`) sets it as the default handler for Markdown. The app launcher calls `vellum --open`. Uninstall with `vellum uninstall-viewer`.
+registers it with Launch Services, and (with [`duti`](https://github.com/moretension/duti) on `PATH`) sets it as the default handler for Markdown. The app executable is a small Cocoa binary (compiled with clang at install time) that receives Launch Services open-document Apple Events and runs `vellum --open` — a shell-script launcher cannot receive those events. Requires Xcode Command Line Tools. Uninstall with `vellum uninstall-viewer`. Debug log: `~/Library/Logs/vellum-viewer.log`.
 
 With no `-o`, each input file is converted to a sibling `.pdf` with the same base name.
 

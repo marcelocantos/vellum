@@ -48,7 +48,7 @@ maintenance activities. Append-only — newest entries at the bottom.
 
 ## 2026-07-28 — /release v0.6.0
 
-- **Commit**: `pending` (rewritten to the squash-merge SHA in a follow-up if needed).
+- **Commit**: `7995c70`
 - **Outcome**: Released v0.6.0. Two agent/user ergonomics features plus cache health.
   1. **Raw clipboard content (🎯T12)**: MCP `convert_to_clipboard` accepts either `input` (path) or `content` (raw Markdown); CLI `vellum --to-clipboard -` reads stdin. Agents no longer need a temp `.md` file to paste into Teams/Mail.
   2. **macOS Markdown viewer (🎯T13)**: `vellum view` / `--open` renders to a path+mtime cache (HTML default, `--pdf` optional) and opens the result; `install-viewer` / `uninstall-viewer` ship `Vellum Viewer.app` as the default `.md` handler via duti/lsregister.
@@ -56,3 +56,11 @@ maintenance activities. Append-only — newest entries at the bottom.
 - **Deferred**:
   - 🎯T10 *Mermaid render failures surface loudly* — still open.
   - Windows clipboard backend (parked).
+  - Double-click via Launch Services was broken at ship (shell-script CFBundleExecutable); fixed in v0.7.0.
+
+## 2026-07-28 — /release v0.7.0
+
+- **Commit**: `pending`
+- **Outcome**: Released v0.7.0. Fixes Vellum Viewer double-click / `open -a` / Finder open. Root cause: Launch Services delivers documents via Apple Events with empty argv; a shell-script app launcher never saw the path. `install-viewer` now compiles a small Cocoa applet (`clang` + AppKit) at install time, injects `VELLUM_BIN` via `LSEnvironment`, and logs to `~/Library/Logs/vellum-viewer.log`. Regression test `TestOpenA_DeliversDocument`. Requires Xcode CLT for install-viewer. Users must re-run `vellum install-viewer` after upgrade.
+- **Deferred**:
+  - 🎯T10 *Mermaid render failures surface loudly* — still open.

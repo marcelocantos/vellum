@@ -1,0 +1,135 @@
+// Copyright 2026 Marcelo Cantos
+// SPDX-License-Identifier: Apache-2.0
+//
+// Minimal Cocoa document handler for Vellum Viewer.app.
+//
+// Launch Services does NOT pass open-document paths via argv for app
+// bundles — it delivers them as Apple Events (application:openURLs: /
+// openFile:). A shell-script CFBundleExecutable never receives those
+// events, so double-click and `open -a` appeared to do nothing.
+//
+// This applet receives the events, runs `vellum --open` for each path,
+// then terminates. Compiled at install-viewer time with clang + AppKit.
+
+#import <Cocoa/Cocoa.h>
+#include <stdlib.h>
+
+@interface VellumAppDelegate : NSObject <NSApplicationDelegate>
+@property(nonatomic, assign) BOOL openedAny;
+@end
+
+@implementation VellumAppDelegate
+
+- (NSString *)vellumBin {
+  const char *env = getenv("VELLUM_BIN");
+  if (env && env[0] != '\0') {
+    return [NSString stringWithUTF8String:env];
+  }
+  // Fallbacks if LSEnvironment was not injected.
+  if ([[NSFileManager defaultManager] isExecutableFileAtPath:@"/opt/homebrew/bin/vellum"]) {
+    return @"/opt/homebrew/bin/vellum";
+  }
+  if ([[NSFileManager defaultManager] isExecutableFileAtPath:@"/usr/local/bin/vellum"]) {
+    return @"/usr/local/bin/vellum";
+  }
+  return @"vellum";
+}
+
+- (void)log:(NSString *)fmt, ... NS_FORMAT_FUNCTION(1, 2) {
+  va_list args;
+  va_start(args, fmt);
+  NSString *msg = [[NSString alloc] initWithFormat:fmt arguments:args];
+  va_end(args);
+  NSString *line = [NSString stringWithFormat:@"%@ %@\n", [NSDate date], msg];
+  NSString *logPath =
+      [NSHomeDirectory() stringByAppendingPathComponent:@"Library/Logs/vellum-viewer.log"];
+  NSFileHandle *fh = [NSFileHandle fileHandleForWritingAtPath:logPath];
+  if (!fh) {
+    [[NSFileManager defaultManager] createFileAtPath:logPath contents:nil attributes:nil];
+    fh = [NSFileHandle fileHandleForWritingAtPath:logPath];
+  }
+  [fh seekToEndOfFile];
+  [fh writeData:[line dataUsingEncoding:NSUTF8StringEncoding]];
+  [fh closeFile];
+}
+
+- (void)openMarkdownPath:(NSString *)path {
+  if (path.length == 0) {
+    return;
+  }
+  self.openedAny = YES;
+  NSString *bin = [self vellumBin];
+  [self log:@"open %@ via %@", path, bin];
+
+  NSTask *task = [[NSTask alloc] init];
+  task.executableURL = [NSURL fileURLWithPath:bin];
+  task.arguments = @[ @"--open", path ];
+
+  NSMutableDictionary *env =
+      [[[NSProcessInfo processInfo] environment] mutableCopy];
+  NSString *pathEnv = env[@"PATH"] ?: @"";
+  // launchd PATH is minimal; prepend brew/tool dirs like the vellum wrapper.
+  env[@"PATH"] = [@"/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:"
+      stringByAppendingString:pathEnv];
+  task.environment = env;
+
+  NSPipe *errPipe = [NSPipe pipe];
+  task.standardError = errPipe;
+  task.standardOutput = [NSPipe pipe];
+
+  NSError *err = nil;
+  if (![task launchAndReturnError:&err]) {
+    [self log:@"launch failed: %@", err];
+    return;
+  }
+  [task waitUntilExit];
+  NSData *errData = [[errPipe fileHandleForReading] readDataToEndOfFile];
+  if (task.terminationStatus != 0) {
+    NSString *errStr = [[NSString alloc] initWithData:errData encoding:NSUTF8StringEncoding];
+    [self log:@"vellum --open exit %d: %@", (int)task.terminationStatus, errStr];
+  }
+}
+
+- (void)application:(NSApplication *)application openURLs:(NSArray<NSURL *> *)urls {
+  for (NSURL *url in urls) {
+    if (url.isFileURL) {
+      [self openMarkdownPath:url.path];
+    }
+  }
+}
+
+- (BOOL)application:(NSApplication *)sender openFile:(NSString *)filename {
+  [self openMarkdownPath:filename];
+  return YES;
+}
+
+- (void)applicationDidFinishLaunching:(NSNotification *)notification {
+  // Some launch paths still put documents on argv (direct exec / tests).
+  NSArray<NSString *> *args = NSProcessInfo.processInfo.arguments;
+  for (NSUInteger i = 1; i < args.count; i++) {
+    NSString *a = args[i];
+    if ([a hasPrefix:@"-"]) {
+      continue;
+    }
+    [self openMarkdownPath:a];
+  }
+  // openURLs is normally delivered before didFinishLaunching; quit once
+  // the run loop is idle so we don't leave a zombie process.
+  dispatch_async(dispatch_get_main_queue(), ^{
+    [NSApp terminate:nil];
+  });
+}
+
+@end
+
+int main(int argc, const char *argv[]) {
+  @autoreleasepool {
+    [NSApplication sharedApplication];
+    // No dock icon / menu bar — we only open a browser/Preview window.
+    [NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory];
+    VellumAppDelegate *del = [VellumAppDelegate new];
+    NSApp.delegate = del;
+    [NSApp run];
+  }
+  return 0;
+}
