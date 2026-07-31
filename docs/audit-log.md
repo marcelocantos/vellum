@@ -60,7 +60,15 @@ maintenance activities. Append-only — newest entries at the bottom.
 
 ## 2026-07-28 — /release v0.7.0
 
-- **Commit**: `pending`
+- **Commit**: `36daffd`
 - **Outcome**: Released v0.7.0. Fixes Vellum Viewer double-click / `open -a` / Finder open. Root cause: Launch Services delivers documents via Apple Events with empty argv; a shell-script app launcher never saw the path. `install-viewer` now compiles a small Cocoa applet (`clang` + AppKit) at install time, injects `VELLUM_BIN` via `LSEnvironment`, and logs to `~/Library/Logs/vellum-viewer.log`. Regression test `TestOpenA_DeliversDocument`. Requires Xcode CLT for install-viewer. Users must re-run `vellum install-viewer` after upgrade.
 - **Deferred**:
   - 🎯T10 *Mermaid render failures surface loudly* — still open.
+
+## 2026-07-31 — /release v0.8.0
+
+- **Commit**: `pending`
+- **Outcome**: Released v0.8.0. Unifies the MCP and CLI conversion surface around media-orthogonal `from`/`to` (🎯T14). Single MCP tool `convert` replaces `convert`, `convert_to_clipboard`, `convert_from_clipboard`, and `import`. Media: `file`, `content`, `clipboard`, `file_reference` (Finder-style pasteboard paths). Formats inferred aggressively; content/clipboard PDF sinks refused. Shared `convert.Run` router; CLI `vellum convert --from/--to` plus sugars (bare `.md`, `--to-clipboard`, `import`). STABILITY.md re-baselined to v0.8.0.
+- **Deferred**:
+  - 🎯T10 *Mermaid render failures surface loudly* — still open.
+  - Windows/Linux clipboard backends (parked).

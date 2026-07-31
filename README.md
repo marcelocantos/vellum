@@ -2,7 +2,7 @@
 
 Document preparation MCP server — converts GitHub-flavoured Markdown to PDF via [goldmark](https://github.com/yuin/goldmark) and [WeasyPrint](https://www.courtbouillon.org/weasyprint) (or [Prince](https://www.princexml.com/) opt-in), and the inverse: rich-text formats (RTF, DOCX, HTML, ODT, EPUB, …) back to Markdown via [pandoc](https://pandoc.org/).
 
-vellum is primarily a stdio [Model Context Protocol](https://modelcontextprotocol.io/) server, exposing both conversion directions as tools for AI agents. It also ships a direct CLI for scripted and interactive use.
+vellum is primarily a stdio [Model Context Protocol](https://modelcontextprotocol.io/) server, exposing both conversion directions as a single media-orthogonal `convert` tool for AI agents. It also ships a direct CLI for scripted and interactive use.
 
 vellum is the Go-based successor to [mpe2pdf](https://github.com/marcelocantos/mpe2pdf): leaner, single-binary, MCP-first.
 

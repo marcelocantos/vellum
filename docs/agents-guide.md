@@ -9,8 +9,8 @@ vellum has two directions:
    anything else pandoc supports is converted back to GitHub-Flavoured
    Markdown via pandoc. Source can be a file or the system clipboard.
 
-Both directions run as either a command-line tool or as MCP (Model
-Context Protocol) tools over stdio.
+Both directions run as either a command-line tool or as a single MCP
+(Model Context Protocol) `convert` tool over stdio.
 
 ## Installation
 
@@ -402,17 +402,21 @@ diagram does not fit; most diagrams render correctly at 1.0.
 ## Error handling
 
 If a conversion fails, the error message includes the underlying
-tool's stderr output (from prince, node, or mmdc). Report it verbatim
-to the user — the stderr text is the most useful diagnostic.
+tool's stderr output (from weasyprint/prince, node, mmdc, or pandoc).
+Report it verbatim to the user — the stderr text is the most useful
+diagnostic.
 
 Common failure modes:
 
-- A required dependency is missing. vellum checks `prince`, `node`,
-  and `mmdc` on PATH at startup and lists any missing tools with
-  install instructions.
+- A required dependency is missing. vellum checks the selected PDF
+  backend (`weasyprint` by default, or `prince`), plus `node` and
+  `mmdc` when those paths are needed; pandoc is checked lazily only
+  on rich-text import. Missing tools are listed with install
+  instructions.
 - The `katex` node package is not installed globally. Fix with
   `npm install -g katex`.
 - A Mermaid diagram has invalid syntax. The `mmdc` error text is
   included in the returned error.
-- Prince cannot fit content onto a page. This usually means an oversized
-  image, table, or Mermaid diagram — try the `vellum:scale` hint.
+- The PDF backend cannot fit content onto a page. This usually means
+  an oversized image, table, or Mermaid diagram — try the
+  `vellum:scale` hint.
