@@ -20,7 +20,7 @@ vellum shells out to external tools at conversion time. All must be on `PATH`:
 - **[Node.js](https://nodejs.org/)** — runtime for KaTeX math rendering.
 - **[KaTeX](https://katex.org/)** — `npm install -g katex`.
 - **[mermaid-cli](https://github.com/mermaid-js/mermaid-cli)** (`mmdc`) — `brew install mermaid-cli` (or the equivalent on your platform). Required only if your documents contain Mermaid diagrams.
-- **[pandoc](https://pandoc.org/)** — `brew install pandoc`. Required only for the inverse direction (`vellum import` and `convert_from_clipboard`).
+- **[pandoc](https://pandoc.org/)** — `brew install pandoc`. Required only for rich-text import paths (`from` clipboard or non-Markdown files).
 
 ### Switching to Prince
 
@@ -67,6 +67,7 @@ If you use an AI coding agent (Claude Code, Cursor, etc.), paste this prompt to 
 Usage: vellum [options] <input.md...>
        vellum --mcp
        vellum import [options] <file>
+       vellum convert --from <media> --to <media> [path|-]
        vellum view [options] <file.md>
        vellum install-viewer | uninstall-viewer
 
@@ -75,16 +76,15 @@ Options:
   --help-agent        Show help plus the embedded agent guide
   --version           Print version
   --mcp               Run as an MCP server on stdio
-  --to-clipboard      Render and place RTF + HTML + plain text on the system
-                      clipboard (file path or '-' for stdin; macOS only)
+  --to-clipboard      Sugar: file|stdin → clipboard (macOS)
   --open              Render to cache and open (alias for `view`)
-  -o <path>           Output PDF path (single input file only)
+  -o <path>           Output path (single input file only)
   --backend <name>    Renderer backend: "weasyprint" (default) or "prince"
 
 Subcommands:
-  import              Read a rich-text file (RTF, DOCX, HTML, ODT, EPUB,
-                      LaTeX, …) or the system clipboard and write
-                      GitHub-Flavoured Markdown. See `vellum import --help`.
+  convert             Media-orthogonal conversion (file, content, clipboard,
+                      file_reference). See `vellum convert --help`.
+  import              Alias: rich-text → Markdown. See `vellum import --help`.
   view                Render Markdown to a cache location and open it
                       (HTML default; --pdf for PDF fidelity)
   install-viewer      Install Vellum Viewer.app as the default .md handler
@@ -95,13 +95,11 @@ Examples:
 
 ```sh
 vellum report.md                       # writes report.pdf
-vellum -o out.pdf report.md            # explicit output path
-vellum ch1.md ch2.md ch3.md            # batch conversion
-vellum --to-clipboard slack.md         # formatted paste into Teams/Mail
-echo '# Hi' | vellum --to-clipboard -  # raw Markdown → clipboard
-vellum import doc.docx                 # → Markdown on stdout
-vellum import doc.rtf -o doc.md        # → Markdown to a file
-vellum import --from-clipboard         # ingest rich-text clipboard content
+vellum convert --from file --to clipboard report.md
+echo '# Hi' | vellum convert --from content --to clipboard
+vellum convert --from clipboard --to content
+vellum convert --from file --to content notes.docx
+vellum import doc.docx                 # sugar → Markdown on stdout
 vellum view notes.md                   # open rendered HTML in the browser
 vellum install-viewer                  # double-click .md → rendered view
 ```
@@ -141,7 +139,19 @@ Configure it in any MCP-capable client (for example, Claude Code's `.mcp.json`):
 }
 ```
 
-The server exposes a single tool, `convert`, which accepts a batch of file pairs:
+The server exposes a **single** tool, `convert`, with media-orthogonal
+`from` / `to` (media: `file`, `content`, `clipboard`, `file_reference`).
+Formats are inferred when omitted. Optional `style` and `backend` overlay
+config for that call. See `docs/agents-guide.md` or `vellum --help-agent`.
+
+```json
+{
+  "from": { "media": "content", "content": "# Hi\n" },
+  "to": { "media": "clipboard" }
+}
+```
+
+Legacy batch sugar still works for Markdown → PDF:
 
 ```json
 {
@@ -151,17 +161,8 @@ The server exposes a single tool, `convert`, which accepts a batch of file pairs
 }
 ```
 
-`output` is optional; when omitted, vellum writes alongside the input with the extension replaced by `.pdf`. Paths should be absolute.
-
-The `convert` and `convert_to_clipboard` tools also accept an optional `style` object whose fields overlay the user's config-file defaults for that call only. See [Style customisation](#style-customisation) below for the field list.
-
-### MCP tools (clipboard + import)
-
-- **`convert_to_clipboard`** — renders Markdown to RTF + HTML + plain text on the system clipboard. Accepts **either** `input` (path to a `.md` file) **or** `content` (raw Markdown string). Prefer `content` when the agent already has the text — no temp file needed. macOS only.
-- **`convert_from_clipboard`** — reads the system clipboard's RTF (or HTML fallback) and returns Markdown. Designed for the common flow of copying a passage from Word, Pages, Mail, Slack's composer, or a browser, and getting clean Markdown into the agent's working set. macOS only currently.
-- **`import`** — takes a file path (and optional `format` override and `output` write path) and returns the file's content as Markdown. Pandoc handles RTF, DOCX, HTML, ODT, EPUB, LaTeX, and everything else it supports out of the box.
-
-The import tools require `pandoc` on `PATH`.
+Rich-text import paths require `pandoc` on `PATH`. `clipboard` and
+`file_reference` are macOS-only.
 
 ## Style customisation
 

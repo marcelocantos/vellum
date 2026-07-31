@@ -8,14 +8,11 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"strings"
 
-	"github.com/marcelocantos/vellum/clipboard"
 	"github.com/marcelocantos/vellum/config"
 	"github.com/marcelocantos/vellum/convert"
 	"github.com/marcelocantos/vellum/docs"
-	"github.com/marcelocantos/vellum/importer"
 	vellummcp "github.com/marcelocantos/vellum/mcp"
 	"github.com/marcelocantos/vellum/viewer"
 )
@@ -33,6 +30,8 @@ func run() error {
 	args := os.Args[1:]
 	if len(args) > 0 {
 		switch args[0] {
+		case "convert":
+			return runConvert(args[1:])
 		case "import":
 			return runImport(args[1:])
 		case "view":
@@ -178,11 +177,11 @@ func runClipboard(args []string, output, backendFlag string) error {
 	if err != nil {
 		return err
 	}
-	backendName := effectiveBackend(backendFlag, cfg.Backend)
-	opts := &convert.Options{Style: cfg.Style, Backend: backendName}
-	ctx := context.Background()
-
-	var html string
+	req := &convert.Request{
+		To:      convert.Endpoint{Media: convert.MediaClipboard},
+		Style:   cfg.Style,
+		Backend: effectiveBackend(backendFlag, cfg.Backend),
+	}
 	if args[0] == "-" {
 		src, err := io.ReadAll(os.Stdin)
 		if err != nil {
@@ -191,25 +190,13 @@ func runClipboard(args []string, output, backendFlag string) error {
 		if len(src) == 0 {
 			return fmt.Errorf("--to-clipboard: stdin is empty")
 		}
-		html, err = convert.Render(ctx, src, opts)
-		if err != nil {
-			return err
-		}
+		req.From = convert.Endpoint{Media: convert.MediaContent, Content: string(src)}
 	} else {
-		absInput, err := filepath.Abs(args[0])
-		if err != nil {
-			return err
-		}
-		html, err = convert.RenderFile(ctx, absInput, opts)
-		if err != nil {
-			return fmt.Errorf("%s: %w", args[0], err)
-		}
+		req.From = convert.Endpoint{Media: convert.MediaFile, Path: args[0]}
 	}
-
-	if err := clipboard.Write(clipboard.Payload{HTML: html}); err != nil {
-		return fmt.Errorf("clipboard: %w", err)
+	if _, err := convert.Run(context.Background(), req); err != nil {
+		return err
 	}
-
 	fmt.Fprintln(os.Stderr, "Copied to clipboard.")
 	return nil
 }
@@ -370,7 +357,207 @@ default Markdown handler — use Finder Get Info to reassign if needed.
 `)
 }
 
+func runConvert(args []string) error {
+	var (
+		showHelp  bool
+		fromMedia string
+		toMedia   string
+		fromFmt   string
+		toFmt     string
+		output    string
+		backend   string
+		positional []string
+	)
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		switch {
+		case a == "--help" || a == "-help":
+			showHelp = true
+		case a == "--from":
+			if i+1 >= len(args) {
+				return fmt.Errorf("%s requires an argument", a)
+			}
+			i++
+			fromMedia = args[i]
+		case strings.HasPrefix(a, "--from="):
+			fromMedia = a[len("--from="):]
+		case a == "--to":
+			if i+1 >= len(args) {
+				return fmt.Errorf("%s requires an argument", a)
+			}
+			i++
+			toMedia = args[i]
+		case strings.HasPrefix(a, "--to="):
+			toMedia = a[len("--to="):]
+		case a == "--format":
+			if i+1 >= len(args) {
+				return fmt.Errorf("%s requires an argument", a)
+			}
+			i++
+			fromFmt = args[i]
+		case strings.HasPrefix(a, "--format="):
+			fromFmt = a[len("--format="):]
+		case a == "--to-format":
+			if i+1 >= len(args) {
+				return fmt.Errorf("%s requires an argument", a)
+			}
+			i++
+			toFmt = args[i]
+		case strings.HasPrefix(a, "--to-format="):
+			toFmt = a[len("--to-format="):]
+		case a == "-o" || a == "--output":
+			if i+1 >= len(args) {
+				return fmt.Errorf("%s requires an argument", a)
+			}
+			i++
+			output = args[i]
+		case strings.HasPrefix(a, "-o="):
+			output = a[len("-o="):]
+		case strings.HasPrefix(a, "--output="):
+			output = a[len("--output="):]
+		case a == "--backend":
+			if i+1 >= len(args) {
+				return fmt.Errorf("%s requires an argument", a)
+			}
+			i++
+			backend = args[i]
+		case strings.HasPrefix(a, "--backend="):
+			backend = a[len("--backend="):]
+		case a == "-":
+			positional = append(positional, a)
+		case strings.HasPrefix(a, "-"):
+			return fmt.Errorf("unknown flag for convert: %s", a)
+		default:
+			positional = append(positional, a)
+		}
+	}
+	if showHelp {
+		printConvertUsage()
+		return nil
+	}
+	if fromMedia == "" || toMedia == "" {
+		printConvertUsage()
+		return fmt.Errorf("convert: --from and --to are required")
+	}
+
+	cfg, err := config.Load()
+	if err != nil {
+		return err
+	}
+	req := &convert.Request{
+		From:    convert.Endpoint{Media: convert.Media(fromMedia), Format: fromFmt},
+		To:      convert.Endpoint{Media: convert.Media(toMedia), Format: toFmt, Path: output},
+		Style:   cfg.Style,
+		Backend: effectiveBackend(backend, cfg.Backend),
+	}
+
+	switch convert.Media(fromMedia) {
+	case convert.MediaFile:
+		if len(positional) == 0 {
+			return fmt.Errorf("convert: from file requires a path")
+		}
+		if len(positional) == 1 {
+			req.From.Path = positional[0]
+		} else {
+			req.From.Paths = positional
+		}
+	case convert.MediaContent:
+		var src []byte
+		if len(positional) == 0 || (len(positional) == 1 && positional[0] == "-") {
+			src, err = io.ReadAll(os.Stdin)
+			if err != nil {
+				return fmt.Errorf("reading stdin: %w", err)
+			}
+		} else if len(positional) == 1 {
+			src, err = os.ReadFile(positional[0])
+			if err != nil {
+				return err
+			}
+		} else {
+			return fmt.Errorf("convert: from content accepts at most one path or '-'")
+		}
+		if len(src) == 0 {
+			return fmt.Errorf("convert: empty content")
+		}
+		req.From.Content = string(src)
+	case convert.MediaClipboard, convert.MediaFileReference:
+		if len(positional) > 0 {
+			return fmt.Errorf("convert: from %s does not take a path", fromMedia)
+		}
+	default:
+		return fmt.Errorf("convert: unknown --from media %q", fromMedia)
+	}
+
+	res, err := convert.Run(context.Background(), req)
+	if err != nil {
+		return err
+	}
+	return printRunResult(res)
+}
+
+func printRunResult(res *convert.Result) error {
+	if res == nil {
+		return nil
+	}
+	if res.Content != "" {
+		fmt.Print(res.Content)
+		if !strings.HasSuffix(res.Content, "\n") {
+			fmt.Println()
+		}
+	}
+	for _, p := range res.Paths {
+		fmt.Println(p)
+	}
+	if res.Content == "" && len(res.Paths) == 0 {
+		switch res.ToMedia {
+		case convert.MediaClipboard:
+			fmt.Fprintln(os.Stderr, "Copied to clipboard.")
+		case convert.MediaFileReference:
+			fmt.Fprintln(os.Stderr, "Placed file reference on clipboard.")
+		}
+	}
+	for _, e := range res.Errors {
+		fmt.Fprintf(os.Stderr, "Error: %s\n", e)
+	}
+	return nil
+}
+
+func printConvertUsage() {
+	fmt.Print(`Usage: vellum convert --from <media> --to <media> [path|-] [options]
+
+Media-orthogonal conversion. Media: file | content | clipboard | file_reference.
+
+Options:
+  --from <media>      Source medium (required)
+  --to <media>        Sink medium (required)
+  --format <fmt>      Source format override (markdown, html, rtf, docx, …)
+  --to-format <fmt>   Sink format override (markdown, html, pdf, …)
+  -o <path>           Output path (file / file_reference sinks)
+  --backend <name>    PDF backend: weasyprint (default) or prince
+  --help              Show this help
+
+Examples:
+  vellum convert --from file --to file report.md -o report.pdf
+  vellum convert --from file --to clipboard report.md
+  echo '# Hi' | vellum convert --from content --to clipboard
+  vellum convert --from clipboard --to content
+  vellum convert --from file --to content notes.docx
+  vellum convert --from file --to file_reference report.md -o report.pdf
+  vellum convert --from file_reference --to content
+
+Shorthand (also available):
+  vellum report.md                  → --from file --to file
+  vellum --to-clipboard report.md   → --from file --to clipboard
+  vellum import doc.docx            → --from file --to content
+  vellum import --from-clipboard    → --from clipboard --to content
+
+Disallowed: --to content|clipboard with --to-format pdf.
+clipboard and file_reference require macOS.
+`)
+}
+
 func runImport(args []string) error {
+	// Thin alias → convert --from file|clipboard --to content|file.
 	var (
 		showHelp      bool
 		fromClipboard bool
@@ -427,58 +614,34 @@ func runImport(args []string) error {
 		return fmt.Errorf("import: only one input file at a time")
 	}
 
-	if err := importer.CheckDep(); err != nil {
-		return err
-	}
-
-	ctx := context.Background()
-
-	var md string
-	if fromClipboard {
-		data, detected, err := clipboard.ReadRichText()
-		if err != nil {
-			return fmt.Errorf("clipboard: %w", err)
-		}
-		if len(data) == 0 {
-			return fmt.Errorf("clipboard: no RTF or HTML content found")
-		}
-		if format == "" {
-			format = detected
-		}
-		md, err = importer.ImportBytes(ctx, data, format)
-		if err != nil {
-			return err
-		}
-	} else {
-		absInput, err := filepath.Abs(positional[0])
-		if err != nil {
-			return err
-		}
-		md, err = importer.ImportFile(ctx, absInput, format)
-		if err != nil {
-			return fmt.Errorf("%s: %w", positional[0], err)
-		}
-	}
-
-	if output == "" {
-		fmt.Print(md)
-		return nil
-	}
-	absOutput, err := filepath.Abs(output)
+	cfg, err := config.Load()
 	if err != nil {
 		return err
 	}
-	if dir := filepath.Dir(absOutput); dir != "." {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return err
-		}
+	req := &convert.Request{Style: cfg.Style, Backend: cfg.Backend}
+	if fromClipboard {
+		req.From = convert.Endpoint{Media: convert.MediaClipboard, Format: format}
+	} else {
+		req.From = convert.Endpoint{Media: convert.MediaFile, Path: positional[0], Format: format}
 	}
-	return os.WriteFile(absOutput, []byte(md), 0o644)
+	if output == "" {
+		req.To = convert.Endpoint{Media: convert.MediaContent, Format: convert.FormatMarkdown}
+	} else {
+		req.To = convert.Endpoint{Media: convert.MediaFile, Path: output, Format: convert.FormatMarkdown}
+	}
+	res, err := convert.Run(context.Background(), req)
+	if err != nil {
+		return err
+	}
+	return printRunResult(res)
 }
 
 func printImportUsage() {
 	fmt.Print(`Usage: vellum import [options] <file>
        vellum import --from-clipboard [options]
+
+Alias for: vellum convert --from file|clipboard --to content|file
+(with --to-format markdown). Prefer 'vellum convert' for new scripts.
 
 Read a rich-text file (or the system clipboard's rich-text content) and
 write GitHub-Flavoured Markdown to stdout (or to -o).
@@ -504,29 +667,29 @@ Requires pandoc on PATH (https://pandoc.org/).
 
 func printUsage() {
 	fmt.Print(`Usage: vellum [options] <input.md...>
+       vellum convert --from <media> --to <media> [path|-]
        vellum --mcp
        vellum import [options] <file>
        vellum view [options] <file.md>
        vellum install-viewer | uninstall-viewer
 
-Document preparation — Markdown to PDF (default direction), rich-text
-to Markdown (import), clipboard delivery, and macOS Markdown viewing.
+Document preparation — media-orthogonal conversion (file, content,
+clipboard, file_reference), Markdown viewing, and MCP server.
 
 Options:
   --help              Show this help message
   --help-agent        Show this help plus the embedded agent guide
   --version           Print version number
   --mcp               Run as an MCP (Model Context Protocol) server on stdio
-  --to-clipboard      Render and place RTF + HTML + plain text on the
-                      system clipboard (file path or '-' for stdin; macOS)
+  --to-clipboard      Sugar: file|stdin → clipboard (macOS)
   --open              Alias for 'view': render to cache and open (macOS)
-  -o <path>           Output PDF path (single input file only)
+  -o <path>           Output path (single input file only)
   --backend <name>    Renderer backend: "weasyprint" (default) or "prince"
 
 Subcommands:
-  import              Read a rich-text file (RTF, DOCX, HTML, ODT, EPUB,
-                      LaTeX, …) or the system clipboard and write
-                      GitHub-Flavoured Markdown. See "vellum import --help".
+  convert             Media-orthogonal conversion (--from / --to). See
+                      "vellum convert --help".
+  import              Alias: rich-text → Markdown. See "vellum import --help".
   view                Render a Markdown file to cache and open it
                       (HTML default; --pdf for PDF). See "vellum view --help".
   install-viewer      Install Vellum Viewer.app as the default .md handler
@@ -534,17 +697,14 @@ Subcommands:
 
 Examples:
   vellum report.md                       # produces report.pdf
-  vellum -o out.pdf report.md            # explicit output path
-  vellum ch1.md ch2.md ch3.md            # batch conversion
-  vellum --to-clipboard slack.md         # ready to paste into Slack/Mail
-  echo '# Hi' | vellum --to-clipboard -  # raw Markdown → clipboard
+  vellum convert --from file --to clipboard report.md
+  echo '# Hi' | vellum convert --from content --to clipboard
+  vellum convert --from clipboard --to content
   vellum import doc.docx                 # → Markdown on stdout
-  vellum import --from-clipboard         # → Markdown from clipboard
   vellum view notes.md                   # rendered HTML in browser
-  vellum install-viewer                  # double-click .md → rendered
 
 Renderer (default WeasyPrint, optional Prince) must be on PATH for PDF
-output. pandoc must be on PATH for the import subcommand.
+output. pandoc must be on PATH for rich-text import paths.
 `)
 }
 
@@ -564,38 +724,22 @@ func runCLI(args []string, output, backendFlag string) error {
 	}
 	backendName := effectiveBackend(backendFlag, cfg.Backend)
 
-	if err := convert.CheckDeps(backendName); err != nil {
+	req := &convert.Request{
+		Style:   cfg.Style,
+		Backend: backendName,
+	}
+	if len(args) == 1 {
+		req.From = convert.Endpoint{Media: convert.MediaFile, Path: args[0]}
+		req.To = convert.Endpoint{Media: convert.MediaFile, Path: output, Format: convert.FormatPDF}
+	} else {
+		req.From = convert.Endpoint{Media: convert.MediaFile, Paths: args}
+		req.To = convert.Endpoint{Media: convert.MediaFile, Format: convert.FormatPDF}
+	}
+	res, err := convert.Run(context.Background(), req)
+	if err != nil {
 		return err
 	}
-
-	opts := &convert.Options{Style: cfg.Style, Backend: backendName}
-
-	ctx := context.Background()
-
-	for _, inputPath := range args {
-		absInput, err := filepath.Abs(inputPath)
-		if err != nil {
-			return err
-		}
-
-		outputPath := output
-		if outputPath == "" {
-			outputPath = strings.TrimSuffix(absInput, filepath.Ext(absInput)) + ".pdf"
-		} else {
-			outputPath, err = filepath.Abs(outputPath)
-			if err != nil {
-				return err
-			}
-		}
-
-		if err := convert.Convert(ctx, absInput, outputPath, opts); err != nil {
-			return fmt.Errorf("%s: %w", inputPath, err)
-		}
-
-		fmt.Println(outputPath)
-	}
-
-	return nil
+	return printRunResult(res)
 }
 
 func runMCP(backendFlag string) error {

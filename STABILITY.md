@@ -21,9 +21,10 @@ change between minor releases — though in practice we aim to minimise churn.
 
 ## Interaction surface catalogue
 
-Snapshot as of **v0.7.0**. Annotations: **stable** (unlikely to change),
-**needs review** (functional but may be refined), **fluid** (actively
-evolving).
+Snapshot as of **post-v0.7.0 / 🎯T14** (unified `convert` media model;
+re-baseline on next minor release). Annotations: **stable** (unlikely to
+change), **needs review** (functional but may be refined), **fluid**
+(actively evolving).
 
 ### Go package API
 
@@ -43,22 +44,29 @@ Package paths are under `github.com/marcelocantos/vellum/…`.
 - `func RequiredDeps(backendName string) []Dep` — **stable** (signature changed in v0.4.0 to take backend name)
 - `func CheckDeps(backendName string) error` — **stable** (signature changed in v0.4.0 to take backend name)
 
+**`convert` (router)** — media-orthogonal `Run` (🎯T14).
+
+- `func Run(ctx context.Context, req *Request) (*Result, error)` — **needs review**
+- `type Media`, `Endpoint`, `Request`, `Result`, `FilePair` — **needs review**
+- `const MediaFile, MediaContent, MediaClipboard, MediaFileReference` — **needs review**
+- `const FormatMarkdown, FormatHTML, FormatRTF, FormatPDF, FormatRich` — **needs review**
+
 **`mcp`** — the stdio MCP server.
 
 - `func Serve(ctx context.Context, version string) error` — **stable**
-- `type ConvertFile struct { Input, Output string }` — **stable** (mirrors the JSON schema)
-- `type ConvertInput struct { Files []ConvertFile; Style *convert.Style; Backend string }` — **needs review** (Style + Backend added in v0.4.0)
-- `type ConvertOutput struct { Converted, Errors []string }` — **stable**
-- `type ClipboardInput struct { Input, Content string; Style *convert.Style; Backend string }` — **needs review** (`Content` raw Markdown added in v0.6.0; exactly one of Input/Content required)
-- `type ClipboardOutput struct { Input, Source string }` — **needs review** (`Source` is `"file"` or `"content"` as of v0.6.0)
+- **Single tool** `convert` with `from`/`to` media endpoints (+ optional `files` sugar) — **needs review** (replaced the four-tool surface: old `convert_to_clipboard`, `convert_from_clipboard`, `import` removed)
+- `type Endpoint`, `FilePair`, `ConvertInput`, `ConvertOutput` — **needs review**
 
-**`clipboard`** — system-clipboard read/write (added in v0.2.0; reads added in v0.5.0).
+**`clipboard`** — system-clipboard read/write (added in v0.2.0; reads added in v0.5.0; file refs in 🎯T14).
 
 - `type Payload struct { HTML string }` — **needs review** (single-field today; RTF + plain text are derived; may grow explicit fields)
 - `func Write(p Payload) error` — **needs review** (macOS implementation only; non-macOS returns `ErrUnsupported`)
 - `func ReadRTF() ([]byte, error)` — **needs review** (added in v0.5.0; macOS only)
 - `func ReadHTML() ([]byte, error)` — **needs review** (same)
 - `func ReadRichText() (data []byte, format string, err error)` — **needs review** (RTF preferred, HTML fallback; format is "rtf"/"html"/"")
+- `type FileRefPayload struct { Paths []string }` — **needs review** (Finder-style file references)
+- `func WriteFileRefs(p FileRefPayload) error` — **needs review** (macOS; pasteboard-owned NSFilenamesPboardType so data survives process exit)
+- `func ReadFileRefs() ([]string, error)` — **needs review**
 - `const FormatRTF, FormatHTML` — **needs review**
 - `var ErrUnsupported error` — **stable**
 
@@ -155,35 +163,42 @@ Binary: `vellum`.
 - Server info: `{ name: "vellum", version: <build version> }`. **stable**.
 - Protocol version: whatever the embedded `github.com/modelcontextprotocol/go-sdk` version negotiates. **needs review** (SDK is pre-1.x on its own track; bumping it may shift the minimum protocol version).
 
-**Tools**: `convert` (Markdown → PDF batch), `convert_to_clipboard`
-(single Markdown → system clipboard, macOS only, added in v0.2.0),
-`convert_from_clipboard` (clipboard rich text → Markdown, macOS only,
-added in v0.5.0), and `import` (rich-text file → Markdown, added in
-v0.5.0).
+**Tools**: single `convert` (media-orthogonal `from`/`to`; 🎯T14).
+Removed: `convert_to_clipboard`, `convert_from_clipboard`, `import`.
 
 **Tool: `convert`**
 
-- **Description**: "Convert one or more Markdown files to PDF. Input paths must be absolute. Each file is rendered via goldmark (GFM + extensions), with server-side KaTeX math and Mermaid diagrams, then typeset by the selected backend (WeasyPrint by default, Prince opt-in). Returns the list of written PDFs and any errors. Optional 'style' and 'backend' fields override the user's config file for this call only."
-- **Input schema**: **stable**
+- **Description**: media-orthogonal convert across file, content,
+  clipboard, and file_reference; formats inferred; content/clipboard
+  PDF sinks refused. Optional `files` sugar for Markdown→PDF batch.
+  Optional `style` / `backend`. **needs review**
+- **Input schema**: **needs review**
 
   ```json
   {
-    "files": [
-      { "input": "<absolute path>", "output": "<absolute path, optional>" }
-    ]
+    "from": { "media": "file|content|clipboard|file_reference", "path?": "…", "paths?": [], "content?": "…", "format?": "…" },
+    "to":   { "media": "file|content|clipboard|file_reference", "path?": "…", "format?": "…" },
+    "files": [{ "input": "…", "output?": "…" }],
+    "style?": {},
+    "backend?": "weasyprint|prince"
   }
   ```
 
-- **Structured output**: **stable**
+- **Structured output**: **needs review**
 
   ```json
   {
-    "converted": ["<absolute path>", …],
-    "errors":    ["<absolute path>: <message>", …]
+    "from_media": "…",
+    "to_media": "…",
+    "from_format": "…",
+    "to_format": "…",
+    "paths": ["…"],
+    "content": "…",
+    "errors": ["…"]
   }
   ```
 
-- **Text content**: human-readable summary ("Converted N file(s): …" / "Errors: …"). **needs review** (format may be tweaked for readability; structured output is the load-bearing part).
+- **Text content**: Markdown/HTML body when `to.media=content`; otherwise a short summary. **needs review**.
 - **`isError`**: set to `true` only when every file failed. **stable**.
 
 **Tool: `convert_to_clipboard`** (added in v0.2.0; `content` added in v0.6.0)

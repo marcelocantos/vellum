@@ -12,3 +12,11 @@ func writePayload(_ Payload) error {
 func readClipboard(_ string) ([]byte, error) {
 	return nil, ErrUnsupported
 }
+
+func writeFileRefs(_ []string) error {
+	return ErrUnsupported
+}
+
+func readFileRefs() ([]string, error) {
+	return nil, ErrUnsupported
+}

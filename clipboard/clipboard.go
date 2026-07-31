@@ -73,6 +73,30 @@ const (
 	FormatHTML = "html"
 )
 
+// FileRefPayload lists absolute file paths to place on the pasteboard as
+// Finder-compatible file references (public.file-url / NSFilenamesPboardType).
+type FileRefPayload struct {
+	Paths []string
+}
+
+// WriteFileRefs places file URLs on the system clipboard so a paste in
+// Finder (or other file-aware targets) copies/moves the referenced files.
+// On success the pasteboard commit has completed. Non-macOS returns
+// [ErrUnsupported].
+func WriteFileRefs(p FileRefPayload) error {
+	if len(p.Paths) == 0 {
+		return errors.New("clipboard: no file paths for file reference write")
+	}
+	return writeFileRefs(p.Paths)
+}
+
+// ReadFileRefs returns absolute paths from Finder-style file references
+// on the system clipboard. Returns (nil, nil) when no file references
+// are present. Non-macOS returns [ErrUnsupported].
+func ReadFileRefs() ([]string, error) {
+	return readFileRefs()
+}
+
 var bodyRe = regexp.MustCompile(`(?is)<body[^>]*>(.*)</body>`)
 
 // htmlBodyFragment extracts the inner content of <body>…</body> from a

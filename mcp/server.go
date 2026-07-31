@@ -8,35 +8,47 @@ package mcp
 import (
 	"context"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/marcelocantos/vellum/clipboard"
 	"github.com/marcelocantos/vellum/config"
 	"github.com/marcelocantos/vellum/convert"
-	"github.com/marcelocantos/vellum/importer"
 )
 
-// ConvertFile describes a single file to convert.
-type ConvertFile struct {
+// Endpoint is one side of a conversion (source or sink) in the MCP schema.
+type Endpoint struct {
+	Media   string   `json:"media" jsonschema:"transport medium: file | content | clipboard | file_reference"`
+	Path    string   `json:"path,omitempty" jsonschema:"absolute path (file media; or write path for file_reference)"`
+	Paths   []string `json:"paths,omitempty" jsonschema:"multiple absolute paths (file media batch only)"`
+	Content string   `json:"content,omitempty" jsonschema:"raw text (content media only)"`
+	Format  string   `json:"format,omitempty" jsonschema:"optional document format override (markdown, html, rtf, pdf, docx, …)"`
+}
+
+// FilePair is sugar for Markdown → PDF file batches (legacy convert shape).
+type FilePair struct {
 	Input  string `json:"input" jsonschema:"absolute path to a .md file"`
 	Output string `json:"output,omitempty" jsonschema:"output PDF path (defaults to input with .pdf extension)"`
 }
 
-// ConvertInput is the input schema for the convert tool.
+// ConvertInput is the input schema for the unified convert tool.
 type ConvertInput struct {
-	Files   []ConvertFile  `json:"files" jsonschema:"files to convert (at least one)"`
+	From    *Endpoint      `json:"from,omitempty" jsonschema:"source medium descriptor (required unless files is set)"`
+	To      *Endpoint      `json:"to,omitempty" jsonschema:"sink medium descriptor (required unless files is set)"`
+	Files   []FilePair     `json:"files,omitempty" jsonschema:"legacy sugar: batch Markdown file → PDF file pairs"`
 	Style   *convert.Style `json:"style,omitempty" jsonschema:"per-call style overrides; each field overlays the corresponding config-file value"`
-	Backend string         `json:"backend,omitempty" jsonschema:"renderer backend for this call: \"weasyprint\" (default, BSD-3) or \"prince\" (proprietary, opt-in); empty falls through to the config file or built-in default"`
+	Backend string         `json:"backend,omitempty" jsonschema:"renderer backend for this call: \"weasyprint\" (default) or \"prince\"; empty falls through to the config file"`
 }
 
-// ConvertOutput is the structured output schema for the convert tool.
+// ConvertOutput is the structured output schema for convert.
 type ConvertOutput struct {
-	Converted []string `json:"converted,omitempty" jsonschema:"output PDF paths that were written successfully"`
-	Errors    []string `json:"errors,omitempty" jsonschema:"errors encountered, one per failed file"`
+	FromMedia  string   `json:"from_media,omitempty" jsonschema:"resolved source media"`
+	ToMedia    string   `json:"to_media,omitempty" jsonschema:"resolved sink media"`
+	FromFormat string   `json:"from_format,omitempty" jsonschema:"detected or forced source format"`
+	ToFormat   string   `json:"to_format,omitempty" jsonschema:"detected or forced sink format"`
+	Paths      []string `json:"paths,omitempty" jsonschema:"written file paths (file / file_reference sinks)"`
+	Content    string   `json:"content,omitempty" jsonschema:"inline result text (content sink)"`
+	Errors     []string `json:"errors,omitempty" jsonschema:"per-item errors for batch conversions"`
 }
 
 // Serve runs a vellum MCP server on stdio until the client disconnects.
@@ -55,271 +67,112 @@ func Serve(ctx context.Context, version string) error {
 	}, nil)
 
 	mcp.AddTool(server, &mcp.Tool{
-		Name:        "convert",
-		Title:       "Convert Markdown to PDF",
-		Description: "Convert one or more Markdown files to PDF. Input paths must be absolute. Each file is rendered via goldmark (GFM + extensions), with server-side KaTeX math and Mermaid diagrams, then typeset by the selected backend (WeasyPrint by default, Prince opt-in). Returns the list of written PDFs and any errors. Optional 'style' and 'backend' fields override the user's config file for this call only.",
+		Name:  "convert",
+		Title: "Convert between file, content, clipboard, and file references",
+		Description: strings.TrimSpace(`
+Convert documents across media: file, content (inline text), clipboard (rich text), and file_reference (Finder-style pasteboard file URLs).
+
+Provide from + to (each with media and media-specific fields), or files for legacy Markdown→PDF batch sugar.
+
+Examples:
+  { "from": { "media": "content", "content": "# Hi" }, "to": { "media": "clipboard" } }
+  { "from": { "media": "clipboard" }, "to": { "media": "content" } }
+  { "from": { "media": "file", "path": "/abs/in.md" }, "to": { "media": "file", "path": "/abs/out.pdf" } }
+  { "from": { "media": "file", "path": "/abs/doc.docx" }, "to": { "media": "content" } }
+  { "from": { "media": "file", "path": "/abs/in.md" }, "to": { "media": "file_reference", "path": "/abs/out.pdf" } }
+  { "files": [{ "input": "/abs/a.md" }, { "input": "/abs/b.md", "output": "/abs/b.pdf" }] }
+
+Formats are inferred aggressively (file extension, clipboard UTI, markdown default for content, pdf for md→file, markdown for rich→file). Optional from.format / to.format override.
+
+Disallowed (intractable): to.media content|clipboard with format pdf. macOS required for clipboard and file_reference. Optional style and backend overlay the user config for this call only.
+`),
 	}, makeConvertHandler(baseStyle, baseBackend))
-
-	mcp.AddTool(server, &mcp.Tool{
-		Name:        "convert_to_clipboard",
-		Title:       "Convert Markdown to clipboard",
-		Description: "Render Markdown and place RTF + HTML + plain-text representations on the system clipboard in a single atomic transaction. Designed for handing formatted content to rich-text composers (Slack, Mail, Teams, …) without the textutil+osascript dance. Accepts either 'input' (absolute path to a .md file) or 'content' (raw Markdown text) — exactly one is required. Prefer 'content' when the agent already has the text and does not need a temp file. Returns when the underlying pasteboard has committed the data — there is no race window where a subsequent paste sees stale content. macOS only currently; other platforms return an unsupported error. Optional 'style' and 'backend' fields override the user's config file for this call only.",
-	}, makeClipboardHandler(baseStyle, baseBackend))
-
-	mcp.AddTool(server, &mcp.Tool{
-		Name:        "convert_from_clipboard",
-		Title:       "Convert clipboard rich text to Markdown",
-		Description: "Read the system clipboard's rich-text representation (RTF preferred, HTML fallback) and convert it to GitHub-Flavoured Markdown. Designed for ingesting content copied from rich-text apps (Word, Pages, Mail, Slack composer, browsers) into a Markdown-native working set. Returns the Markdown text directly — no file is written. macOS only currently; other platforms return an unsupported error. Requires pandoc on PATH.",
-	}, convertFromClipboardHandler)
-
-	mcp.AddTool(server, &mcp.Tool{
-		Name:        "import",
-		Title:       "Import a rich-text file to Markdown",
-		Description: "Read a rich-text file (RTF, DOCX, HTML, ODT, EPUB, LaTeX, and any other format pandoc accepts) and convert it to GitHub-Flavoured Markdown. Format is auto-detected from the file extension; pass an explicit 'format' field to override. If 'output' is supplied, the Markdown is written to that path; otherwise it's returned in the response. Requires pandoc on PATH.",
-	}, importHandler)
 
 	return server.Run(ctx, &mcp.StdioTransport{})
 }
 
 func makeConvertHandler(baseStyle *convert.Style, baseBackend string) func(context.Context, *mcp.CallToolRequest, ConvertInput) (*mcp.CallToolResult, ConvertOutput, error) {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, input ConvertInput) (*mcp.CallToolResult, ConvertOutput, error) {
-		if len(input.Files) == 0 {
-			return &mcp.CallToolResult{
-				IsError: true,
-				Content: []mcp.Content{&mcp.TextContent{Text: "no files specified"}},
-			}, ConvertOutput{}, nil
-		}
-
 		backend := input.Backend
 		if backend == "" {
 			backend = baseBackend
 		}
-		opts := &convert.Options{Style: input.Style.OverlayOn(baseStyle), Backend: backend}
-
-		var out ConvertOutput
-		for _, f := range input.Files {
-			inputPath, err := resolveInput(f.Input)
-			if err != nil {
-				out.Errors = append(out.Errors, fmt.Sprintf("%s: %v", f.Input, err))
-				continue
-			}
-
-			outputPath, err := resolveOutput(inputPath, f.Output)
-			if err != nil {
-				out.Errors = append(out.Errors, fmt.Sprintf("%s: %v", f.Input, err))
-				continue
-			}
-
-			if _, err := os.Stat(inputPath); err != nil {
-				out.Errors = append(out.Errors, fmt.Sprintf("%s: %v", f.Input, err))
-				continue
-			}
-
-			if err := convert.Convert(ctx, inputPath, outputPath, opts); err != nil {
-				out.Errors = append(out.Errors, fmt.Sprintf("%s: %v", f.Input, err))
-				continue
-			}
-
-			out.Converted = append(out.Converted, outputPath)
+		req := &convert.Request{
+			Style:   input.Style.OverlayOn(baseStyle),
+			Backend: backend,
 		}
 
-		result := &mcp.CallToolResult{
-			Content: []mcp.Content{&mcp.TextContent{Text: formatSummary(out)}},
-			IsError: len(out.Converted) == 0 && len(out.Errors) > 0,
-		}
-		return result, out, nil
-	}
-}
-
-// ClipboardInput is the input schema for the convert_to_clipboard tool.
-// Exactly one of Input or Content must be set.
-type ClipboardInput struct {
-	Input   string         `json:"input,omitempty" jsonschema:"absolute path to a .md file (mutually exclusive with content)"`
-	Content string         `json:"content,omitempty" jsonschema:"raw Markdown text to render (mutually exclusive with input); preferred when the agent already has the text and does not want to write a temp file"`
-	Style   *convert.Style `json:"style,omitempty" jsonschema:"per-call style overrides; each field overlays the corresponding config-file value"`
-	Backend string         `json:"backend,omitempty" jsonschema:"renderer backend for this call: \"weasyprint\" (default) or \"prince\"; empty falls through to the config file"`
-}
-
-// ClipboardOutput is the structured output schema for convert_to_clipboard.
-type ClipboardOutput struct {
-	Input   string `json:"input,omitempty" jsonschema:"the input path that was rendered (when input was used)"`
-	Source  string `json:"source,omitempty" jsonschema:"\"file\" or \"content\" depending on which input form was used"`
-}
-
-func makeClipboardHandler(baseStyle *convert.Style, baseBackend string) func(context.Context, *mcp.CallToolRequest, ClipboardInput) (*mcp.CallToolResult, ClipboardOutput, error) {
-	return func(ctx context.Context, _ *mcp.CallToolRequest, in ClipboardInput) (*mcp.CallToolResult, ClipboardOutput, error) {
-		var out ClipboardOutput
-
-		hasInput := strings.TrimSpace(in.Input) != ""
-		hasContent := in.Content != ""
-		if hasInput == hasContent {
-			// both set or both empty
-			return errorResult(fmt.Errorf("convert_to_clipboard: provide exactly one of 'input' (file path) or 'content' (raw Markdown)")), out, nil
-		}
-
-		backend := in.Backend
-		if backend == "" {
-			backend = baseBackend
-		}
-		opts := &convert.Options{Style: in.Style.OverlayOn(baseStyle), Backend: backend}
-
-		var (
-			html string
-			err  error
-			msg  string
-		)
-		if hasContent {
-			out.Source = "content"
-			html, err = convert.Render(ctx, []byte(in.Content), opts)
-			msg = "Copied Markdown content to clipboard (RTF + HTML + plain text)."
+		if len(input.Files) > 0 {
+			for _, f := range input.Files {
+				req.Files = append(req.Files, convert.FilePair{Input: f.Input, Output: f.Output})
+			}
 		} else {
-			out.Source = "file"
-			inputPath, rerr := resolveInput(in.Input)
-			if rerr != nil {
-				return errorResult(rerr), out, nil
+			if input.From == nil || input.To == nil {
+				return errorResult(fmt.Errorf("convert: provide from+to, or files for Markdown→PDF batch sugar")), ConvertOutput{}, nil
 			}
-			if _, err := os.Stat(inputPath); err != nil {
-				return errorResult(err), out, nil
-			}
-			out.Input = inputPath
-			html, err = convert.RenderFile(ctx, inputPath, opts)
-			msg = fmt.Sprintf("Copied %s to clipboard (RTF + HTML + plain text).", inputPath)
-		}
-		if err != nil {
-			return errorResult(err), out, nil
-		}
-		if err := clipboard.Write(clipboard.Payload{HTML: html}); err != nil {
-			return errorResult(err), out, nil
+			req.From = toEndpoint(input.From)
+			req.To = toEndpoint(input.To)
 		}
 
+		res, err := convert.Run(ctx, req)
+		if err != nil {
+			out := ConvertOutput{}
+			if res != nil {
+				out = fromResult(res)
+			}
+			return errorResult(err), out, nil
+		}
+		out := fromResult(res)
+		msg := formatMessage(out)
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{&mcp.TextContent{Text: msg}},
+			IsError: len(out.Paths) == 0 && out.Content == "" && len(out.Errors) > 0,
 		}, out, nil
 	}
 }
 
-// ImportInput is the input schema for the `import` tool.
-type ImportInput struct {
-	Input  string `json:"input" jsonschema:"absolute path to the rich-text file"`
-	Output string `json:"output,omitempty" jsonschema:"optional absolute path to write the Markdown to; when omitted, the Markdown is returned in the response"`
-	Format string `json:"format,omitempty" jsonschema:"input format override (e.g., rtf, docx, html, odt, epub, latex); defaults to pandoc's auto-detection from file extension"`
-}
-
-// ImportOutput is the structured output schema for the `import` tool.
-type ImportOutput struct {
-	Markdown string `json:"markdown,omitempty" jsonschema:"the Markdown text (present when output was not supplied)"`
-	Output   string `json:"output,omitempty" jsonschema:"the path the Markdown was written to (present when output was supplied)"`
-}
-
-// ClipboardImportOutput is the structured output schema for the
-// `convert_from_clipboard` tool.
-type ClipboardImportOutput struct {
-	Markdown string `json:"markdown" jsonschema:"the Markdown text extracted from the clipboard"`
-	Format   string `json:"format,omitempty" jsonschema:"the clipboard format that was read (\"rtf\" or \"html\")"`
-}
-
-func importHandler(ctx context.Context, _ *mcp.CallToolRequest, in ImportInput) (*mcp.CallToolResult, ImportOutput, error) {
-	var out ImportOutput
-
-	inputPath, err := resolveInput(in.Input)
-	if err != nil {
-		return errorResult(err), out, nil
+func toEndpoint(e *Endpoint) convert.Endpoint {
+	if e == nil {
+		return convert.Endpoint{}
 	}
-	if _, err := os.Stat(inputPath); err != nil {
-		return errorResult(err), out, nil
-	}
-	if err := importer.CheckDep(); err != nil {
-		return errorResult(err), out, nil
-	}
-
-	md, err := importer.ImportFile(ctx, inputPath, in.Format)
-	if err != nil {
-		return errorResult(err), out, nil
-	}
-
-	if in.Output != "" {
-		outputPath, err := filepath.Abs(in.Output)
-		if err != nil {
-			return errorResult(err), out, nil
-		}
-		if dir := filepath.Dir(outputPath); dir != "." {
-			if err := os.MkdirAll(dir, 0o755); err != nil {
-				return errorResult(err), out, nil
-			}
-		}
-		if err := os.WriteFile(outputPath, []byte(md), 0o644); err != nil {
-			return errorResult(err), out, nil
-		}
-		out.Output = outputPath
-		return &mcp.CallToolResult{
-			Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("Imported %s → %s", inputPath, outputPath)}},
-		}, out, nil
-	}
-
-	out.Markdown = md
-	return &mcp.CallToolResult{
-		Content: []mcp.Content{&mcp.TextContent{Text: md}},
-	}, out, nil
-}
-
-func convertFromClipboardHandler(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, ClipboardImportOutput, error) {
-	var out ClipboardImportOutput
-
-	if err := importer.CheckDep(); err != nil {
-		return errorResult(err), out, nil
-	}
-	data, format, err := clipboard.ReadRichText()
-	if err != nil {
-		return errorResult(err), out, nil
-	}
-	if len(data) == 0 {
-		return errorResult(fmt.Errorf("clipboard: no RTF or HTML content found")), out, nil
-	}
-
-	md, err := importer.ImportBytes(ctx, data, format)
-	if err != nil {
-		return errorResult(err), out, nil
-	}
-	out.Markdown = md
-	out.Format = format
-	return &mcp.CallToolResult{
-		Content: []mcp.Content{&mcp.TextContent{Text: md}},
-	}, out, nil
-}
-
-func errorResult(err error) *mcp.CallToolResult {
-	return &mcp.CallToolResult{
-		IsError: true,
-		Content: []mcp.Content{&mcp.TextContent{Text: err.Error()}},
+	return convert.Endpoint{
+		Media:   convert.Media(e.Media),
+		Path:    e.Path,
+		Paths:   e.Paths,
+		Content: e.Content,
+		Format:  e.Format,
 	}
 }
 
-// resolveInput returns an absolute path for an input file. MCP clients are
-// expected to pass absolute paths, but we accept relative paths by resolving
-// against the server process's working directory as a convenience.
-func resolveInput(p string) (string, error) {
-	if p == "" {
-		return "", fmt.Errorf("input path is empty")
+func fromResult(r *convert.Result) ConvertOutput {
+	if r == nil {
+		return ConvertOutput{}
 	}
-	return filepath.Abs(p)
+	return ConvertOutput{
+		FromMedia:  string(r.FromMedia),
+		ToMedia:    string(r.ToMedia),
+		FromFormat: r.FromFormat,
+		ToFormat:   r.ToFormat,
+		Paths:      r.Paths,
+		Content:    r.Content,
+		Errors:     r.Errors,
+	}
 }
 
-// resolveOutput picks the output path: either the caller-provided value
-// (resolved to absolute) or the input path with its extension replaced by .pdf.
-func resolveOutput(inputPath, requested string) (string, error) {
-	if requested == "" {
-		return strings.TrimSuffix(inputPath, filepath.Ext(inputPath)) + ".pdf", nil
+func formatMessage(out ConvertOutput) string {
+	if out.Content != "" {
+		return out.Content
 	}
-	return filepath.Abs(requested)
-}
-
-func formatSummary(out ConvertOutput) string {
 	var b strings.Builder
-	if len(out.Converted) > 0 {
-		fmt.Fprintf(&b, "Converted %d file(s):\n", len(out.Converted))
-		for _, p := range out.Converted {
+	if len(out.Paths) > 0 {
+		fmt.Fprintf(&b, "Converted %d path(s) (%s → %s):\n", len(out.Paths), out.FromMedia, out.ToMedia)
+		for _, p := range out.Paths {
 			fmt.Fprintf(&b, "  %s\n", p)
 		}
+	} else if out.ToMedia == "clipboard" || out.ToMedia == string(convert.MediaClipboard) {
+		fmt.Fprintf(&b, "Copied to clipboard (%s → %s).\n", out.FromMedia, out.ToMedia)
+	} else if out.ToMedia == string(convert.MediaFileReference) {
+		fmt.Fprintf(&b, "Placed file reference on clipboard.\n")
 	}
 	if len(out.Errors) > 0 {
 		b.WriteString("Errors:\n")
@@ -327,5 +180,16 @@ func formatSummary(out ConvertOutput) string {
 			fmt.Fprintf(&b, "  %s\n", e)
 		}
 	}
-	return strings.TrimRight(b.String(), "\n")
+	s := strings.TrimRight(b.String(), "\n")
+	if s == "" {
+		return "OK"
+	}
+	return s
+}
+
+func errorResult(err error) *mcp.CallToolResult {
+	return &mcp.CallToolResult{
+		IsError: true,
+		Content: []mcp.Content{&mcp.TextContent{Text: err.Error()}},
+	}
 }

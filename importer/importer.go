@@ -21,9 +21,9 @@ import (
 
 // PandocDep is the runtime dependency this package requires.
 //
-// vellum's main dependency check does NOT include pandoc — only `vellum
-// import` (and the MCP import tools) does. PDF-only users never need
-// pandoc installed.
+// vellum's main dependency check does NOT include pandoc — only paths
+// that import rich text (convert from clipboard / non-Markdown files)
+// check it lazily. PDF-only users never need pandoc installed.
 var PandocDep = struct {
 	Name    string
 	Purpose string

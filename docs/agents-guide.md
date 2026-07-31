@@ -43,7 +43,7 @@ must succeed before vellum is usable — do not stop after `brew install`.**
    brew install mermaid-cli
 
    # Pandoc for the inverse direction (rich text → Markdown via
-   # `vellum import` and the `convert_from_clipboard` MCP tool).
+   # rich-text import / clipboard → Markdown via convert).
    brew install pandoc
    ```
 
@@ -99,11 +99,12 @@ must succeed before vellum is usable — do not stop after `brew install`.**
    - Check the runtime deps: `vellum --help-agent` prints this guide;
      the first real conversion will fail fast with a readable error if
      any dependency is missing.
-   - Call a tool: convert a trivial one-line Markdown file through the
-     `convert` tool and confirm the returned `converted` list contains
-     the output path. If the call returns an error in `errors` instead,
-     report the error text verbatim to the user — it almost always
-     names the missing dependency or the bad input.
+   - Call a tool: convert a trivial one-line Markdown string with
+     `convert` (`from.media=content`, `to.media=content`) or write a
+     one-line `.md` file to PDF (`from.media=file`, `to.media=file`)
+     and confirm the structured result. If the call returns an error,
+     report the error text verbatim — it almost always names the
+     missing dependency or the bad input.
 
 If any of these steps fails, installation is not complete. Report the
 failing step and its error to the user — do not proceed as if vellum
@@ -112,35 +113,135 @@ is ready.
 ## Preferred invocation
 
 When running inside an AI agent, prefer the MCP interface over the CLI.
-Start vellum with `vellum --mcp` and call the `convert` tool. The CLI
-(`vellum <input.md>`) is fine for interactive use but the MCP tool
-returns structured results (converted paths, per-file errors) that are
-easier to consume programmatically.
+Start vellum with `vellum --mcp` and call the single `convert` tool.
+The CLI (`vellum convert --from … --to …`) is fine for interactive use;
+MCP returns structured results (paths, content, errors) that are easier
+to consume programmatically.
 
 ## Tool schema
 
-The MCP server exposes four tools (`convert`, `convert_to_clipboard`,
-`convert_from_clipboard`, `import`):
+The MCP server exposes **one** tool: `convert`. Media (transport) is
+orthogonal to document format.
 
-### `convert` — Markdown → PDF (batch)
+### Media
 
-- `convert({ files: [{ input, output? }], style?, backend? })`
-  - `input` — absolute path to a `.md` file (required)
-  - `output` — absolute path for the output PDF (optional; defaults to
-    the input path with its extension replaced by `.pdf`)
-  - `style` — optional style overrides; see [Style overrides](#style-overrides)
-  - `backend` — optional renderer override: `"weasyprint"` (default) or
-    `"prince"`. Empty falls through to the user's config file
+| Media | Meaning |
+|-------|---------|
+| `file` | Path on disk (read or write) |
+| `content` | Inline text in the request/response |
+| `clipboard` | System pasteboard rich text (RTF+HTML+plain out; RTF/HTML in) |
+| `file_reference` | Finder-style pasteboard file URLs |
 
-Example call:
+### `convert` — unified media conversion
+
+```json
+{
+  "from": {
+    "media": "file|content|clipboard|file_reference",
+    "path": "…",
+    "paths": ["…"],
+    "content": "…",
+    "format": "…"
+  },
+  "to": {
+    "media": "file|content|clipboard|file_reference",
+    "path": "…",
+    "format": "…"
+  },
+  "files": [{ "input": "…", "output": "…" }],
+  "style": { },
+  "backend": "weasyprint|prince"
+}
+```
+
+Provide **either** `from`+`to`, **or** `files` (legacy Markdown→PDF batch
+sugar). Formats are inferred aggressively when omitted:
+
+| Situation | Default |
+|-----------|---------|
+| `from.media=file` | Extension (`.md`→markdown, `.docx`→docx, …) |
+| `from.media=content` | `markdown` |
+| `from.media=clipboard` | RTF preferred, else HTML |
+| `to.media=clipboard` | rich (RTF+HTML+plain) |
+| `to.media=content` | `markdown` |
+| `to.media=file` from markdown | `pdf` |
+| `to.media=file` from rich-text | `markdown` |
+
+**Disallowed (intractable):** `to.media` of `content` or `clipboard`
+with `format` `pdf`. Everything else the pipeline can implement is
+allowed. `clipboard` and `file_reference` require macOS.
+
+#### Examples
+
+Markdown string → clipboard (typical agent path — **no temp file**):
+
+```json
+{
+  "name": "convert",
+  "arguments": {
+    "from": { "media": "content", "content": "## Status\n\n- Item one\n" },
+    "to": { "media": "clipboard" }
+  }
+}
+```
+
+Clipboard rich text → Markdown:
+
+```json
+{
+  "name": "convert",
+  "arguments": {
+    "from": { "media": "clipboard" },
+    "to": { "media": "content" }
+  }
+}
+```
+
+File → PDF:
+
+```json
+{
+  "name": "convert",
+  "arguments": {
+    "from": { "media": "file", "path": "/abs/path/to/report.md" },
+    "to": { "media": "file", "path": "/abs/path/to/report.pdf" }
+  }
+}
+```
+
+DOCX → Markdown content:
+
+```json
+{
+  "name": "convert",
+  "arguments": {
+    "from": { "media": "file", "path": "/abs/path/to/doc.docx" },
+    "to": { "media": "content" }
+  }
+}
+```
+
+Markdown → PDF as Finder file reference:
+
+```json
+{
+  "name": "convert",
+  "arguments": {
+    "from": { "media": "file", "path": "/abs/in.md" },
+    "to": { "media": "file_reference", "path": "/abs/out.pdf" }
+  }
+}
+```
+
+Legacy batch sugar (Markdown → PDF files):
 
 ```json
 {
   "name": "convert",
   "arguments": {
     "files": [
-      {"input": "/abs/path/to/report.md"},
-      {"input": "/abs/path/to/spec.md", "output": "/abs/path/to/out/spec.pdf"}
+      { "input": "/abs/a.md" },
+      { "input": "/abs/b.md", "output": "/abs/out/b.pdf" }
     ]
   }
 }
@@ -150,137 +251,54 @@ Response shape:
 
 ```json
 {
-  "converted": ["/abs/path/to/report.pdf", "/abs/path/to/out/spec.pdf"],
+  "from_media": "content",
+  "to_media": "clipboard",
+  "from_format": "markdown",
+  "to_format": "rich",
+  "paths": [],
+  "content": "",
   "errors": []
 }
 ```
 
-### `convert_to_clipboard` — Markdown → system clipboard
+When `to.media` is `content`, the Markdown (or HTML) is in `content` and
+also in the tool's text message.
 
-Renders Markdown and places **RTF + HTML + plain text** on the system
-clipboard in a single atomic transaction. Designed for handing
-formatted content to rich-text composers (Slack, Mail, Teams, …)
-without the brittle `textutil` + `osascript` pipeline.
+Rich-text import paths require `pandoc` on `PATH`. Clipboard writes
+commit the pasteboard before return — no race window for paste.
 
-- `convert_to_clipboard({ input | content, style?, backend? })`
-  - **Exactly one of:**
-    - `input` — absolute path to a `.md` file
-    - `content` — raw Markdown text (preferred when the agent already
-      has the text — **do not write a temp file first**)
-  - `style` — optional style overrides; see [Style overrides](#style-overrides)
-  - `backend` — optional renderer override (`"weasyprint"` or `"prince"`)
+**Migration** from older tool names (removed):
 
-Example — raw content (typical agent path):
+| Old | New |
+|-----|-----|
+| `convert_to_clipboard({content})` | `from: {media:content, content}, to: {media:clipboard}` |
+| `convert_to_clipboard({input})` | `from: {media:file, path}, to: {media:clipboard}` |
+| `convert_from_clipboard({})` | `from: {media:clipboard}, to: {media:content}` |
+| `import({input})` | `from: {media:file, path}, to: {media:content}` |
+| `convert({files:[…]})` | still accepted as sugar; or `from`/`to` file media |
 
-```json
-{
-  "name": "convert_to_clipboard",
-  "arguments": {
-    "content": "## Status\n\n- Item one\n- Item two\n"
-  }
-}
+## CLI: convert and sugars
+
+Primary form:
+
+```sh
+vellum convert --from <media> --to <media> [path|-] [-o path]
 ```
 
-Example — file path:
+Shorthands (expand into the same router):
 
-```json
-{
-  "name": "convert_to_clipboard",
-  "arguments": {"input": "/abs/path/to/slack-message.md"}
-}
-```
-
-CLI equivalent: `vellum --to-clipboard notes.md` or
-`echo '# Hi' | vellum --to-clipboard -` (stdin).
-
-The tool returns once the underlying NSPasteboard has confirmed the
-write (`changeCount` advanced) — there is no race window where the
-agent should `sleep` before paste.
-
-**Why this exists.** Naive shells of `textutil` + `osascript` to put
-formatted content on the macOS clipboard have three well-known
-failure modes:
-
-1. **Single representation only.** `osascript` sets `«class RTF »`
-   and nothing else. Apps that prefer plain text fall back to the
-   raw RTF source (`{\rtf1\ansi…`) and paste gibberish.
-2. **No commit confirmation.** AppleScript returns before the
-   pasteboard daemon has committed the data; combined with Universal
-   Clipboard sync, this leaves a 30–60 s window where `Cmd+V`
-   silently does nothing or pastes the previous clipboard.
-3. **Lossy round-trip.** `pbpaste | pbcopy` strips rich types
-   because `pbpaste` defaults to plain text.
-
-Reach for `convert_to_clipboard` when an agent needs to deliver
-formatted content for a human to paste — not just to display it. The
-tool replaces the four-line `textutil → osascript` recipe with one
-call.
-
-**Platform support.** macOS only. Linux is out of scope. Windows is
-parked (see 🎯T7.1) — pick it up when there's concrete demand. On
-non-macOS platforms the tool returns an `unsupported` error rather
-than failing silently.
-
-### `convert_from_clipboard` — clipboard rich text → Markdown
-
-Read the system clipboard's rich-text content (RTF preferred, HTML
-fallback) and return GitHub-Flavoured Markdown. This is the dominant
-flow for ingesting content copied from Word, Pages, Mail, Slack's
-composer, or a browser into a Markdown-native working set.
-
-- `convert_from_clipboard({})` — no input fields
-
-Response:
-
-```json
-{ "markdown": "…GFM text…", "format": "rtf" }
-```
-
-`format` is `"rtf"` or `"html"` depending on which representation the
-clipboard provided. macOS only currently; other platforms return an
-unsupported error.
-
-### `import` — rich-text file → Markdown
-
-Read a rich-text file from disk and convert it to GitHub-Flavoured
-Markdown. Pandoc handles RTF, DOCX, HTML, ODT, EPUB, LaTeX, and every
-other format it supports out of the box; format is auto-detected from
-the file extension.
-
-- `import({ input, output?, format? })`
-  - `input` — absolute path to the file (required)
-  - `output` — absolute path to write Markdown to (optional; when
-    omitted, the Markdown is returned inline)
-  - `format` — explicit format hint (e.g., `"rtf"`, `"docx"`); only
-    needed when the file extension is missing or wrong
-
-Example call:
-
-```json
-{
-  "name": "import",
-  "arguments": { "input": "/abs/path/to/doc.docx" }
-}
-```
-
-Response when `output` is omitted:
-
-```json
-{ "markdown": "…GFM text…" }
-```
-
-Response when `output` is supplied:
-
-```json
-{ "output": "/abs/path/to/doc.md" }
-```
-
-Both `convert_from_clipboard` and `import` require `pandoc` on `PATH`.
+| Command | Expands to |
+|---------|------------|
+| `vellum report.md` | `--from file --to file` (PDF) |
+| `vellum --to-clipboard report.md` | `--from file --to clipboard` |
+| `echo '# Hi' \| vellum --to-clipboard -` | `--from content --to clipboard` |
+| `vellum import doc.docx` | `--from file --to content` |
+| `vellum import --from-clipboard` | `--from clipboard --to content` |
 
 ## CLI: view and install-viewer (macOS)
 
 These are CLI-only (not MCP tools) — humans double-click Markdown; agents
-already work with files and the convert tools.
+already work with files and `convert`.
 
 - `vellum view <file.md>` / `vellum --open <file.md>` — render to a
   cache location keyed by absolute path + mtime (never next to the
@@ -300,20 +318,18 @@ already work with files and the convert tools.
 
 ## Input rules
 
-- Input paths must be absolute. Relative paths are resolved against the
-  server's working directory but this is fragile — always pass absolute
-  paths.
-- Input files should have a `.md` extension.
-- The caller decides the output path. If omitted, vellum writes
-  `<input>.pdf` next to the input file.
-- Multiple files can be converted in a single call; each is processed
-  independently and errors are reported per-file.
-- For clipboard delivery of ad-hoc text, pass `content` to
-  `convert_to_clipboard` — do not write a temporary `.md` file first.
+- File paths should be absolute when calling MCP. Relative paths are
+  resolved against the server's working directory but this is fragile.
+- Prefer `from.media=content` when the agent already has the text —
+  **do not write a temporary `.md` file first**.
+- Multiple files: `from.paths` with `to.media=file` (or `file_reference`),
+  or the `files` sugar for Markdown→PDF.
+- `to.media=file` without `to.path` defaults the output next to the
+  source (`.pdf` from markdown, `.md` from rich-text).
 
 ## Style overrides
 
-`convert` and `convert_to_clipboard` accept an optional `style` object.
+`convert` accepts an optional `style` object.
 Each field is a CSS-valued string; empty fields fall through to the
 user's config file (`~/.config/vellum/config.yaml` or
 `$XDG_CONFIG_HOME/vellum/config.yaml`), which in turn falls through to
