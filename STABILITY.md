@@ -21,7 +21,7 @@ change between minor releases — though in practice we aim to minimise churn.
 
 ## Interaction surface catalogue
 
-Snapshot as of **v0.7.0**. Annotations: **stable** (unlikely to change),
+Snapshot as of **v0.8.0**. Annotations: **stable** (unlikely to change),
 **needs review** (functional but may be refined), **fluid** (actively
 evolving).
 
@@ -32,7 +32,7 @@ Package paths are under `github.com/marcelocantos/vellum/…`.
 **`convert`** — the Markdown → PDF pipeline.
 
 - `func Convert(ctx context.Context, inputPath, outputPath string, opts *Options) error` — **stable**
-- `func RenderFile(ctx context.Context, inputPath string, opts *Options) (string, error)` — **needs review** (added in v0.2.0 for clipboard delivery; returns the post-pipeline HTML; consumers other than `convert_to_clipboard` may shake out a more ergonomic shape)
+- `func RenderFile(ctx context.Context, inputPath string, opts *Options) (string, error)` — **needs review** (added in v0.2.0 for clipboard / rich delivery; returns the post-pipeline HTML)
 - `func Render(ctx context.Context, src []byte, opts *Options) (string, error)` — **needs review** (same)
 - `type Options struct { CSS string; HeadExtra string; Style *Style; Backend string }` — **needs review** (Style + Backend added in v0.4.0; CSS + HeadExtra preserved as escape hatches)
 - `type Style struct { ... }` — **needs review** (13-field customisation surface added in v0.4.0; field set likely to grow before 1.0)
@@ -43,22 +43,29 @@ Package paths are under `github.com/marcelocantos/vellum/…`.
 - `func RequiredDeps(backendName string) []Dep` — **stable** (signature changed in v0.4.0 to take backend name)
 - `func CheckDeps(backendName string) error` — **stable** (signature changed in v0.4.0 to take backend name)
 
+**`convert` (router)** — media-orthogonal `Run` (🎯T14).
+
+- `func Run(ctx context.Context, req *Request) (*Result, error)` — **needs review**
+- `type Media`, `Endpoint`, `Request`, `Result`, `FilePair` — **needs review**
+- `const MediaFile, MediaContent, MediaClipboard, MediaFileReference` — **needs review**
+- `const FormatMarkdown, FormatHTML, FormatRTF, FormatPDF, FormatRich` — **needs review**
+
 **`mcp`** — the stdio MCP server.
 
 - `func Serve(ctx context.Context, version string) error` — **stable**
-- `type ConvertFile struct { Input, Output string }` — **stable** (mirrors the JSON schema)
-- `type ConvertInput struct { Files []ConvertFile; Style *convert.Style; Backend string }` — **needs review** (Style + Backend added in v0.4.0)
-- `type ConvertOutput struct { Converted, Errors []string }` — **stable**
-- `type ClipboardInput struct { Input, Content string; Style *convert.Style; Backend string }` — **needs review** (`Content` raw Markdown added in v0.6.0; exactly one of Input/Content required)
-- `type ClipboardOutput struct { Input, Source string }` — **needs review** (`Source` is `"file"` or `"content"` as of v0.6.0)
+- **Single tool** `convert` with `from`/`to` media endpoints (+ optional `files` sugar) — **needs review** (replaced the four-tool surface: old `convert_to_clipboard`, `convert_from_clipboard`, `import` removed)
+- `type Endpoint`, `FilePair`, `ConvertInput`, `ConvertOutput` — **needs review**
 
-**`clipboard`** — system-clipboard read/write (added in v0.2.0; reads added in v0.5.0).
+**`clipboard`** — system-clipboard read/write (added in v0.2.0; reads added in v0.5.0; file refs in 🎯T14).
 
 - `type Payload struct { HTML string }` — **needs review** (single-field today; RTF + plain text are derived; may grow explicit fields)
 - `func Write(p Payload) error` — **needs review** (macOS implementation only; non-macOS returns `ErrUnsupported`)
 - `func ReadRTF() ([]byte, error)` — **needs review** (added in v0.5.0; macOS only)
 - `func ReadHTML() ([]byte, error)` — **needs review** (same)
 - `func ReadRichText() (data []byte, format string, err error)` — **needs review** (RTF preferred, HTML fallback; format is "rtf"/"html"/"")
+- `type FileRefPayload struct { Paths []string }` — **needs review** (Finder-style file references)
+- `func WriteFileRefs(p FileRefPayload) error` — **needs review** (macOS; pasteboard-owned NSFilenamesPboardType so data survives process exit)
+- `func ReadFileRefs() ([]string, error)` — **needs review**
 - `const FormatRTF, FormatHTML` — **needs review**
 - `var ErrUnsupported error` — **stable**
 
@@ -101,6 +108,7 @@ Binary: `vellum`.
 **Usage**
 
     vellum [options] <input.md...>
+    vellum convert --from <media> --to <media> [path|-]
     vellum --mcp
 
 **Flags** (all accepted with single- or double-dash form)
@@ -111,10 +119,10 @@ Binary: `vellum`.
 | `--help-agent`   | Print usage + embedded agent guide, exit 0          | stable    |
 | `--version`      | Print version string to stdout, exit 0              | stable    |
 | `--mcp`          | Run as stdio MCP server                             | stable    |
-| `--to-clipboard` | Render file or stdin (`-`) and place RTF + HTML + plain text on clipboard (macOS only) | needs review |
+| `--to-clipboard` | Sugar: file or stdin (`-`) → clipboard rich (macOS) | needs review |
 | `--open`         | Render to cache and open (alias for `view`). Added in v0.6.0. | needs review |
 | `--pdf`          | With `--open`/`view`: high-fidelity PDF instead of HTML. Added in v0.6.0. | needs review |
-| `-o <path>`      | Output PDF path (single-input only)                 | stable    |
+| `-o <path>`      | Output path (single-input only)                     | stable    |
 | `--output <path>`| Same as `-o`                                        | stable    |
 | `-o=<path>`      | Same as `-o` (inline form)                          | stable    |
 | `--output=<path>`| Same as `-o` (inline form)                          | stable    |
@@ -125,24 +133,23 @@ Binary: `vellum`.
 
 | Subcommand        | Purpose                                              | Stability    |
 |-------------------|------------------------------------------------------|--------------|
-| `vellum import <file>` | Read rich-text → Markdown (RTF, DOCX, HTML, ODT, EPUB, LaTeX, …, via pandoc). Added in v0.5.0. | needs review |
-| `vellum import --from-clipboard` | Read rich-text from system clipboard → Markdown (macOS only). Added in v0.5.0. | needs review |
-| `vellum import … -o <path>` | Write the Markdown to a file instead of stdout. Added in v0.5.0. | needs review |
-| `vellum import … --from <fmt>` | Override pandoc format autodetection. Added in v0.5.0. | needs review |
+| `vellum convert --from/--to` | Media-orthogonal conversion (file, content, clipboard, file_reference). Added in v0.8.0. | needs review |
+| `vellum import <file>` | Sugar: rich-text → Markdown (via `convert`). Added in v0.5.0. | needs review |
+| `vellum import --from-clipboard` | Sugar: clipboard rich → Markdown (macOS). Added in v0.5.0. | needs review |
+| `vellum import … -o <path>` | Write the Markdown to a file instead of stdout. | needs review |
+| `vellum import … --from <fmt>` | Override pandoc format autodetection. | needs review |
 | `vellum view <file>` | Render to cache (HTML default) and open. Added in v0.6.0. | needs review |
 | `vellum install-viewer` | Install Vellum Viewer.app as default .md handler (macOS). Added in v0.6.0. | needs review |
 | `vellum uninstall-viewer` | Remove Vellum Viewer.app. Added in v0.6.0. | needs review |
 
 **Positional arguments**
 
-- One or more input `.md` files. **stable**.
+- One or more input `.md` files (bare form sugar for file→PDF). **stable**.
 
 **Output contract**
 
-- **stdout** (CLI mode): one line per converted file containing the absolute
-  output PDF path. No other output. **stable**.
-- **stderr** (CLI mode): error messages prefixed `Error: `. Non-zero exit on
-  failure. **stable**.
+- **stdout** (CLI mode, file sinks): one line per written path. Content sinks print the text body. **needs review** (content path added with v0.8.0).
+- **stderr** (CLI mode): error messages prefixed `Error: `; status lines for clipboard sinks. Non-zero exit on failure. **needs review**.
 - **stdout** (MCP mode): JSON-RPC 2.0 messages only, as required by the MCP
   stdio transport. **stable**.
 - **stderr** (MCP mode): reserved for diagnostics. Currently unused beyond
@@ -155,58 +162,44 @@ Binary: `vellum`.
 - Server info: `{ name: "vellum", version: <build version> }`. **stable**.
 - Protocol version: whatever the embedded `github.com/modelcontextprotocol/go-sdk` version negotiates. **needs review** (SDK is pre-1.x on its own track; bumping it may shift the minimum protocol version).
 
-**Tools**: `convert` (Markdown → PDF batch), `convert_to_clipboard`
-(single Markdown → system clipboard, macOS only, added in v0.2.0),
-`convert_from_clipboard` (clipboard rich text → Markdown, macOS only,
-added in v0.5.0), and `import` (rich-text file → Markdown, added in
-v0.5.0).
+**Tools**: single `convert` (media-orthogonal `from`/`to`; 🎯T14).
+Removed: `convert_to_clipboard`, `convert_from_clipboard`, `import`.
 
 **Tool: `convert`**
 
-- **Description**: "Convert one or more Markdown files to PDF. Input paths must be absolute. Each file is rendered via goldmark (GFM + extensions), with server-side KaTeX math and Mermaid diagrams, then typeset by the selected backend (WeasyPrint by default, Prince opt-in). Returns the list of written PDFs and any errors. Optional 'style' and 'backend' fields override the user's config file for this call only."
-- **Input schema**: **stable**
+- **Description**: media-orthogonal convert across file, content,
+  clipboard, and file_reference; formats inferred; content/clipboard
+  PDF sinks refused. Optional `files` sugar for Markdown→PDF batch.
+  Optional `style` / `backend`. **needs review**
+- **Input schema**: **needs review**
 
   ```json
   {
-    "files": [
-      { "input": "<absolute path>", "output": "<absolute path, optional>" }
-    ]
+    "from": { "media": "file|content|clipboard|file_reference", "path?": "…", "paths?": [], "content?": "…", "format?": "…" },
+    "to":   { "media": "file|content|clipboard|file_reference", "path?": "…", "format?": "…" },
+    "files": [{ "input": "…", "output?": "…" }],
+    "style?": {},
+    "backend?": "weasyprint|prince"
   }
-  ```
-
-- **Structured output**: **stable**
-
-  ```json
-  {
-    "converted": ["<absolute path>", …],
-    "errors":    ["<absolute path>: <message>", …]
-  }
-  ```
-
-- **Text content**: human-readable summary ("Converted N file(s): …" / "Errors: …"). **needs review** (format may be tweaked for readability; structured output is the load-bearing part).
-- **`isError`**: set to `true` only when every file failed. **stable**.
-
-**Tool: `convert_to_clipboard`** (added in v0.2.0; `content` added in v0.6.0)
-
-- **Description**: "Render Markdown (file path or raw content) and place RTF + HTML + plain text on the system clipboard (macOS only). Returns once the underlying NSPasteboard has confirmed the write."
-- **Input schema**: **needs review** — exactly one of `input` or `content` required
-
-  ```json
-  { "input": "<absolute path to .md file>" }
-  ```
-  or
-  ```json
-  { "content": "<raw Markdown text>" }
   ```
 
 - **Structured output**: **needs review**
 
   ```json
-  { "input": "<echoed input path when file used>", "source": "file|content" }
+  {
+    "from_media": "…",
+    "to_media": "…",
+    "from_format": "…",
+    "to_format": "…",
+    "paths": ["…"],
+    "content": "…",
+    "errors": ["…"]
+  }
   ```
 
-- **Platform**: macOS only. Non-macOS returns an `unsupported` error.
-- **`isError`**: set to `true` on any failure (unsupported platform, missing file, render error, pasteboard write failure). **needs review** (semantics may shift as multi-platform support is decided).
+- **Text content**: Markdown/HTML body when `to.media=content`; otherwise a short summary. **needs review**.
+- **`isError`**: set to `true` when the conversion fails (or when a batch has no successful paths and only errors). **needs review**.
+- **Platform**: `clipboard` and `file_reference` media require macOS; other platforms return unsupported.
 
 ### Markdown syntax extensions
 
@@ -248,7 +241,7 @@ Required external binaries on `PATH`:
   - `prince` — Prince 16.2 or later. **stable** (opt-in via `backend: prince`).
 - `node` — any recent Node.js. **stable**.
 - `mmdc` — mermaid-cli. **stable**.
-- `pandoc` — Pandoc 3.x. **needs review** (required for `vellum import` and the `convert_from_clipboard` / `import` MCP tools; lazily checked).
+- `pandoc` — Pandoc 3.x. **needs review** (required for rich-text import paths: non-Markdown `from.media=file`, `from.media=clipboard`, and the `import` CLI sugar; lazily checked).
 
 Required Node package (installed globally):
 
@@ -314,8 +307,7 @@ Not eligible.
 - **Checklist**: not clear (see *Gaps and prerequisites*).
 - **Settling threshold**: counting surface items (Go API + CLI flags +
   MCP tool schema + Markdown extensions + env vars ≈ 50 items) →
-  3-month minimum settling period. Clock last reset on 2026-04-27 by
-  the v0.2.0 surface additions (`convert.Render`/`RenderFile`,
-  `clipboard` package, `--to-clipboard`, `convert_to_clipboard` MCP
-  tool). v0.3.0 is install-mechanism only (Homebrew formula wrapper)
-  — no public-surface change; clock unchanged.
+  3-month minimum settling period (historical note; 1.0 shakeout for
+  this project is the 1-month rule in the release skill). Clock last
+  reset on 2026-07-31 by v0.8.0 (media-orthogonal `convert` MCP/CLI
+  surface; removed three MCP tools).

@@ -7,6 +7,8 @@ package clipboard
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -99,6 +101,30 @@ func TestWriteFragmentsHTMLAndStripsLineSeparators(t *testing.T) {
 func TestWriteEmptyHTMLRejected(t *testing.T) {
 	if err := Write(Payload{}); err == nil {
 		t.Fatal("expected error for empty payload, got nil")
+	}
+}
+
+func TestFileRefRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	path := dir + "/vellum-file-ref-marker.txt"
+	if err := os.WriteFile(path, []byte("ref"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteFileRefs(FileRefPayload{Paths: []string{path}}); err != nil {
+		t.Fatalf("WriteFileRefs: %v", err)
+	}
+	got, err := ReadFileRefs()
+	if err != nil {
+		t.Fatalf("ReadFileRefs: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("got %d paths: %v", len(got), got)
+	}
+	if got[0] != path {
+		// Allow cleaned absolute forms.
+		if filepath.Clean(got[0]) != filepath.Clean(path) {
+			t.Fatalf("path: got %q want %q", got[0], path)
+		}
 	}
 }
 
