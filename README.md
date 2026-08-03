@@ -61,7 +61,7 @@ Prebuilt binaries for macOS arm64, Linux x86_64, and Linux arm64 are attached to
 
 If you use an AI coding agent (Claude Code, Cursor, etc.), paste this prompt to install vellum end-to-end:
 
-> Install vellum from https://github.com/marcelocantos/vellum. Run `brew install marcelocantos/tap/vellum`, register it as a stdio MCP server with `claude mcp add --scope user vellum -- vellum --mcp`, then restart this session. After the restart, read the agent guide at `docs/agents-guide.md` in the vellum repo (or run `vellum --help-agent` locally) and confirm the `convert` tool is callable.
+> Install vellum from https://github.com/marcelocantos/vellum. Run `brew install marcelocantos/tap/vellum`, register it as a stdio MCP server (`vellum --mcp`), then let me know so I can restart the session. After restart, run `vellum --help-agent` and confirm the `convert` tool is callable.
 
 ## CLI usage
 
