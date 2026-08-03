@@ -242,4 +242,3 @@ func assembleHTML(title, lang, css, headExtra, body string) (string, error) {
 	}
 	return buf.String(), nil
 }
-

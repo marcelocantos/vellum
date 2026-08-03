@@ -203,9 +203,9 @@ func runClipboard(args []string, output, backendFlag string) error {
 
 func runView(args []string) error {
 	var (
-		showHelp bool
-		asPDF    bool
-		backend  string
+		showHelp   bool
+		asPDF      bool
+		backend    string
 		positional []string
 	)
 	for i := 0; i < len(args); i++ {
@@ -359,13 +359,13 @@ default Markdown handler — use Finder Get Info to reassign if needed.
 
 func runConvert(args []string) error {
 	var (
-		showHelp  bool
-		fromMedia string
-		toMedia   string
-		fromFmt   string
-		toFmt     string
-		output    string
-		backend   string
+		showHelp   bool
+		fromMedia  string
+		toMedia    string
+		fromFmt    string
+		toFmt      string
+		output     string
+		backend    string
 		positional []string
 	)
 	for i := 0; i < len(args); i++ {
