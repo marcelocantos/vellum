@@ -120,7 +120,7 @@ jobs:
                   npm install -g katex
 
                 Pandoc handles the inverse direction (rich-text → Markdown via
-                `vellum import` and the `convert_from_clipboard` MCP tool); it is
-                included as a dependency.
+                `vellum import` / MCP convert from clipboard or rich-text files);
+                it is included as a dependency.
               EOS
             end

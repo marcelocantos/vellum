@@ -21,7 +21,7 @@ change between minor releases — though in practice we aim to minimise churn.
 
 ## Interaction surface catalogue
 
-Snapshot as of **v0.8.0**. Annotations: **stable** (unlikely to change),
+Snapshot as of **v0.9.0**. Annotations: **stable** (unlikely to change),
 **needs review** (functional but may be refined), **fluid** (actively
 evolving).
 
@@ -33,7 +33,8 @@ Package paths are under `github.com/marcelocantos/vellum/…`.
 
 - `func Convert(ctx context.Context, inputPath, outputPath string, opts *Options) error` — **stable**
 - `func RenderFile(ctx context.Context, inputPath string, opts *Options) (string, error)` — **needs review** (added in v0.2.0 for clipboard / rich delivery; returns the post-pipeline HTML)
-- `func Render(ctx context.Context, src []byte, opts *Options) (string, error)` — **needs review** (same)
+- `func Render(ctx context.Context, src []byte, opts *Options) (string, error)` — **needs review** (same; may return `*SoftError` after still producing HTML when Mermaid soft-fails — 🎯T10 / v0.9.0)
+- `type SoftError struct { Messages []string }` — **needs review** (added in v0.9.0; non-fatal diagnostics; document still written; CLI non-zero exit / MCP `errors`)
 - `type Options struct { CSS string; HeadExtra string; Style *Style; Backend string }` — **needs review** (Style + Backend added in v0.4.0; CSS + HeadExtra preserved as escape hatches)
 - `type Style struct { ... }` — **needs review** (13-field customisation surface added in v0.4.0; field set likely to grow before 1.0)
 - `type Backend interface` — **needs review** (added in v0.4.0; the surface is small but extension shape may evolve)
