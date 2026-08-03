@@ -17,7 +17,7 @@ import (
 	"github.com/marcelocantos/vellum/viewer"
 )
 
-const version = "0.8.0"
+const version = "0.9.0"
 
 func main() {
 	if err := run(); err != nil {
@@ -203,9 +203,9 @@ func runClipboard(args []string, output, backendFlag string) error {
 
 func runView(args []string) error {
 	var (
-		showHelp bool
-		asPDF    bool
-		backend  string
+		showHelp   bool
+		asPDF      bool
+		backend    string
 		positional []string
 	)
 	for i := 0; i < len(args); i++ {
@@ -359,13 +359,13 @@ default Markdown handler — use Finder Get Info to reassign if needed.
 
 func runConvert(args []string) error {
 	var (
-		showHelp  bool
-		fromMedia string
-		toMedia   string
-		fromFmt   string
-		toFmt     string
-		output    string
-		backend   string
+		showHelp   bool
+		fromMedia  string
+		toMedia    string
+		fromFmt    string
+		toFmt      string
+		output     string
+		backend    string
 		positional []string
 	)
 	for i := 0; i < len(args); i++ {
@@ -489,10 +489,10 @@ func runConvert(args []string) error {
 	}
 
 	res, err := convert.Run(context.Background(), req)
-	if err != nil {
-		return err
+	if printErr := printRunResult(res); printErr != nil && err == nil {
+		return printErr
 	}
-	return printRunResult(res)
+	return err
 }
 
 func printRunResult(res *convert.Result) error {
@@ -630,10 +630,10 @@ func runImport(args []string) error {
 		req.To = convert.Endpoint{Media: convert.MediaFile, Path: output, Format: convert.FormatMarkdown}
 	}
 	res, err := convert.Run(context.Background(), req)
-	if err != nil {
-		return err
+	if printErr := printRunResult(res); printErr != nil && err == nil {
+		return printErr
 	}
-	return printRunResult(res)
+	return err
 }
 
 func printImportUsage() {
@@ -736,10 +736,10 @@ func runCLI(args []string, output, backendFlag string) error {
 		req.To = convert.Endpoint{Media: convert.MediaFile, Format: convert.FormatPDF}
 	}
 	res, err := convert.Run(context.Background(), req)
-	if err != nil {
-		return err
+	if printErr := printRunResult(res); printErr != nil && err == nil {
+		return printErr
 	}
-	return printRunResult(res)
+	return err
 }
 
 func runMCP(backendFlag string) error {

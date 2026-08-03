@@ -415,8 +415,12 @@ Common failure modes:
   instructions.
 - The `katex` node package is not installed globally. Fix with
   `npm install -g katex`.
-- A Mermaid diagram has invalid syntax. The `mmdc` error text is
-  included in the returned error.
+- A Mermaid diagram fails to render (invalid syntax, missing
+  Chromium for `mmdc`, etc.). The document still builds with a
+  `<pre class="mermaid-error">` fallback for that diagram, but the
+  failure is logged to stderr (1-based diagram index), returned as a
+  soft error, and surfaces in the MCP `errors` array; the CLI exits
+  non-zero after writing output.
 - The PDF backend cannot fit content onto a page. This usually means
   an oversized image, table, or Mermaid diagram — try the
   `vellum:scale` hint.

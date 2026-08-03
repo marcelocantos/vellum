@@ -4,6 +4,9 @@
 package convert
 
 import (
+	"context"
+	"errors"
+	"fmt"
 	"regexp"
 	"strings"
 	"testing"
@@ -153,6 +156,84 @@ func TestMermaidPreprocessor_NonMermaidCodeBlocksUntouched(t *testing.T) {
 	}
 	if out != src {
 		t.Errorf("Extract mutated source containing only non-mermaid code blocks:\n in:  %q\n out: %q", src, out)
+	}
+}
+
+func TestMermaidReplaceAll_SoftFailureKeepsFallbackAndReports(t *testing.T) {
+	prev := renderMermaidFn
+	t.Cleanup(func() { renderMermaidFn = prev })
+	renderMermaidFn = func(ctx context.Context, src string) (string, error) {
+		return "", fmt.Errorf("mmdc: simulated failure")
+	}
+
+	p := newMermaidPreprocessor()
+	src := "```mermaid\ngraph TD\n  A --> B\n```\n"
+	extracted := p.Extract(src)
+	// goldmark would leave the placeholder as text; feed it as HTML directly.
+	html := "<p>" + extracted + "</p>"
+	out, soft := p.ReplaceAll(context.Background(), html)
+	if len(soft) != 1 {
+		t.Fatalf("soft=%v", soft)
+	}
+	if !strings.Contains(soft[0], "mermaid diagram 1:") {
+		t.Errorf("soft msg=%q", soft[0])
+	}
+	if !strings.Contains(soft[0], "simulated failure") {
+		t.Errorf("soft msg missing cause: %q", soft[0])
+	}
+	if !strings.Contains(out, `class="mermaid-error"`) {
+		t.Errorf("expected source-as-code fallback in HTML: %q", out)
+	}
+	if !strings.Contains(out, "graph TD") {
+		t.Errorf("fallback should include mermaid source: %q", out)
+	}
+}
+
+func TestRender_MermaidSoftErrorPropagates(t *testing.T) {
+	prev := renderMermaidFn
+	t.Cleanup(func() { renderMermaidFn = prev })
+	renderMermaidFn = func(ctx context.Context, src string) (string, error) {
+		return "", fmt.Errorf("mmdc: boom")
+	}
+
+	html, soft, err := Render(context.Background(), []byte("# T\n\n```mermaid\ngraph TD\n  A-->B\n```\n"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if html == "" {
+		t.Fatal("expected HTML despite soft failure")
+	}
+	if len(soft) != 1 || !strings.Contains(soft[0], "mermaid diagram 1") {
+		t.Fatalf("soft=%v", soft)
+	}
+	if !strings.Contains(html, "mermaid-error") {
+		t.Errorf("html missing fallback: %s", html[:min(200, len(html))])
+	}
+}
+
+func TestRun_MermaidSoftErrorInResult(t *testing.T) {
+	prev := renderMermaidFn
+	t.Cleanup(func() { renderMermaidFn = prev })
+	renderMermaidFn = func(ctx context.Context, src string) (string, error) {
+		return "", fmt.Errorf("mmdc: boom")
+	}
+
+	res, err := Run(context.Background(), &Request{
+		From: Endpoint{Media: MediaContent, Content: "# T\n\n```mermaid\ngraph TD\n  A-->B\n```\n"},
+		To:   Endpoint{Media: MediaContent, Format: FormatHTML},
+	})
+	if err == nil {
+		t.Fatal("expected soft error")
+	}
+	var se *SoftError
+	if !errors.As(err, &se) {
+		t.Fatalf("want SoftError, got %T %v", err, err)
+	}
+	if res == nil || res.Content == "" {
+		t.Fatal("expected content despite soft error")
+	}
+	if len(res.Errors) == 0 {
+		t.Fatal("expected errors array populated")
 	}
 }
 

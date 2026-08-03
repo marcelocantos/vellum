@@ -4,6 +4,8 @@ Document preparation MCP server — converts GitHub-flavoured Markdown to PDF vi
 
 vellum is primarily a stdio [Model Context Protocol](https://modelcontextprotocol.io/) server, exposing both conversion directions as a single media-orthogonal `convert` tool for AI agents. It also ships a direct CLI for scripted and interactive use.
 
+On macOS, `vellum install-viewer` registers **Vellum Viewer** as the default `.md` handler so double-clicking Markdown opens a rendered view (HTML by default). Details: [macOS Markdown viewer](#macos-markdown-viewer).
+
 vellum is the Go-based successor to [mpe2pdf](https://github.com/marcelocantos/mpe2pdf): leaner, single-binary, MCP-first.
 
 ## Status

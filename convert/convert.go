@@ -11,6 +11,7 @@ import (
 	"html/template"
 	"os"
 	"path/filepath"
+	"strings"
 
 	chromahtml "github.com/alecthomas/chroma/v2/formatters/html"
 	"github.com/alecthomas/chroma/v2/styles"
@@ -65,14 +66,39 @@ var md = goldmark.New(
 	),
 )
 
+// SoftError reports non-fatal conversion diagnostics (e.g. Mermaid mmdc
+// failures) after the primary output was still produced. Callers should
+// surface Messages and exit non-zero / set IsError while keeping any
+// written paths or returned content.
+type SoftError struct {
+	Messages []string
+}
+
+func (e *SoftError) Error() string {
+	if e == nil || len(e.Messages) == 0 {
+		return "convert: soft failure"
+	}
+	return strings.Join(e.Messages, "; ")
+}
+
+// softError returns a *SoftError when messages is non-empty, else nil.
+func softError(messages []string) error {
+	if len(messages) == 0 {
+		return nil
+	}
+	return &SoftError{Messages: append([]string(nil), messages...)}
+}
+
 // Convert reads a Markdown file at inputPath and writes a PDF to outputPath
 // using the backend selected via opts.Backend (defaults to WeasyPrint).
+// Soft Mermaid failures still produce a PDF; the returned error is a
+// *SoftError so callers can detect non-zero exit without discarding output.
 func Convert(ctx context.Context, inputPath, outputPath string, opts *Options) error {
 	absInput, err := filepath.Abs(inputPath)
 	if err != nil {
 		return fmt.Errorf("resolving input path: %w", err)
 	}
-	html, err := RenderFile(ctx, absInput, opts)
+	html, soft, err := RenderFile(ctx, absInput, opts)
 	if err != nil {
 		return err
 	}
@@ -94,16 +120,16 @@ func Convert(ctx context.Context, inputPath, outputPath string, opts *Options) e
 	if err := backend.Render(ctx, html, outputPath, filepath.Dir(absInput), pdfa); err != nil {
 		return fmt.Errorf("%s: %w", backend.Name(), err)
 	}
-	return nil
+	return softError(soft)
 }
 
 // RenderFile reads a Markdown file and returns the fully assembled HTML
 // page (template + CSS + body), ready to hand to Prince or to a clipboard
-// backend that expects rich HTML.
-func RenderFile(ctx context.Context, inputPath string, opts *Options) (string, error) {
+// backend that expects rich HTML. soft holds non-fatal Mermaid diagnostics.
+func RenderFile(ctx context.Context, inputPath string, opts *Options) (html string, soft []string, err error) {
 	src, err := os.ReadFile(inputPath)
 	if err != nil {
-		return "", fmt.Errorf("reading input: %w", err)
+		return "", nil, fmt.Errorf("reading input: %w", err)
 	}
 	return Render(ctx, src, opts)
 }
@@ -112,7 +138,10 @@ func RenderFile(ctx context.Context, inputPath string, opts *Options) (string, e
 // HTML page. Math and Mermaid blocks are pre-extracted, rendered, and
 // reinjected; chroma syntax-highlighting CSS is appended; the result is
 // wrapped in the embedded HTML template.
-func Render(ctx context.Context, src []byte, opts *Options) (string, error) {
+//
+// soft contains non-fatal Mermaid render failures (document still includes
+// source-as-code fallbacks). Hard failures return err with empty html.
+func Render(ctx context.Context, src []byte, opts *Options) (html string, soft []string, err error) {
 	// Pre-process: extract math and mermaid blocks before goldmark sees them.
 	// This prevents goldmark from mangling backslashes in LaTeX and from
 	// treating mermaid blocks as regular code.
@@ -123,17 +152,14 @@ func Render(ctx context.Context, src []byte, opts *Options) (string, error) {
 
 	htmlContent, title, err := renderMarkdown([]byte(processed))
 	if err != nil {
-		return "", fmt.Errorf("rendering markdown: %w", err)
+		return "", nil, fmt.Errorf("rendering markdown: %w", err)
 	}
 
 	htmlContent, err = math.ReplaceAll(ctx, htmlContent)
 	if err != nil {
-		return "", fmt.Errorf("rendering math: %w", err)
+		return "", nil, fmt.Errorf("rendering math: %w", err)
 	}
-	htmlContent, err = mermaid.ReplaceAll(ctx, htmlContent)
-	if err != nil {
-		return "", fmt.Errorf("rendering mermaid: %w", err)
-	}
+	htmlContent, soft = mermaid.ReplaceAll(ctx, htmlContent)
 
 	css := embed.GitHubCSS
 	headExtra := katexCSSLink
@@ -149,7 +175,7 @@ func Render(ctx context.Context, src []byte, opts *Options) (string, error) {
 	var chromaBuf bytes.Buffer
 	formatter := chromahtml.New(chromahtml.WithClasses(true), chromahtml.WithAllClasses(true))
 	if err := formatter.WriteCSS(&chromaBuf, styles.Get("github")); err != nil {
-		return "", fmt.Errorf("generating chroma CSS: %w", err)
+		return "", soft, fmt.Errorf("generating chroma CSS: %w", err)
 	}
 	css += "\n" + chromaBuf.String()
 
@@ -167,14 +193,14 @@ func Render(ctx context.Context, src []byte, opts *Options) (string, error) {
 	}
 	fullHTML, err := assembleHTML(title, lang, css, headExtra, htmlContent)
 	if err != nil {
-		return "", fmt.Errorf("assembling HTML: %w", err)
+		return "", soft, fmt.Errorf("assembling HTML: %w", err)
 	}
 
 	if debugPath := os.Getenv("VELLUM_DEBUG_HTML"); debugPath != "" {
 		os.WriteFile(debugPath, []byte(fullHTML), 0o644)
 	}
 
-	return fullHTML, nil
+	return fullHTML, soft, nil
 }
 
 func renderMarkdown(src []byte) (htmlContent string, title string, err error) {
@@ -216,4 +242,3 @@ func assembleHTML(title, lang, css, headExtra, body string) (string, error) {
 	}
 	return buf.String(), nil
 }
-

@@ -5,6 +5,7 @@ package convert
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -129,29 +130,45 @@ func Run(ctx context.Context, req *Request) (*Result, error) {
 		}
 	}
 
+	var softMsgs []string
 	for _, in := range inputs {
 		item, err := runOne(ctx, in, from, to, opts)
+		if item != nil {
+			if out.FromFormat == "" {
+				out.FromFormat = item.FromFormat
+			}
+			if out.ToFormat == "" {
+				out.ToFormat = item.ToFormat
+			}
+			out.Paths = append(out.Paths, item.Paths...)
+			if item.Content != "" {
+				out.Content = item.Content
+			}
+			out.Errors = append(out.Errors, item.Errors...)
+		}
 		if err != nil {
+			var se *SoftError
+			if errors.As(err, &se) {
+				// Soft failure: output was produced; keep going / report at end.
+				softMsgs = append(softMsgs, se.Messages...)
+				continue
+			}
 			if len(inputs) == 1 {
+				if item != nil {
+					return out, err
+				}
 				return nil, err
 			}
 			out.Errors = append(out.Errors, fmt.Sprintf("%s: %v", in.label(), err))
 			continue
 		}
-		if out.FromFormat == "" {
-			out.FromFormat = item.FromFormat
-		}
-		if out.ToFormat == "" {
-			out.ToFormat = item.ToFormat
-		}
-		out.Paths = append(out.Paths, item.Paths...)
-		if item.Content != "" {
-			out.Content = item.Content
-		}
 	}
 
-	if len(out.Paths) == 0 && out.Content == "" && len(out.Errors) > 0 {
+	if len(out.Paths) == 0 && out.Content == "" && len(out.Errors) > 0 && len(softMsgs) == 0 {
 		return out, fmt.Errorf("%s", strings.Join(out.Errors, "; "))
+	}
+	if len(softMsgs) > 0 {
+		return out, softError(softMsgs)
 	}
 	return out, nil
 }
@@ -229,29 +246,30 @@ func runOne(ctx context.Context, in inputItem, from, to Endpoint, opts *Options)
 
 	switch to.Media {
 	case MediaContent:
-		text, err := materializeText(ctx, md, toFmt, opts)
+		text, soft, err := materializeText(ctx, md, toFmt, opts)
 		if err != nil {
 			return nil, err
 		}
 		res.Content = text
-		return res, nil
+		return withSoft(res, soft, in)
 
 	case MediaClipboard:
-		html, err := Render(ctx, []byte(md), opts)
+		html, soft, err := Render(ctx, []byte(md), opts)
 		if err != nil {
 			return nil, err
 		}
 		if err := clipboard.Write(clipboard.Payload{HTML: html}); err != nil {
 			return nil, err
 		}
-		return res, nil
+		return withSoft(res, soft, in)
 
 	case MediaFile, MediaFileReference:
 		outPath, err := resolveOutPath(in, to, toFmt)
 		if err != nil {
 			return nil, err
 		}
-		if err := writeFileOutput(ctx, md, outPath, toFmt, baseDir, opts); err != nil {
+		soft, err := writeFileOutput(ctx, md, outPath, toFmt, baseDir, opts)
+		if err != nil {
 			return nil, err
 		}
 		res.Paths = []string{outPath}
@@ -260,11 +278,30 @@ func runOne(ctx context.Context, in inputItem, from, to Endpoint, opts *Options)
 				return nil, err
 			}
 		}
-		return res, nil
+		return withSoft(res, soft, in)
 
 	default:
 		return nil, fmt.Errorf("convert: unsupported to.media %q", to.Media)
 	}
+}
+
+// withSoft attaches soft diagnostics to res.Errors (path-prefixed when
+// known) and returns a *SoftError when any soft messages exist.
+func withSoft(res *Result, soft []string, in inputItem) (*Result, error) {
+	if len(soft) == 0 {
+		return res, nil
+	}
+	prefix := ""
+	if in.path != "" {
+		prefix = in.path + ": "
+	}
+	var msgs []string
+	for _, s := range soft {
+		msg := prefix + s
+		res.Errors = append(res.Errors, msg)
+		msgs = append(msgs, msg)
+	}
+	return res, softError(msgs)
 }
 
 func ingest(ctx context.Context, in inputItem, from Endpoint) (md, fromFmt, baseDir string, err error) {
@@ -351,36 +388,36 @@ func ingest(ctx context.Context, in inputItem, from Endpoint) (md, fromFmt, base
 	}
 }
 
-func materializeText(ctx context.Context, md, toFmt string, opts *Options) (string, error) {
+func materializeText(ctx context.Context, md, toFmt string, opts *Options) (string, []string, error) {
 	switch {
 	case isMarkdownFormat(toFmt) || toFmt == "":
-		return md, nil
+		return md, nil, nil
 	case toFmt == FormatHTML:
 		return Render(ctx, []byte(md), opts)
 	default:
-		return "", fmt.Errorf("convert: to.media content does not support format %q", toFmt)
+		return "", nil, fmt.Errorf("convert: to.media content does not support format %q", toFmt)
 	}
 }
 
-func writeFileOutput(ctx context.Context, md, outPath, toFmt, baseDir string, opts *Options) error {
+func writeFileOutput(ctx context.Context, md, outPath, toFmt, baseDir string, opts *Options) (soft []string, err error) {
 	if dir := filepath.Dir(outPath); dir != "." {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return err
+			return nil, err
 		}
 	}
 	switch {
 	case isMarkdownFormat(toFmt):
-		return os.WriteFile(outPath, []byte(md), 0o644)
+		return nil, os.WriteFile(outPath, []byte(md), 0o644)
 	case toFmt == FormatHTML:
-		html, err := Render(ctx, []byte(md), opts)
+		html, soft, err := Render(ctx, []byte(md), opts)
 		if err != nil {
-			return err
+			return soft, err
 		}
-		return os.WriteFile(outPath, []byte(html), 0o644)
+		return soft, os.WriteFile(outPath, []byte(html), 0o644)
 	case toFmt == FormatPDF || toFmt == "":
-		html, err := Render(ctx, []byte(md), opts)
+		html, soft, err := Render(ctx, []byte(md), opts)
 		if err != nil {
-			return err
+			return soft, err
 		}
 		var (
 			backendName string
@@ -394,17 +431,17 @@ func writeFileOutput(ctx context.Context, md, outPath, toFmt, baseDir string, op
 		}
 		backend, err := ResolveBackend(backendName)
 		if err != nil {
-			return err
+			return soft, err
 		}
 		if baseDir == "" {
 			baseDir = filepath.Dir(outPath)
 		}
 		if err := backend.Render(ctx, html, outPath, baseDir, pdfa); err != nil {
-			return fmt.Errorf("%s: %w", backend.Name(), err)
+			return soft, fmt.Errorf("%s: %w", backend.Name(), err)
 		}
-		return nil
+		return soft, nil
 	default:
-		return fmt.Errorf("convert: to.media file does not support format %q", toFmt)
+		return nil, fmt.Errorf("convert: to.media file does not support format %q", toFmt)
 	}
 }
 
@@ -524,6 +561,7 @@ func runFilesSugar(ctx context.Context, req *Request) (*Result, error) {
 		FromFormat: FormatMarkdown,
 		ToFormat:   FormatPDF,
 	}
+	var softMsgs []string
 	for _, f := range req.Files {
 		if f.Input == "" {
 			out.Errors = append(out.Errors, "files entry missing input")
@@ -535,14 +573,25 @@ func runFilesSugar(ctx context.Context, req *Request) (*Result, error) {
 			Style:   req.Style,
 			Backend: req.Backend,
 		})
+		if r != nil {
+			out.Paths = append(out.Paths, r.Paths...)
+			out.Errors = append(out.Errors, r.Errors...)
+		}
 		if err != nil {
+			var se *SoftError
+			if errors.As(err, &se) {
+				softMsgs = append(softMsgs, se.Messages...)
+				continue
+			}
 			out.Errors = append(out.Errors, fmt.Sprintf("%s: %v", f.Input, err))
 			continue
 		}
-		out.Paths = append(out.Paths, r.Paths...)
 	}
-	if len(out.Paths) == 0 && len(out.Errors) > 0 {
+	if len(out.Paths) == 0 && len(out.Errors) > 0 && len(softMsgs) == 0 {
 		return out, fmt.Errorf("%s", strings.Join(out.Errors, "; "))
+	}
+	if len(softMsgs) > 0 {
+		return out, softError(softMsgs)
 	}
 	return out, nil
 }

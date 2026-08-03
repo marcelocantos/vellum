@@ -10,6 +10,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -119,7 +120,11 @@ func View(ctx context.Context, inputPath string, opts *ViewOptions) (renderedPat
 	}
 	if !hit {
 		if err := renderToCache(ctx, absInput, cachePath, opts); err != nil {
-			return "", err
+			// Soft Mermaid failures still produced a cache file — open it.
+			var se *convert.SoftError
+			if !errors.As(err, &se) {
+				return "", err
+			}
 		}
 	}
 
@@ -252,7 +257,7 @@ func renderToCache(ctx context.Context, absInput, cachePath string, opts *ViewOp
 		// source Markdown's directory even though the HTML lives in cache.
 		base := url.URL{Scheme: "file", Path: filepath.Dir(absInput) + string(filepath.Separator)}
 		cOpts.HeadExtra = fmt.Sprintf(`<base href="%s">`, base.String())
-		html, err := convert.RenderFile(ctx, absInput, cOpts)
+		html, soft, err := convert.RenderFile(ctx, absInput, cOpts)
 		if err != nil {
 			return err
 		}
@@ -263,6 +268,10 @@ func renderToCache(ctx context.Context, absInput, cachePath string, opts *ViewOp
 		if err := os.Rename(tmp, cachePath); err != nil {
 			_ = os.Remove(tmp)
 			return fmt.Errorf("finalising cache: %w", err)
+		}
+		// Soft Mermaid failures already logged to stderr; view still opens.
+		if len(soft) > 0 {
+			return &convert.SoftError{Messages: soft}
 		}
 		return nil
 	}
