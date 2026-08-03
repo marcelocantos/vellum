@@ -57,17 +57,28 @@ func (m *mermaidPreprocessor) Extract(src string) string {
 	})
 }
 
-// ReplaceAll renders all collected mermaid diagrams to SVG and replaces
+// ReplaceAll renders all collected mermaid diagrams and replaces
 // placeholders in the rendered HTML.
-func (m *mermaidPreprocessor) ReplaceAll(ctx context.Context, html string) (string, error) {
+//
+// When mmdc fails for a diagram, the source is kept as a
+// <pre class="mermaid-error"> fallback so the document still renders,
+// the failure is logged to stderr, and a diagnostic string is appended
+// to the returned soft-error list (1-based diagram index). Callers must
+// surface those soft errors (MCP errors array / CLI non-zero exit).
+func (m *mermaidPreprocessor) ReplaceAll(ctx context.Context, html string) (string, []string) {
 	if len(m.diagrams) == 0 {
 		return html, nil
 	}
 
+	var soft []string
 	for i, d := range m.diagrams {
-		img, err := renderMermaid(ctx, d.source)
+		img, err := renderMermaidFn(ctx, d.source)
 		if err != nil {
-			img = `<pre class="mermaid-error">` + d.source + `</pre>`
+			// 1-based index for human-facing messages.
+			msg := fmt.Sprintf("mermaid diagram %d: %v", i+1, err)
+			fmt.Fprintln(os.Stderr, "Error:", msg)
+			soft = append(soft, msg)
+			img = `<pre class="mermaid-error">` + htmlEscapeText(d.source) + `</pre>`
 		}
 		// Apply scale via CSS width percentage if not default.
 		style := ""
@@ -78,7 +89,21 @@ func (m *mermaidPreprocessor) ReplaceAll(ctx context.Context, html string) (stri
 		html = strings.Replace(html, m.placeholders[i], wrapped, 1)
 	}
 
-	return html, nil
+	return html, soft
+}
+
+// renderMermaidFn is the diagram renderer. Tests override it to inject
+// failures without shelling out to mmdc.
+var renderMermaidFn = renderMermaid
+
+func htmlEscapeText(s string) string {
+	replacer := strings.NewReplacer(
+		"&", "&amp;",
+		"<", "&lt;",
+		">", "&gt;",
+		`"`, "&quot;",
+	)
+	return replacer.Replace(s)
 }
 
 func renderMermaid(ctx context.Context, src string) (string, error) {

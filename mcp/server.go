@@ -115,14 +115,24 @@ func makeConvertHandler(baseStyle *convert.Style, baseBackend string) func(conte
 		}
 
 		res, err := convert.Run(ctx, req)
-		if err != nil {
-			out := ConvertOutput{}
-			if res != nil {
-				out = fromResult(res)
-			}
-			return errorResult(err), out, nil
+		out := ConvertOutput{}
+		if res != nil {
+			out = fromResult(res)
 		}
-		out := fromResult(res)
+		if err != nil {
+			// SoftError still carries paths/content/errors on res; hard
+			// failures may only have the error text.
+			msg := err.Error()
+			if res != nil {
+				if m := formatMessage(out); m != "" && m != "OK" {
+					msg = m + "\n" + err.Error()
+				}
+			}
+			return &mcp.CallToolResult{
+				IsError: true,
+				Content: []mcp.Content{&mcp.TextContent{Text: msg}},
+			}, out, nil
+		}
 		msg := formatMessage(out)
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{&mcp.TextContent{Text: msg}},

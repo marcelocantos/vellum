@@ -489,10 +489,10 @@ func runConvert(args []string) error {
 	}
 
 	res, err := convert.Run(context.Background(), req)
-	if err != nil {
-		return err
+	if printErr := printRunResult(res); printErr != nil && err == nil {
+		return printErr
 	}
-	return printRunResult(res)
+	return err
 }
 
 func printRunResult(res *convert.Result) error {
@@ -630,10 +630,10 @@ func runImport(args []string) error {
 		req.To = convert.Endpoint{Media: convert.MediaFile, Path: output, Format: convert.FormatMarkdown}
 	}
 	res, err := convert.Run(context.Background(), req)
-	if err != nil {
-		return err
+	if printErr := printRunResult(res); printErr != nil && err == nil {
+		return printErr
 	}
-	return printRunResult(res)
+	return err
 }
 
 func printImportUsage() {
@@ -736,10 +736,10 @@ func runCLI(args []string, output, backendFlag string) error {
 		req.To = convert.Endpoint{Media: convert.MediaFile, Format: convert.FormatPDF}
 	}
 	res, err := convert.Run(context.Background(), req)
-	if err != nil {
-		return err
+	if printErr := printRunResult(res); printErr != nil && err == nil {
+		return printErr
 	}
-	return printRunResult(res)
+	return err
 }
 
 func runMCP(backendFlag string) error {
