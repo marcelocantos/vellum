@@ -67,10 +67,36 @@ func ReadRichText() (data []byte, format string, err error) {
 	return nil, "", nil
 }
 
+// ReadPDF returns raw PDF bytes from the pasteboard if a PDF type is
+// present (public.pdf / com.adobe.pdf). PowerPoint slide copies often
+// use the Adobe flavour. Returns (nil, nil) when absent.
+func ReadPDF() ([]byte, error) { return readClipboard(FormatPDF) }
+
+// ReadImportable returns the best document payload for import: RTF,
+// then HTML, then PDF. format is "rtf", "html", or "pdf".
+func ReadImportable() (data []byte, format string, err error) {
+	data, format, err = ReadRichText()
+	if err != nil {
+		return nil, "", err
+	}
+	if len(data) > 0 {
+		return data, format, nil
+	}
+	pdf, err := ReadPDF()
+	if err != nil {
+		return nil, "", err
+	}
+	if len(pdf) > 0 {
+		return pdf, FormatPDF, nil
+	}
+	return nil, "", nil
+}
+
 // Format identifiers for the clipboard read helpers.
 const (
 	FormatRTF  = "rtf"
 	FormatHTML = "html"
+	FormatPDF  = "pdf"
 )
 
 // FileRefPayload lists absolute file paths to place on the pasteboard as

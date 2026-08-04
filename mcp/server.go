@@ -49,6 +49,8 @@ type ConvertOutput struct {
 	Paths      []string `json:"paths,omitempty" jsonschema:"written file paths (file / file_reference sinks)"`
 	Content    string   `json:"content,omitempty" jsonschema:"inline result text (content sink)"`
 	Errors     []string `json:"errors,omitempty" jsonschema:"per-item errors for batch conversions"`
+	MediaDir   string   `json:"media_dir,omitempty" jsonschema:"directory holding extracted import media (images, PDF pages)"`
+	Assets     []string `json:"assets,omitempty" jsonschema:"absolute paths of extracted media files referenced by the Markdown"`
 }
 
 // Serve runs a vellum MCP server on stdio until the client disconnects.
@@ -84,7 +86,9 @@ Examples:
 
 Formats are inferred aggressively (file extension, clipboard UTI, markdown default for content, pdf for md→file, markdown for rich→file). Optional from.format / to.format override.
 
-Disallowed (intractable): to.media content|clipboard with format pdf. macOS required for clipboard and file_reference. Optional style and backend overlay the user config for this call only.
+Rich import (rtf/docx/html/… via pandoc; pdf via pdftoppm+pdftotext) extracts images/page renders into a TTL cache (or media_dir) and rewrites Markdown to absolute asset paths. Clipboard import probes RTF, HTML, then PDF (e.g. PowerPoint com.adobe.pdf).
+
+Disallowed (intractable): to.media content|clipboard with format pdf (binary PDF out). PDF *input* is allowed. macOS required for clipboard and file_reference. Optional style and backend overlay the user config for this call only.
 `),
 	}, makeConvertHandler(baseStyle, baseBackend))
 
@@ -166,23 +170,39 @@ func fromResult(r *convert.Result) ConvertOutput {
 		Paths:      r.Paths,
 		Content:    r.Content,
 		Errors:     r.Errors,
+		MediaDir:   r.MediaDir,
+		Assets:     r.Assets,
 	}
 }
 
 func formatMessage(out ConvertOutput) string {
-	if out.Content != "" {
-		return out.Content
-	}
 	var b strings.Builder
+	if out.Content != "" {
+		b.WriteString(out.Content)
+		if !strings.HasSuffix(out.Content, "\n") {
+			b.WriteByte('\n')
+		}
+	}
 	if len(out.Paths) > 0 {
 		fmt.Fprintf(&b, "Converted %d path(s) (%s → %s):\n", len(out.Paths), out.FromMedia, out.ToMedia)
 		for _, p := range out.Paths {
 			fmt.Fprintf(&b, "  %s\n", p)
 		}
-	} else if out.ToMedia == "clipboard" || out.ToMedia == string(convert.MediaClipboard) {
-		fmt.Fprintf(&b, "Copied to clipboard (%s → %s).\n", out.FromMedia, out.ToMedia)
-	} else if out.ToMedia == string(convert.MediaFileReference) {
-		fmt.Fprintf(&b, "Placed file reference on clipboard.\n")
+	} else if out.Content == "" {
+		if out.ToMedia == "clipboard" || out.ToMedia == string(convert.MediaClipboard) {
+			fmt.Fprintf(&b, "Copied to clipboard (%s → %s).\n", out.FromMedia, out.ToMedia)
+		} else if out.ToMedia == string(convert.MediaFileReference) {
+			fmt.Fprintf(&b, "Placed file reference on clipboard.\n")
+		}
+	}
+	if out.MediaDir != "" {
+		fmt.Fprintf(&b, "Media dir: %s\n", out.MediaDir)
+	}
+	if len(out.Assets) > 0 {
+		fmt.Fprintf(&b, "Assets (%d):\n", len(out.Assets))
+		for _, a := range out.Assets {
+			fmt.Fprintf(&b, "  %s\n", a)
+		}
 	}
 	if len(out.Errors) > 0 {
 		b.WriteString("Errors:\n")

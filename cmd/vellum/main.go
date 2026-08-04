@@ -17,7 +17,7 @@ import (
 	"github.com/marcelocantos/vellum/viewer"
 )
 
-const version = "0.9.0"
+const version = "0.10.0"
 
 func main() {
 	if err := run(); err != nil {
@@ -515,6 +515,12 @@ func printRunResult(res *convert.Result) error {
 		case convert.MediaFileReference:
 			fmt.Fprintln(os.Stderr, "Placed file reference on clipboard.")
 		}
+	}
+	if res.MediaDir != "" {
+		fmt.Fprintln(os.Stderr, "Media dir:", res.MediaDir)
+	}
+	for _, a := range res.Assets {
+		fmt.Fprintln(os.Stderr, "Asset:", a)
 	}
 	for _, e := range res.Errors {
 		fmt.Fprintf(os.Stderr, "Error: %s\n", e)

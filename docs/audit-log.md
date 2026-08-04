@@ -67,8 +67,22 @@ maintenance activities. Append-only — newest entries at the bottom.
 
 ## 2026-07-31 — /release v0.8.0
 
-- **Commit**: `pending`
+- **Commit**: `097abbf`
 - **Outcome**: Released v0.8.0. Unifies the MCP and CLI conversion surface around media-orthogonal `from`/`to` (🎯T14). Single MCP tool `convert` replaces `convert`, `convert_to_clipboard`, `convert_from_clipboard`, and `import`. Media: `file`, `content`, `clipboard`, `file_reference` (Finder-style pasteboard paths). Formats inferred aggressively; content/clipboard PDF sinks refused. Shared `convert.Run` router; CLI `vellum convert --from/--to` plus sugars (bare `.md`, `--to-clipboard`, `import`). STABILITY.md re-baselined to v0.8.0.
 - **Deferred**:
   - 🎯T10 *Mermaid render failures surface loudly* — still open.
+  - Windows/Linux clipboard backends (parked).
+
+## 2026-08-03 — /release v0.9.0
+
+- **Commit**: (squash merge of loud Mermaid + PR CI)
+- **Outcome**: Released v0.9.0. Mermaid mmdc failures surface as SoftError + stderr + MCP errors while keeping source-as-code fallback (🎯T10). Adds `.github/workflows/ci.yml` for PR CI. Homebrew caveats no longer name removed MCP tools.
+- **Deferred**:
+  - Windows/Linux clipboard backends (parked).
+
+## 2026-08-05 — /release v0.10.0
+
+- **Commit**: `pending`
+- **Outcome**: Released v0.10.0. Rich import for agent slurping: RTF/DOCX/HTML via pandoc `--extract-media` with absolute image paths; PDF via Poppler (`pdftoppm` page PNGs + `pdftotext`); TTL import cache (`~/Library/Caches/vellum/import`, 7d/200MiB); clipboard probes RTF → HTML → PDF (`com.adobe.pdf`); `media_dir`/`assets` on convert results. Homebrew formula gains `depends_on "poppler"`.
+- **Deferred**:
   - Windows/Linux clipboard backends (parked).

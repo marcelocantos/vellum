@@ -71,6 +71,10 @@ type Result struct {
 	Paths      []string
 	Content    string
 	Errors     []string
+	// MediaDir / Assets hold extracted import media (images, PDF pages)
+	// so Markdown file references resolve for agents.
+	MediaDir string
+	Assets   []string
 }
 
 // Run executes a media-orthogonal conversion.
@@ -145,6 +149,10 @@ func Run(ctx context.Context, req *Request) (*Result, error) {
 				out.Content = item.Content
 			}
 			out.Errors = append(out.Errors, item.Errors...)
+			if out.MediaDir == "" && item.MediaDir != "" {
+				out.MediaDir = item.MediaDir
+			}
+			out.Assets = append(out.Assets, item.Assets...)
 		}
 		if err != nil {
 			var se *SoftError
@@ -227,10 +235,11 @@ func collectInputs(from Endpoint) ([]inputItem, error) {
 }
 
 func runOne(ctx context.Context, in inputItem, from, to Endpoint, opts *Options) (*Result, error) {
-	md, fromFmt, baseDir, err := ingest(ctx, in, from)
+	ing, err := ingest(ctx, in, from)
 	if err != nil {
 		return nil, err
 	}
+	md, fromFmt, baseDir := ing.md, ing.fromFmt, ing.baseDir
 
 	toFmt := inferToFormat(to, fromFmt)
 	if err := checkDisallowed(to.Media, toFmt); err != nil {
@@ -242,6 +251,8 @@ func runOne(ctx context.Context, in inputItem, from, to Endpoint, opts *Options)
 		ToMedia:    to.Media,
 		FromFormat: fromFmt,
 		ToFormat:   toFmt,
+		MediaDir:   ing.mediaDir,
+		Assets:     ing.assets,
 	}
 
 	switch to.Media {
@@ -304,11 +315,19 @@ func withSoft(res *Result, soft []string, in inputItem) (*Result, error) {
 	return res, softError(msgs)
 }
 
-func ingest(ctx context.Context, in inputItem, from Endpoint) (md, fromFmt, baseDir string, err error) {
+type ingestResult struct {
+	md       string
+	fromFmt  string
+	baseDir  string
+	mediaDir string
+	assets   []string
+}
+
+func ingest(ctx context.Context, in inputItem, from Endpoint) (ingestResult, error) {
 	switch from.Media {
 	case MediaFile:
-		baseDir = filepath.Dir(in.path)
-		fromFmt = normalizeFormat(from.Format)
+		baseDir := filepath.Dir(in.path)
+		fromFmt := normalizeFormat(from.Format)
 		if fromFmt == "" {
 			fromFmt = formatFromExt(in.path)
 		}
@@ -318,73 +337,69 @@ func ingest(ctx context.Context, in inputItem, from Endpoint) (md, fromFmt, base
 		if isMarkdownFormat(fromFmt) {
 			b, rerr := os.ReadFile(in.path)
 			if rerr != nil {
-				return "", "", "", rerr
+				return ingestResult{}, rerr
 			}
-			return string(b), FormatMarkdown, baseDir, nil
+			return ingestResult{md: string(b), fromFmt: FormatMarkdown, baseDir: baseDir}, nil
 		}
-		if fromFmt == FormatPDF {
-			return "", "", "", fmt.Errorf("convert: cannot use PDF as input")
-		}
-		if err := importer.CheckDep(); err != nil {
-			return "", "", "", err
-		}
-		// Empty format lets pandoc sniff the extension when we pass the path.
 		fmtHint := from.Format
 		if isMarkdownFormat(normalizeFormat(fmtHint)) {
 			fmtHint = ""
 		}
-		text, err := importer.ImportFile(ctx, in.path, fmtHint)
-		if err != nil {
-			return "", "", "", err
+		if fromFmt == FormatPDF {
+			fmtHint = "pdf"
 		}
-		return text, fromFmt, baseDir, nil
+		ir, err := importer.ImportFile(ctx, in.path, &importer.Options{Format: fmtHint})
+		if err != nil {
+			return ingestResult{}, err
+		}
+		return ingestResult{
+			md: ir.Markdown, fromFmt: fromFmt, baseDir: baseDir,
+			mediaDir: ir.MediaDir, assets: ir.Assets,
+		}, nil
 
 	case MediaContent:
-		fromFmt = normalizeFormat(from.Format)
+		fromFmt := normalizeFormat(from.Format)
 		if fromFmt == "" {
 			fromFmt = FormatMarkdown
 		}
 		if isMarkdownFormat(fromFmt) {
-			return in.content, FormatMarkdown, "", nil
+			return ingestResult{md: in.content, fromFmt: FormatMarkdown}, nil
 		}
-		if fromFmt == FormatPDF {
-			return "", "", "", fmt.Errorf("convert: cannot use PDF as input")
-		}
-		if err := importer.CheckDep(); err != nil {
-			return "", "", "", err
-		}
-		text, err := importer.ImportBytes(ctx, []byte(in.content), fromFmt)
+		ir, err := importer.ImportBytes(ctx, []byte(in.content), &importer.Options{Format: fromFmt})
 		if err != nil {
-			return "", "", "", err
+			return ingestResult{}, err
 		}
-		return text, fromFmt, "", nil
+		return ingestResult{
+			md: ir.Markdown, fromFmt: fromFmt,
+			mediaDir: ir.MediaDir, assets: ir.Assets,
+		}, nil
 
 	case MediaClipboard:
-		if err := importer.CheckDep(); err != nil {
-			return "", "", "", err
-		}
-		data, detected, err := clipboard.ReadRichText()
+		data, detected, err := clipboard.ReadImportable()
 		if err != nil {
-			return "", "", "", err
+			return ingestResult{}, err
 		}
 		if len(data) == 0 {
-			return "", "", "", fmt.Errorf("convert: clipboard has no RTF or HTML content")
+			return ingestResult{}, fmt.Errorf("convert: clipboard has no RTF, HTML, or PDF content")
 		}
-		fromFmt = normalizeFormat(from.Format)
+		fromFmt := normalizeFormat(from.Format)
 		if fromFmt == "" {
 			fromFmt = detected
 		}
 		if fromFmt == "" {
 			fromFmt = FormatRTF
 		}
-		text, err := importer.ImportBytes(ctx, data, fromFmt)
+		ir, err := importer.ImportBytes(ctx, data, &importer.Options{Format: fromFmt})
 		if err != nil {
-			return "", "", "", err
+			return ingestResult{}, err
 		}
-		return text, fromFmt, "", nil
+		return ingestResult{
+			md: ir.Markdown, fromFmt: fromFmt,
+			mediaDir: ir.MediaDir, assets: ir.Assets,
+		}, nil
 
 	default:
-		return "", "", "", fmt.Errorf("convert: unsupported from.media %q", from.Media)
+		return ingestResult{}, fmt.Errorf("convert: unsupported from.media %q", from.Media)
 	}
 }
 
