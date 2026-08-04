@@ -258,16 +258,24 @@ func readPasteboardData(uti string) []byte {
 // readClipboard returns the clipboard data for the named [Format], or nil
 // if absent. macOS-specific UTI mapping happens here.
 func readClipboard(format string) ([]byte, error) {
-	var uti string
 	switch format {
 	case FormatRTF:
-		uti = "public.rtf"
+		return readPasteboardData("public.rtf"), nil
 	case FormatHTML:
-		uti = "public.html"
+		return readPasteboardData("public.html"), nil
+	case FormatPDF:
+		// PowerPoint slide copies often use com.adobe.pdf; macOS also
+		// uses public.pdf. Prefer public.pdf then Adobe flavour.
+		if b := readPasteboardData("public.pdf"); len(b) > 0 {
+			return b, nil
+		}
+		if b := readPasteboardData("com.adobe.pdf"); len(b) > 0 {
+			return b, nil
+		}
+		return nil, nil
 	default:
 		return nil, fmt.Errorf("clipboard: unknown format %q", format)
 	}
-	return readPasteboardData(uti), nil
 }
 
 func writeFileRefs(paths []string) error {

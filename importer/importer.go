@@ -1,29 +1,26 @@
 // Copyright 2026 Marcelo Cantos
 // SPDX-License-Identifier: Apache-2.0
 
-// Package importer converts rich-text formats (RTF, DOCX, HTML, ODT, EPUB,
-// LaTeX, …) back to GitHub-Flavoured Markdown by shelling out to pandoc.
+// Package importer converts rich-text and PDF sources to GitHub-Flavoured
+// Markdown, extracting images and other media into a directory (import
+// cache by default) so Markdown references resolve for agents.
 //
-// Pandoc is the only mature engine that handles RTF → GFM cleanly, and
-// using it opens the door to all other formats it supports for free. The
-// caller does not need to enumerate supported formats — pandoc auto-detects
-// from file extension when [ImportFile] is called without an explicit
-// format, or accepts an explicit format hint via [ImportBytes].
+// Office-like formats (RTF, DOCX, HTML, ODT, …) go through pandoc with
+// --extract-media. PDF uses Poppler (pdftoppm + pdftotext) for page
+// images plus extracted text — not pandoc (which cannot read PDF).
 package importer
 
 import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 )
 
-// PandocDep is the runtime dependency this package requires.
-//
-// vellum's main dependency check does NOT include pandoc — only paths
-// that import rich text (convert from clipboard / non-Markdown files)
-// check it lazily. PDF-only users never need pandoc installed.
+// PandocDep is the runtime dependency for office-like imports.
 var PandocDep = struct {
 	Name    string
 	Purpose string
@@ -43,30 +40,139 @@ func CheckDep() error {
 	return nil
 }
 
-// ImportFile reads inputPath, runs it through pandoc, and returns
-// GFM Markdown. Empty format lets pandoc auto-detect from the file
-// extension; a non-empty format (e.g. "rtf", "docx", "html") forces it.
-func ImportFile(ctx context.Context, inputPath, format string) (string, error) {
-	args := []string{"-t", "gfm"}
+// Options configures a single import.
+type Options struct {
+	// Format is the pandoc -f value or "pdf". Empty lets the file
+	// extension decide (for path imports).
+	Format string
+	// MediaDir is where extracted images are written. Empty uses the
+	// managed import cache (keyed by content hash).
+	MediaDir string
+}
+
+// ImportFile converts a file on disk to Markdown + media.
+func ImportFile(ctx context.Context, inputPath string, opts *Options) (Result, error) {
+	if opts == nil {
+		opts = &Options{}
+	}
+	abs, err := filepath.Abs(inputPath)
+	if err != nil {
+		return Result{}, err
+	}
+	format := strings.ToLower(strings.TrimSpace(opts.Format))
+	if format == "" {
+		format = formatFromExt(abs)
+	}
+	if format == "pdf" {
+		key, err := HashFile(abs)
+		if err != nil {
+			return Result{}, err
+		}
+		mediaDir, err := EnsureMediaDir(opts.MediaDir, key)
+		if err != nil {
+			return Result{}, err
+		}
+		return ImportPDF(ctx, abs, mediaDir)
+	}
+
+	if err := CheckDep(); err != nil {
+		return Result{}, err
+	}
+	key, err := HashFile(abs)
+	if err != nil {
+		return Result{}, err
+	}
+	mediaDir, err := EnsureMediaDir(opts.MediaDir, key)
+	if err != nil {
+		return Result{}, err
+	}
+
+	args := []string{"-t", "gfm", "--extract-media=" + mediaDir}
 	if format != "" {
 		args = append(args, "-f", format)
 	}
-	args = append(args, inputPath)
-	return runPandoc(ctx, args, nil)
+	args = append(args, abs)
+	md, err := runPandoc(ctx, args, nil)
+	if err != nil {
+		return Result{}, err
+	}
+	md, assets, err := AbsolutizeMedia(md, mediaDir)
+	if err != nil {
+		return Result{}, err
+	}
+	return Result{Markdown: md, MediaDir: mediaDir, Assets: assets}, nil
 }
 
-// ImportBytes runs raw bytes through pandoc, returning GFM Markdown. The
-// format string is required because pandoc can't detect format from a
-// stdin stream — e.g. "rtf", "html", "docx". Common values match pandoc's
-// `-f` / `--from` argument.
-func ImportBytes(ctx context.Context, data []byte, format string) (string, error) {
+// ImportBytes converts in-memory document bytes. Format is required
+// (e.g. "rtf", "html", "docx", "pdf").
+func ImportBytes(ctx context.Context, data []byte, opts *Options) (Result, error) {
+	if opts == nil {
+		opts = &Options{}
+	}
+	format := strings.ToLower(strings.TrimSpace(opts.Format))
 	if format == "" {
-		return "", fmt.Errorf("importer: format required when importing bytes")
+		return Result{}, fmt.Errorf("importer: format required when importing bytes")
 	}
 	if len(data) == 0 {
-		return "", fmt.Errorf("importer: empty input")
+		return Result{}, fmt.Errorf("importer: empty input")
 	}
-	return runPandoc(ctx, []string{"-f", format, "-t", "gfm"}, data)
+
+	key := HashBytes(data)
+	mediaDir, err := EnsureMediaDir(opts.MediaDir, key)
+	if err != nil {
+		return Result{}, err
+	}
+
+	if format == "pdf" {
+		tmp := filepath.Join(mediaDir, "source.pdf")
+		if err := os.WriteFile(tmp, data, 0o644); err != nil {
+			return Result{}, err
+		}
+		return ImportPDF(ctx, tmp, mediaDir)
+	}
+
+	if err := CheckDep(); err != nil {
+		return Result{}, err
+	}
+	// Prefer a temp file so pandoc can use extract-media reliably.
+	ext := "." + format
+	if format == "markdown" || format == "md" || format == "gfm" {
+		ext = ".md"
+	}
+	tmp := filepath.Join(mediaDir, "source"+ext)
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+		return Result{}, err
+	}
+	args := []string{"-f", format, "-t", "gfm", "--extract-media=" + mediaDir, tmp}
+	md, err := runPandoc(ctx, args, nil)
+	if err != nil {
+		return Result{}, err
+	}
+	md, assets, err := AbsolutizeMedia(md, mediaDir)
+	if err != nil {
+		return Result{}, err
+	}
+	return Result{Markdown: md, MediaDir: mediaDir, Assets: assets}, nil
+}
+
+// Legacy wrappers kept for any external callers expecting (string, error).
+
+// ImportFileMarkdown is like ImportFile but returns only the Markdown string.
+func ImportFileMarkdown(ctx context.Context, inputPath, format string) (string, error) {
+	r, err := ImportFile(ctx, inputPath, &Options{Format: format})
+	if err != nil {
+		return "", err
+	}
+	return r.Markdown, nil
+}
+
+// ImportBytesMarkdown is like ImportBytes but returns only the Markdown string.
+func ImportBytesMarkdown(ctx context.Context, data []byte, format string) (string, error) {
+	r, err := ImportBytes(ctx, data, &Options{Format: format})
+	if err != nil {
+		return "", err
+	}
+	return r.Markdown, nil
 }
 
 func runPandoc(ctx context.Context, args []string, stdin []byte) (string, error) {
@@ -85,4 +191,27 @@ func runPandoc(ctx context.Context, args []string, stdin []byte) (string, error)
 		return "", fmt.Errorf("pandoc: %w", err)
 	}
 	return out.String(), nil
+}
+
+func formatFromExt(path string) string {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".md", ".markdown":
+		return "markdown"
+	case ".html", ".htm":
+		return "html"
+	case ".rtf":
+		return "rtf"
+	case ".docx":
+		return "docx"
+	case ".odt":
+		return "odt"
+	case ".epub":
+		return "epub"
+	case ".tex", ".latex":
+		return "latex"
+	case ".pdf":
+		return "pdf"
+	default:
+		return ""
+	}
 }

@@ -22,7 +22,8 @@ vellum shells out to external tools at conversion time. All must be on `PATH`:
 - **[Node.js](https://nodejs.org/)** — runtime for KaTeX math rendering.
 - **[KaTeX](https://katex.org/)** — `npm install -g katex`.
 - **[mermaid-cli](https://github.com/mermaid-js/mermaid-cli)** (`mmdc`) — `brew install mermaid-cli` (or the equivalent on your platform). Required only if your documents contain Mermaid diagrams.
-- **[pandoc](https://pandoc.org/)** — `brew install pandoc`. Required only for rich-text import paths (`from` clipboard or non-Markdown files).
+- **[pandoc](https://pandoc.org/)** — `brew install pandoc`. Required for rich-text import (RTF, DOCX, HTML, …) with image extraction.
+- **[poppler](https://poppler.freedesktop.org/)** — `brew install poppler` (`pdftoppm`, `pdftotext`). Required for PDF import (page images + text).
 
 ### Switching to Prince
 

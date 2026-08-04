@@ -242,7 +242,8 @@ Required external binaries on `PATH`:
   - `prince` — Prince 16.2 or later. **stable** (opt-in via `backend: prince`).
 - `node` — any recent Node.js. **stable**.
 - `mmdc` — mermaid-cli. **stable**.
-- `pandoc` — Pandoc 3.x. **needs review** (required for rich-text import paths: non-Markdown `from.media=file`, `from.media=clipboard`, and the `import` CLI sugar; lazily checked).
+- `pandoc` — Pandoc 3.x. **needs review** (rich-text import: RTF/DOCX/HTML/… with `--extract-media`; lazily checked).
+- `pdftoppm` / `pdftotext` — Poppler. **needs review** (PDF import: page images + text; lazily checked).
 
 Required Node package (installed globally):
 

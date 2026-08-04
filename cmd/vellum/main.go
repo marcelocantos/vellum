@@ -516,6 +516,12 @@ func printRunResult(res *convert.Result) error {
 			fmt.Fprintln(os.Stderr, "Placed file reference on clipboard.")
 		}
 	}
+	if res.MediaDir != "" {
+		fmt.Fprintln(os.Stderr, "Media dir:", res.MediaDir)
+	}
+	for _, a := range res.Assets {
+		fmt.Fprintln(os.Stderr, "Asset:", a)
+	}
 	for _, e := range res.Errors {
 		fmt.Fprintf(os.Stderr, "Error: %s\n", e)
 	}

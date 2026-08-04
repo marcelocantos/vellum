@@ -159,17 +159,24 @@ sugar). Formats are inferred aggressively when omitted:
 
 | Situation | Default |
 |-----------|---------|
-| `from.media=file` | Extension (`.md`→markdown, `.docx`→docx, …) |
+| `from.media=file` | Extension (`.md`→markdown, `.docx`→docx, `.pdf`→pdf, …) |
 | `from.media=content` | `markdown` |
-| `from.media=clipboard` | RTF preferred, else HTML |
+| `from.media=clipboard` | RTF, else HTML, else PDF (e.g. PowerPoint `com.adobe.pdf`) |
 | `to.media=clipboard` | rich (RTF+HTML+plain) |
 | `to.media=content` | `markdown` |
 | `to.media=file` from markdown | `pdf` |
-| `to.media=file` from rich-text | `markdown` |
+| `to.media=file` from rich-text / pdf | `markdown` |
+
+**Rich import:** RTF/DOCX/HTML/… via pandoc with `--extract-media`; PDF
+via Poppler (`pdftoppm` page PNGs + `pdftotext`). Media is written under
+a TTL import cache (`~/Library/Caches/vellum/import/…`, 7 days / 200 MiB)
+and Markdown image links are rewritten to **absolute paths**. The result
+includes `media_dir` and `assets`. Requires `pandoc` (office formats)
+and `poppler` (PDF) on PATH when those paths are used.
 
 **Disallowed (intractable):** `to.media` of `content` or `clipboard`
-with `format` `pdf`. Everything else the pipeline can implement is
-allowed. `clipboard` and `file_reference` require macOS.
+with `format` `pdf` (binary PDF *out*). PDF *input* is allowed.
+`clipboard` and `file_reference` require macOS.
 
 #### Examples
 
