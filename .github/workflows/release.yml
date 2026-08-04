@@ -103,6 +103,7 @@ jobs:
             depends_on "mermaid-cli"
             depends_on "node"
             depends_on "pandoc"
+            depends_on "poppler"
             depends_on "weasyprint"
 
             def caveats
@@ -119,8 +120,8 @@ jobs:
                 KaTeX is needed for math rendering:
                   npm install -g katex
 
-                Pandoc handles the inverse direction (rich-text → Markdown via
-                `vellum import` / MCP convert from clipboard or rich-text files);
-                it is included as a dependency.
+                Pandoc handles rich-text import (RTF, DOCX, HTML, … → Markdown
+                with media extraction). Poppler (pdftoppm/pdftotext) handles PDF
+                import (page images + text). Both are formula dependencies.
               EOS
             end
