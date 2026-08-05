@@ -39,6 +39,9 @@ type Options struct {
 	// Backend names the renderer engine. Empty resolves to DefaultBackend
 	// (WeasyPrint). Use BackendPrince to opt into Prince.
 	Backend string
+	// MermaidFormat selects mmdc output: MermaidSVG (default) or MermaidPNG.
+	// PDF sinks force PNG (Prince-safe labels); HTML/view keep SVG.
+	MermaidFormat string
 }
 
 var htmlTmpl = template.Must(template.New("page").Parse(embed.HTMLTemplate))
@@ -93,12 +96,13 @@ func softError(messages []string) error {
 // using the backend selected via opts.Backend (defaults to WeasyPrint).
 // Soft Mermaid failures still produce a PDF; the returned error is a
 // *SoftError so callers can detect non-zero exit without discarding output.
+// Mermaid diagrams are rendered as PNG for PDF (Prince-safe labels).
 func Convert(ctx context.Context, inputPath, outputPath string, opts *Options) error {
 	absInput, err := filepath.Abs(inputPath)
 	if err != nil {
 		return fmt.Errorf("resolving input path: %w", err)
 	}
-	html, soft, err := RenderFile(ctx, absInput, opts)
+	html, soft, err := RenderFile(ctx, absInput, withMermaidFormat(opts, MermaidPNG))
 	if err != nil {
 		return err
 	}
@@ -146,7 +150,11 @@ func Render(ctx context.Context, src []byte, opts *Options) (html string, soft [
 	// This prevents goldmark from mangling backslashes in LaTeX and from
 	// treating mermaid blocks as regular code.
 	math := newMathPreprocessor()
-	mermaid := newMermaidPreprocessor()
+	mermaidFmt := MermaidSVG
+	if opts != nil && opts.MermaidFormat != "" {
+		mermaidFmt = opts.MermaidFormat
+	}
+	mermaid := newMermaidPreprocessor(mermaidFmt)
 	processed := math.Extract(string(src))
 	processed = mermaid.Extract(processed)
 
@@ -219,6 +227,18 @@ func renderMarkdown(src []byte) (htmlContent string, title string, err error) {
 	}
 
 	return buf.String(), title, nil
+}
+
+// withMermaidFormat returns a shallow copy of opts with MermaidFormat set.
+// Nil opts becomes a new Options. Callers that share opts must not rely on
+// mutation of the original pointer.
+func withMermaidFormat(opts *Options, format string) *Options {
+	if opts == nil {
+		return &Options{MermaidFormat: format}
+	}
+	cp := *opts
+	cp.MermaidFormat = format
+	return &cp
 }
 
 func assembleHTML(title, lang, css, headExtra, body string) (string, error) {

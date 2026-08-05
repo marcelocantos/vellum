@@ -215,7 +215,7 @@ not listed here is either GFM (via goldmark's GFM extension) or not supported.
 - **Inline math** — `$...$` rendered via server-side KaTeX. **stable**.
 - **Block math** — `$$...$$` rendered via server-side KaTeX. **stable**.
 - **Code-block protection** — `$…$` inside fenced code blocks and inline code is not extracted as math. **stable**.
-- **Mermaid** — ```` ```mermaid ```` fenced blocks rendered to PNG via `mmdc` at 2× scale. **stable**.
+- **Mermaid** — ```` ```mermaid ```` fenced blocks via `mmdc`. HTML/view embed **SVG** (vector). PDF keeps **PNG** at 2× scale because Mermaid SVG `foreignObject` labels do not paint in Prince. **stable** (dual path, 🎯T17).
 - **`<!-- vellum:scale N -->`** hint — applies a CSS `max-width: N * 100%` to the *next* Mermaid block. `N > 0`. **stable** (the comment syntax is stable; future hints may be added under the same `vellum:` prefix).
 
 ### Environment variables
