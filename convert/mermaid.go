@@ -14,6 +14,17 @@ import (
 	"strings"
 )
 
+// Mermaid image output formats for mmdc.
+//
+// HTML/view paths use SVG (vector, legible labels in browsers).
+// PDF paths keep PNG: Mermaid SVGs rely on foreignObject for node labels,
+// which Prince (and some print engines) do not paint — so PDF stays
+// raster PNG at 2× scale for label fidelity (🎯T17 dual path).
+const (
+	MermaidSVG = "svg"
+	MermaidPNG = "png"
+)
+
 var mermaidBlockRe = regexp.MustCompile("(?m)(?:^<!--\\s*vellum:scale\\s+([0-9.]+)\\s*-->\\s*\n)?^```mermaid\\s*\n([\\s\\S]+?)^```\\s*$")
 
 type mermaidDiagram struct {
@@ -22,14 +33,25 @@ type mermaidDiagram struct {
 }
 
 // mermaidPreprocessor extracts ```mermaid code blocks from markdown source,
-// renders each to PNG via mmdc, and replaces them with HTML placeholders.
+// renders each via mmdc, and replaces them with HTML placeholders.
 type mermaidPreprocessor struct {
 	diagrams     []mermaidDiagram
 	placeholders []string
+	format       string // MermaidSVG or MermaidPNG
 }
 
-func newMermaidPreprocessor() *mermaidPreprocessor {
-	return &mermaidPreprocessor{}
+func newMermaidPreprocessor(format string) *mermaidPreprocessor {
+	return &mermaidPreprocessor{format: resolveMermaidFormat(format)}
+}
+
+func resolveMermaidFormat(format string) string {
+	switch strings.ToLower(strings.TrimSpace(format)) {
+	case MermaidPNG:
+		return MermaidPNG
+	default:
+		// Default SVG: HTML, view, clipboard, and public Render.
+		return MermaidSVG
+	}
 }
 
 // Extract finds all mermaid code blocks (with optional <!-- vellum:scale N -->
@@ -72,7 +94,7 @@ func (m *mermaidPreprocessor) ReplaceAll(ctx context.Context, html string) (stri
 
 	var soft []string
 	for i, d := range m.diagrams {
-		img, err := renderMermaidFn(ctx, d.source)
+		img, err := renderMermaidFn(ctx, d.source, m.format)
 		if err != nil {
 			// 1-based index for human-facing messages.
 			msg := fmt.Sprintf("mermaid diagram %d: %v", i+1, err)
@@ -93,7 +115,7 @@ func (m *mermaidPreprocessor) ReplaceAll(ctx context.Context, html string) (stri
 }
 
 // renderMermaidFn is the diagram renderer. Tests override it to inject
-// failures without shelling out to mmdc.
+// failures or assert format without shelling out to mmdc.
 var renderMermaidFn = renderMermaid
 
 func htmlEscapeText(s string) string {
@@ -106,7 +128,9 @@ func htmlEscapeText(s string) string {
 	return replacer.Replace(s)
 }
 
-func renderMermaid(ctx context.Context, src string) (string, error) {
+func renderMermaid(ctx context.Context, src string, format string) (string, error) {
+	format = resolveMermaidFormat(format)
+
 	// Write mermaid source to a temp file.
 	inFile, err := os.CreateTemp("", "vellum-mmd-*.mmd")
 	if err != nil {
@@ -120,34 +144,49 @@ func renderMermaid(ctx context.Context, src string) (string, error) {
 	}
 	inFile.Close()
 
-	// Render as PNG at 2x scale — SVG foreignObject labels don't
-	// render in Prince, so PNG is more reliable.
-	outFile, err := os.CreateTemp("", "vellum-mmd-*.png")
+	ext := format
+	outFile, err := os.CreateTemp("", "vellum-mmd-*."+ext)
 	if err != nil {
 		return "", err
 	}
 	outFile.Close()
 	defer os.Remove(outFile.Name())
 
-	cmd := exec.CommandContext(ctx, "mmdc",
+	args := []string{
 		"-i", inFile.Name(),
 		"-o", outFile.Name(),
-		"-e", "png",
-		"-s", "2",
+		"-e", format,
 		"--quiet",
-	)
+	}
+	// PNG at 2× for print sharpness; SVG is vector (no raster scale).
+	if format == MermaidPNG {
+		args = append(args, "-s", "2")
+	}
 
+	cmd := exec.CommandContext(ctx, "mmdc", args...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("mmdc: %w: %s", err, string(out))
 	}
 
-	pngData, err := os.ReadFile(outFile.Name())
+	data, err := os.ReadFile(outFile.Name())
 	if err != nil {
 		return "", fmt.Errorf("reading mmdc output: %w", err)
 	}
 
-	// Embed as base64 data URI so the HTML is self-contained.
-	b64 := base64.StdEncoding.EncodeToString(pngData)
+	if format == MermaidSVG {
+		return embedMermaidSVG(data), nil
+	}
+	b64 := base64.StdEncoding.EncodeToString(data)
 	return fmt.Sprintf(`<img src="data:image/png;base64,%s" alt="Mermaid diagram">`, b64), nil
+}
+
+// embedMermaidSVG returns inline SVG markup suitable for HTML/view paths.
+func embedMermaidSVG(data []byte) string {
+	s := string(data)
+	// Drop XML prolog / doctype so the fragment embeds cleanly in HTML.
+	if i := strings.Index(s, "<svg"); i >= 0 {
+		s = s[i:]
+	}
+	return strings.TrimSpace(s)
 }

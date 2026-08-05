@@ -377,6 +377,19 @@ look than the user's default — e.g., a wide-table document that benefits
 from a smaller font, or a print-targeted document on US Letter rather
 than A4. For persistent preferences, edit the config file instead.
 
+## Mermaid output format
+
+Mermaid fenced blocks are rendered with `mmdc` before the PDF backend
+sees the document:
+
+- **HTML, content, view, and clipboard** sinks embed **SVG** (vector).
+- **PDF** conversion forces **PNG at 2× scale** because Mermaid SVG
+  `foreignObject` labels do not paint in Prince.
+
+Soft-fail behaviour is unchanged: a failed diagram becomes a
+`<pre class="mermaid-error">` fallback, is logged, and surfaces as a
+soft error (CLI non-zero exit / MCP `errors`).
+
 ## Mermaid scale hint
 
 Mermaid diagrams can overflow the PDF page when they are dense. To
@@ -403,8 +416,9 @@ diagram does not fit; most diagrams render correctly at 1.0.
   typesetting (Prince's JS engine is off by default; WeasyPrint has none).
 - KaTeX runs in `throwOnError: false` mode, so malformed math
   expressions render as an error span rather than crashing the build.
-- Mermaid and math rendering are performed server-side before Prince
-  sees the document, so the final HTML contains only static SVG/HTML.
+- Mermaid and math rendering are performed server-side before the PDF
+  backend sees the document. HTML/view sinks carry static SVG (and
+  KaTeX HTML); the PDF path embeds Mermaid as PNG data URIs.
 
 ## Error handling
 

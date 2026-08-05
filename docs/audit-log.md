@@ -86,3 +86,10 @@ maintenance activities. Append-only — newest entries at the bottom.
 - **Outcome**: Released v0.10.0. Rich import for agent slurping: RTF/DOCX/HTML via pandoc `--extract-media` with absolute image paths; PDF via Poppler (`pdftoppm` page PNGs + `pdftotext`); TTL import cache (`~/Library/Caches/vellum/import`, 7d/200MiB); clipboard probes RTF → HTML → PDF (`com.adobe.pdf`); `media_dir`/`assets` on convert results. Homebrew formula gains `depends_on "poppler"`.
 - **Deferred**:
   - Windows/Linux clipboard backends (parked).
+
+## 2026-08-05 — /release v0.11.0
+
+- **Commit**: `pending`
+- **Outcome**: Release prep for v0.11.0 (🎯T18). Mermaid dual path (🎯T17 / `368b567`): SVG on HTML/view/content/clipboard; PNG @2× on PDF (Prince foreignObject labels). Version `0.11.0`; README + agents-guide dual-path docs; STABILITY snapshot bump.
+- **Deferred**:
+  - Windows/Linux clipboard backends (parked).

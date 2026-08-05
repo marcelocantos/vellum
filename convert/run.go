@@ -430,7 +430,8 @@ func writeFileOutput(ctx context.Context, md, outPath, toFmt, baseDir string, op
 		}
 		return soft, os.WriteFile(outPath, []byte(html), 0o644)
 	case toFmt == FormatPDF || toFmt == "":
-		html, soft, err := Render(ctx, []byte(md), opts)
+		// PDF: PNG mermaid (Prince foreignObject labels); HTML sinks use SVG.
+		html, soft, err := Render(ctx, []byte(md), withMermaidFormat(opts, MermaidPNG))
 		if err != nil {
 			return soft, err
 		}
