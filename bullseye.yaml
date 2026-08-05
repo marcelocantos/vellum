@@ -221,7 +221,6 @@ targets:
     status: identified
     value: 0.0
     cost: 0.0
-    set_aside_reason: 'Release aborted: owner did not open Ship for vellum this session; "do a release" was double-painted (jevons T281) / possibly aimed at orthograph. No tag, no brew, no gh release. Resume only on explicit owner ship/release vellum.'
     acceptance:
     - MINOR release via /release skill (latest was v0.10.0 → v0.11.0)
     - Release scope includes 368b567 Mermaid SVG HTML/view + PNG PDF and other unpushed master commits

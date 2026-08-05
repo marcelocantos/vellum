@@ -218,7 +218,7 @@ CSS-valued fields take any valid CSS for their property; values are interpolated
 - Long-line code wrapping in rendered code blocks.
 - Footnotes in the PHP Markdown Extra style.
 - Inline (`$...$`) and block (`$$...$$`) LaTeX math via KaTeX, including multi-line matrices.
-- Mermaid diagrams: flowchart, sequence, class, state, Gantt, ER, pie.
+- Mermaid diagrams: flowchart, sequence, class, state, Gantt, ER, pie. HTML/view/content paths embed **SVG** (vector); PDF conversion keeps **PNG at 2×** because Mermaid SVG `foreignObject` labels do not paint in Prince.
 - Per-diagram scale hint — place `<!-- vellum:scale 0.6 -->` immediately before a ```` ```mermaid ```` block to apply a `max-width` to the rendered diagram. Useful for keeping a diagram on the same page as its heading.
 - YAML front-matter `title` extraction.
 - Blockquotes, horizontal rules, images (including base64 data URIs).
@@ -230,10 +230,10 @@ Markdown
   → math/mermaid preprocessors
   → goldmark (GFM + extensions)
   → KaTeX (server-side, via Node.js)
-  → Mermaid PNG (via mmdc)
+  → Mermaid via mmdc: SVG (HTML/view/content) or PNG @2× (PDF)
   → HTML template with embedded CSS
-  → WeasyPrint (default) or Prince (opt-in)
-  → PDF
+  → WeasyPrint (default) or Prince (opt-in) when targeting PDF
+  → PDF (or HTML / view / clipboard sink)
 ```
 
 ## Agent guide
