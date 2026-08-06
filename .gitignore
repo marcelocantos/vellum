@@ -1,6 +1,7 @@
 # Build
 /vellum
 /dist/
+/.cv/
 
 # IDE
 .vscode/
