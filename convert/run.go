@@ -4,12 +4,14 @@
 package convert
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/marcelocantos/vellum/clipboard"
 	"github.com/marcelocantos/vellum/importer"
@@ -328,7 +330,11 @@ func ingest(ctx context.Context, in inputItem, from Endpoint) (ingestResult, err
 	case MediaFile:
 		baseDir := filepath.Dir(in.path)
 		fromFmt := normalizeFormat(from.Format)
-		if fromFmt == "" {
+		// inferred records that no caller-supplied format was given, so
+		// the markdown fallback below is a guess rather than an
+		// instruction and must not be applied to binary content.
+		inferred := fromFmt == ""
+		if inferred {
 			fromFmt = formatFromExt(in.path)
 		}
 		if fromFmt == "" {
@@ -338,6 +344,11 @@ func ingest(ctx context.Context, in inputItem, from Endpoint) (ingestResult, err
 			b, rerr := os.ReadFile(in.path)
 			if rerr != nil {
 				return ingestResult{}, rerr
+			}
+			if inferred {
+				if err := checkInferredText(b, in.path); err != nil {
+					return ingestResult{}, err
+				}
 			}
 			return ingestResult{md: string(b), fromFmt: FormatMarkdown, baseDir: baseDir}, nil
 		}
@@ -544,6 +555,25 @@ func normalizeFormat(f string) string {
 
 func isMarkdownFormat(f string) bool {
 	return normalizeFormat(f) == FormatMarkdown
+}
+
+// checkInferredText rejects binary content that reached the Markdown
+// path only because the extension was unrecognised. Without this, a
+// .doc, .key, or .jpg is read verbatim and handed back as "Markdown"
+// with a nil error (🎯T20). An explicit from.format still bypasses the
+// check, so callers who really mean "treat these bytes as Markdown"
+// keep that option.
+func checkInferredText(b []byte, path string) error {
+	if !utf8.Valid(b) || bytes.IndexByte(b, 0) >= 0 {
+		ext := strings.ToLower(filepath.Ext(path))
+		if ext == "" {
+			ext = "(none)"
+		}
+		return fmt.Errorf(
+			"convert: %s is binary and its extension %s is not a recognised document format; "+
+				"pass from.format explicitly if it really is Markdown", path, ext)
+	}
+	return nil
 }
 
 func formatFromExt(path string) string {

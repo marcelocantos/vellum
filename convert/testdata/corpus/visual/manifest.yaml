@@ -1,0 +1,90 @@
+# Ground truth for the "visual" corpus case.
+#
+# Provenance discipline (🎯T20): no fixture here was produced by pandoc,
+# WeasyPrint, or vellum. The source is authored in-repo and converted by
+# an independent implementation, so importing these files exercises real
+# third-party output rather than our own toolchain's round-trip.
+
+name: visual
+provenance:
+  source: source.html
+  producer: /usr/bin/textutil
+  producer_note: Apple's converter, ships with macOS; no pandoc lineage.
+  produced: 2026-08-07
+  limitation: |
+    textutil writes visual formatting, not semantic styles. It emits no
+    Heading1/Heading2 style, so heading structure is genuinely absent
+    from the files and no importer could recover it. Asserting headings
+    here would be asserting the impossible; see the "styled" case for
+    fixtures from producers that do write semantic styles.
+
+fixtures:
+  - file: visual.docx
+    format: docx
+    # Lists arrive as a blockquote of literal bullet glyphs and the
+    # table flattens to consecutive paragraphs — both consequences of
+    # the producer limitation above, not import defects.
+    structure:
+      lists: flattened
+      tables: flattened
+  - file: visual.rtf
+    format: rtf
+    structure:
+      lists: preserved
+      tables: preserved
+    known_failures:
+      - property: document_order
+        reason: |
+          pandoc 3.10.1's RTF reader hoists the ordered list above the
+          first heading. The fixture's own byte order is correct —
+          verified by grepping the literal strings out of visual.rtf:
+          Alpha Heading, bullet gamma, ordered epsilon, cellEta,
+          Closing paragraph. So this is a reader defect on the shipped
+          import path, not a fixture defect.
+  - file: visual.odt
+    format: odt
+    structure:
+      lists: preserved
+      tables: preserved
+
+# Excluded on purpose: visual.doc. pandoc cannot read legacy .doc at
+# all ("Pandoc can convert from DOCX, but not from DOC"), and vellum
+# currently mis-handles it — formatFromExt returns "" for .doc, ingest
+# defaults to markdown, and 19 KB of OLE2 binary comes back as content
+# with err=nil. Covered by TestUnknownExtensionIsNotSilentlyMarkdown
+# rather than by this manifest.
+
+ground_truth:
+  # Every string that must survive import, in any format.
+  text_contains:
+    - Alpha Heading
+    - emboldened
+    - slanted
+    - Beta Section
+    - bullet gamma
+    - bullet delta
+    - ordered epsilon
+    - ordered zeta
+    - cellEta
+    - cellTheta
+    - cellIota
+    - cellKappa
+    - lambda
+
+  # Relative order these markers must appear in. Checked as a
+  # subsequence so intervening content and formatting are free.
+  document_order:
+    - Alpha Heading
+    - bullet gamma
+    - ordered epsilon
+    - cellEta
+    - Closing paragraph
+
+  # Inline emphasis must round-trip as Markdown emphasis, not be
+  # dropped to plain text.
+  emphasis:
+    bold: [emboldened]
+    italic: [slanted]
+
+  headings_recoverable: false
+  images: 0
