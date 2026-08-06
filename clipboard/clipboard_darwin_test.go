@@ -37,6 +37,16 @@ const (
 // exactly this class and fails on any other skip.
 func requirePasteboard(t *testing.T) {
 	t.Helper()
+	// A probe is not enough: on a hosted runner the pasteboard is
+	// intermittently functional — a probe write can succeed and the very
+	// next write still fail with setData, while reads return whatever a
+	// previous process left behind. Nothing observable distinguishes
+	// "works" from "works this once", so key off the environment
+	// instead, which is deterministic.
+	if os.Getenv("CI") != "" {
+		t.Skip("pasteboard unusable on hosted CI runners (no window server); " +
+			"cv gate runs these for real on a developer Mac")
+	}
 	probe := "vellum-pasteboard-probe-" + strconv.Itoa(os.Getpid())
 	if err := Write(Payload{HTML: "<p>" + probe + "</p>"}); err != nil {
 		t.Skipf("pasteboard unavailable (headless session): %v", err)
