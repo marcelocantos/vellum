@@ -48,10 +48,18 @@ $binary: $gosrc go.mod go.sum
 # Ratchet: the baseline is zero skips, locked in both directions. A new
 # skip must be a deliberate commit that moves this number, not a silent
 # loss of coverage.
+#
+# One class is permitted: pasteboard tests on a headless machine, where
+# NSPasteboard genuinely cannot work. Their skip reason must say
+# "pasteboard". Every other skip fails the census, so a converter test
+# can never quietly stop running again.
 !skip-census:
-    $runner sh -c 'n=$$(VELLUM_REQUIRE_DEPS=1 $go test ./... -count=1 -v 2>&1 | grep -c -- "--- SKIP" || true); \
-        echo "skipped=$$n (baseline 0)"; \
-        [ "$$n" -eq 0 ] || { echo "ERROR: $$n test(s) skipped with VELLUM_REQUIRE_DEPS=1"; exit 1; }'
+    $runner sh -c 'out=$$(VELLUM_REQUIRE_DEPS=1 $go test ./... -count=1 -v 2>&1); \
+        all=$$(echo "$$out" | grep -c -- "--- SKIP" || true); \
+        pb=$$(echo "$$out" | grep -B1 -- "--- SKIP" | grep -c "pasteboard" || true); \
+        echo "skipped=$$all (pasteboard-exempt=$$pb, baseline 0 others)"; \
+        [ "$$all" -eq "$$pb" ] || { echo "ERROR: $$((all - pb)) non-pasteboard skip(s) with VELLUM_REQUIRE_DEPS=1"; \
+            echo "$$out" | grep -B1 -- "--- SKIP" | grep -v pasteboard; exit 1; }'
 
 !cli-contract: $binary
     $runner sh -c './$binary --version && ./$binary --help >/dev/null && ./$binary --help-agent | head -5 >/dev/null'
