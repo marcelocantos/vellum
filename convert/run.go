@@ -17,6 +17,17 @@ import (
 	"github.com/marcelocantos/vellum/importer"
 )
 
+// Clipboard access goes through these seams so the router's media
+// handling is testable without a real pasteboard. Same idiom as
+// renderMermaidFn; without them clipboard and file_reference were the
+// only media untestable through Run, and stayed uncovered (🎯T20).
+var (
+	clipboardWriteFn          = clipboard.Write
+	clipboardReadImportableFn = clipboard.ReadImportable
+	clipboardReadFileRefsFn   = clipboard.ReadFileRefs
+	clipboardWriteFileRefsFn  = clipboard.WriteFileRefs
+)
+
 // Media is a transport medium for conversion source or sink.
 type Media string
 
@@ -101,7 +112,7 @@ func Run(ctx context.Context, req *Request) (*Result, error) {
 
 	// Resolve file_reference sources into concrete paths.
 	if from.Media == MediaFileReference {
-		paths, err := clipboard.ReadFileRefs()
+		paths, err := clipboardReadFileRefsFn()
 		if err != nil {
 			return nil, err
 		}
@@ -271,7 +282,7 @@ func runOne(ctx context.Context, in inputItem, from, to Endpoint, opts *Options)
 		if err != nil {
 			return nil, err
 		}
-		if err := clipboard.Write(clipboard.Payload{HTML: html}); err != nil {
+		if err := clipboardWriteFn(clipboard.Payload{HTML: html}); err != nil {
 			return nil, err
 		}
 		return withSoft(res, soft, in)
@@ -287,7 +298,7 @@ func runOne(ctx context.Context, in inputItem, from, to Endpoint, opts *Options)
 		}
 		res.Paths = []string{outPath}
 		if to.Media == MediaFileReference {
-			if err := clipboard.WriteFileRefs(clipboard.FileRefPayload{Paths: []string{outPath}}); err != nil {
+			if err := clipboardWriteFileRefsFn(clipboard.FileRefPayload{Paths: []string{outPath}}); err != nil {
 				return nil, err
 			}
 		}
@@ -386,7 +397,7 @@ func ingest(ctx context.Context, in inputItem, from Endpoint) (ingestResult, err
 		}, nil
 
 	case MediaClipboard:
-		data, detected, err := clipboard.ReadImportable()
+		data, detected, err := clipboardReadImportableFn()
 		if err != nil {
 			return ingestResult{}, err
 		}
