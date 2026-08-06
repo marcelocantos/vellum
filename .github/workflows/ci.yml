@@ -5,12 +5,17 @@ on:
     branches: [master]
   pull_request:
 
+# This workflow deliberately contains no gate logic. What "green" means
+# is defined in ./cvfile and is reproducible with `cv gate` on any Mac,
+# so CI cannot drift from what a developer runs, and a red build can be
+# reproduced without re-running a workflow.
+#
+# macOS only: the clipboard, Finder file references, and the viewer are
+# darwin-only, so a Linux runner would exercise a strict subset while
+# implying a platform vellum does not claim to support.
 jobs:
-  test:
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
+  gate:
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-go@v6
@@ -18,47 +23,11 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      # Without these the import and PDF suites skip and the job still
-      # reports success — the state that let 6 of 68 tests quietly stop
-      # running (🎯T20).
-      - name: Install converters (ubuntu)
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y pandoc weasyprint poppler-utils
-      - name: Install converters (macos)
-        if: runner.os == 'macOS'
+      - name: Install converters
         run: brew install pandoc weasyprint poppler
 
-      - name: gofmt
-        run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
-      - name: go vet
-        run: go vet ./...
+      - name: Install cv
+        run: brew install marcelocantos/tap/cv
 
-      - name: go test
-        env:
-          VELLUM_REQUIRE_DEPS: 1
-        run: go test ./... -count=1
-
-      # Ratchet: the baseline is zero skips, locked in both directions.
-      # A new skip must be a deliberate commit that moves this number,
-      # not a silent loss of coverage.
-      - name: Skip census
-        env:
-          VELLUM_REQUIRE_DEPS: 1
-        run: |
-          skipped=$(go test ./... -count=1 -v 2>&1 | grep -c -- '--- SKIP' || true)
-          echo "skipped=$skipped (baseline 0)"
-          if [ "$skipped" -ne 0 ]; then
-            echo "::error::$skipped test(s) skipped with VELLUM_REQUIRE_DEPS=1; baseline is 0"
-            go test ./... -count=1 -v 2>&1 | grep -B1 -- '--- SKIP' || true
-            exit 1
-          fi
-
-      - name: build
-        run: go build -o vellum ./cmd/vellum
-      - name: CLI contract
-        run: |
-          ./vellum --version
-          ./vellum --help
-          ./vellum --help-agent | head -5
+      - name: Gate
+        run: cv gate

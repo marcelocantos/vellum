@@ -1,0 +1,70 @@
+# vellum build and gate definition.
+#
+# The gate lives here, not in .github/workflows/ci.yml. CI is a caller:
+# it installs dependencies and runs `cv gate`, exactly as a developer
+# does locally. Nothing about what "green" means is expressible only on
+# GitHub, so the gate can always be reproduced on the machine in front
+# of you.
+#
+# macOS is the platform. The clipboard, Finder file references, and the
+# viewer are darwin-only, so that is where the gate has to be green.
+
+go ?= go
+binary = vellum
+pkg = ./cmd/vellum
+
+# Every external converter the suite exercises. Missing any of them
+# makes VELLUM_REQUIRE_DEPS=1 fail rather than skip.
+converters = pandoc weasyprint pdftoppm pdftotext
+
+# Runner prefix, so tasks stay agnostic about where they execute.
+# Empty means "on this host", which is the only case today.
+runner ?=
+
+# --- build ------------------------------------------------------------
+
+gosrc = $[wildcard *.go] $[wildcard **/*.go]
+
+$binary: $gosrc go.mod go.sum
+    $runner $go build -o $target $pkg
+
+# --- gate components --------------------------------------------------
+#
+# Each is independently runnable, so a failure is one command to
+# reproduce rather than a workflow re-run.
+
+!fmt:
+    $runner sh -c 'test -z "$$(gofmt -l .)" || { gofmt -l .; exit 1; }'
+
+!vet:
+    $runner $go vet ./...
+
+!deps-present:
+    $runner sh -c 'for t in $converters; do command -v $$t >/dev/null || { echo "missing converter: $$t"; exit 1; }; done'
+
+!test: deps-present
+    $runner env VELLUM_REQUIRE_DEPS=1 $go test ./... -count=1
+
+# Ratchet: the baseline is zero skips, locked in both directions. A new
+# skip must be a deliberate commit that moves this number, not a silent
+# loss of coverage.
+!skip-census:
+    $runner sh -c 'n=$$(VELLUM_REQUIRE_DEPS=1 $go test ./... -count=1 -v 2>&1 | grep -c -- "--- SKIP" || true); \
+        echo "skipped=$$n (baseline 0)"; \
+        [ "$$n" -eq 0 ] || { echo "ERROR: $$n test(s) skipped with VELLUM_REQUIRE_DEPS=1"; exit 1; }'
+
+!cli-contract: $binary
+    $runner sh -c './$binary --version && ./$binary --help >/dev/null && ./$binary --help-agent | head -5 >/dev/null'
+
+# --- aggregate --------------------------------------------------------
+
+!gate: fmt vet test skip-census cli-contract
+    @echo "gate green"
+
+# Standing-invariants hook for bullseye convergence. Adds a clean-tree
+# check on top of the gate.
+!bullseye: gate
+    $runner sh -c 'test -z "$$(git status --porcelain)" || { echo "working tree dirty"; git status --short; exit 1; }'
+
+!clean:
+    rm -f $binary
