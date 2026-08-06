@@ -42,8 +42,10 @@ $binary: $gosrc go.mod go.sum
 !deps-present:
     $runner sh -c 'for t in $converters; do command -v $$t >/dev/null || { echo "missing converter: $$t"; exit 1; }; done'
 
+# -race because the Mermaid renderer runs diagrams concurrently; a data
+# race there would corrupt documents rather than crash loudly.
 !test: deps-present
-    $runner env VELLUM_REQUIRE_DEPS=1 $go test ./... -count=1
+    $runner env VELLUM_REQUIRE_DEPS=1 $go test ./... -count=1 -race
 
 # Ratchet: the baseline is zero skips, locked in both directions. A new
 # skip must be a deliberate commit that moves this number, not a silent
@@ -54,7 +56,7 @@ $binary: $gosrc go.mod go.sum
 # "pasteboard". Every other skip fails the census, so a converter test
 # can never quietly stop running again.
 !skip-census:
-    $runner sh -c 'out=$$(VELLUM_REQUIRE_DEPS=1 $go test ./... -count=1 -v 2>&1); \
+    $runner sh -c 'out=$$(VELLUM_REQUIRE_DEPS=1 $go test ./... -count=1 -race -v 2>&1); \
         all=$$(echo "$$out" | grep -c -- "--- SKIP" || true); \
         pb=$$(echo "$$out" | grep -B1 -- "--- SKIP" | grep -c "pasteboard" || true); \
         echo "skipped=$$all (pasteboard-exempt=$$pb, baseline 0 others)"; \
