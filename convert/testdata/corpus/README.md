@@ -82,6 +82,22 @@ depends on it:
   carries sizing attributes, so the media assertion matches on the
   extracted path rather than on Markdown image syntax.
 
+## Declared residue
+
+What this corpus does **not** cover, stated rather than left implicit:
+
+- **Mermaid rendering.** `mmdc` drives a headless Chromium, which CI does
+  not install. The Mermaid tests fake `renderMermaidFn` and so verify
+  routing and format selection, not that a real diagram renders.
+- **PDF visual fidelity.** PDF output is checked for existence, non-zero
+  size, and extractable text. Whether it *looks* right is a human call.
+- **Legacy `.doc`.** pandoc cannot read it. vellum now rejects it with a
+  clear error instead of returning binary as Markdown, and that rejection
+  is what the test pins.
+- **Real Word and Google Docs output.** The semantic-style producer here
+  is LibreOffice. Word writes different XML, and its quirks are unknown
+  to this corpus.
+
 ## Known failures
 
 A `known_failures` entry asserts a property *still* fails, with the
