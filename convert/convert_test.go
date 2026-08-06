@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/marcelocantos/vellum/internal/testdeps"
 )
 
 // backends returns the set of backends whose underlying binary is present
@@ -27,7 +29,7 @@ func backends(t *testing.T) []string {
 		}
 	}
 	if len(ok) == 0 {
-		t.Skip("no renderer backend available on PATH (need weasyprint or prince)")
+		testdeps.NeedAny(t, BackendWeasyPrint, BackendPrince)
 	}
 	return ok
 }
@@ -112,9 +114,7 @@ func TestConvert_EndToEnd(t *testing.T) {
 // --baseurl / --base-url fix, the renderer would resolve against /tmp
 // (where the assembled HTML lives) and silently fail to load the image.
 func TestConvert_RelativeImagePath(t *testing.T) {
-	if _, err := exec.LookPath("pdftotext"); err != nil {
-		t.Skip("pdftotext not on PATH; cannot verify SVG text extraction")
-	}
+	testdeps.Need(t, "pdftotext")
 	for _, backend := range backends(t) {
 		t.Run(backend, func(t *testing.T) {
 			dir := t.TempDir()

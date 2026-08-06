@@ -210,7 +210,78 @@ style:
 
 CSS-valued fields take any valid CSS for their property; values are interpolated as-is. Boolean fields take YAML true/false. Per-call values from MCP tools take precedence over the config file, which takes precedence over the built-in defaults.
 
-## Features
+## Why vellum
+
+Most Markdown converters assume a human at a keyboard. vellum assumes an
+agent at an API — and then makes the human case better anyway.
+
+**Agent-native, not agent-adapted.** vellum is a Model Context Protocol
+server first and a CLI second. One `convert` tool covers every direction,
+so an agent learns a single call shape instead of a flag vocabulary. No
+wrapper scripts, no temp-file choreography, no parsing another tool's
+stdout.
+
+**The clipboard is a first-class medium, in both directions.** Convert
+*to* the pasteboard as rich text and paste formatted output straight into
+Mail, Slack, or Pages. Convert *from* the pasteboard — copy a formatted
+region out of Word and get Markdown back. On macOS, copy files in Finder
+and convert them by reference, or hand the output back as a Finder file
+reference. Every other tool in this space treats conversion as strictly
+file-to-file.
+
+**Diagrams and math that survive the trip to print.** Mermaid and LaTeX
+work out of the box with no filter configuration. Diagrams are rendered
+per destination: crisp **SVG** for HTML and on-screen viewing, **PNG at
+2×** for PDF, because Mermaid's SVG `foreignObject` labels do not paint
+in print engines. Getting that right by hand is a genuinely annoying
+afternoon.
+
+**Print-quality PDF with nothing to configure.** A tuned stylesheet ships
+in the binary — GitHub-style syntax highlighting, footnotes, wrapped code
+blocks, page-break control. Override any of it with your own CSS when you
+want to.
+
+**One static binary.** No Haskell runtime, no `node_modules`, no bundled
+Chromium. Install it with `brew install`, or drop the binary on a box.
+
+**Native on the desktop too.** `vellum install-viewer` makes rendered
+Markdown the default double-click behaviour on macOS, with a content-
+addressed render cache.
+
+## How vellum compares
+
+| | **vellum** | **pandoc** | **Node HTML→PDF**<br><sub>md-to-pdf, markdown-pdf</sub> | **GUI editors**<br><sub>Typora, Marked 2</sub> |
+|---|---|---|---|---|
+| MCP server for agents | **Yes** — single `convert` tool | No | No | No |
+| Clipboard as a source | **Yes** — rich text in | No | No | Paste-only |
+| Clipboard as a sink | **Yes** — rich text out | No | No | Copy-as-HTML |
+| Finder file references | **Yes** (macOS) | No | No | No |
+| Mermaid diagrams | **Built in** | Via external filter | Via plugin | Usually built in |
+| Diagram format per sink | **SVG screen / PNG print** | Manual | Manual | Fixed |
+| LaTeX math | **Built in** (KaTeX) | Yes | Varies | Yes |
+| CSS-styled PDF | **Zero config** | Yes, with `--pdf-engine=weasyprint` and your own CSS | Yes (Chromium) | Yes |
+| Scriptable / headless | Yes | Yes | Yes | No |
+| Default `.md` handler | **Yes** (macOS) | No | No | Yes |
+| Runtime footprint | Single static binary | Single binary | Node + Chromium | Desktop app |
+| Input formats | 8 | **51** | 1 | 1–2 |
+| Output formats | 4 <sub>(see roadmap)</sub> | **76** | 1–2 | Several |
+
+**Where pandoc wins, and it isn't close: breadth.** 51 readers and 76
+writers against vellum's 8 and 4. If you need DocBook, JATS, or Texinfo,
+use pandoc — vellum literally shells out to it for rich-text import.
+vellum's claim is a different one: the conversions people actually run all
+day, wired into agents and the desktop, with diagrams and math that work
+without a configuration session.
+
+### Roadmap: output format expansion
+
+vellum currently writes Markdown, HTML, PDF, and rich text. Because
+pandoc is already a dependency, adding a writer arm exposes its full
+catalogue — docx, odt, rtf, epub, pptx, latex, typst, rst, org, asciidoc,
+ipynb and more — closing the loop with the existing DOCX and RTF import.
+This is **not yet released**; the table above reflects what ships today.
+
+## Markdown feature support
 
 - GitHub-Flavoured Markdown: tables, task lists, strikethrough, autolinks.
 - Headings, ordered and unordered lists (nested), task lists, definition lists.

@@ -1,0 +1,38 @@
+# Ground truth for the "media" corpus case.
+#
+# Covers the image-extraction path added in #20: an embedded picture
+# part must be written to disk and referenced from the imported
+# Markdown, so an agent following the link finds a real file.
+
+name: media
+provenance:
+  source: source.html
+  producer: /Applications/LibreOffice.app/Contents/MacOS/soffice
+  producer_note: LibreOffice 26.2.5.2; no pandoc lineage.
+  produced: 2026-08-07
+  limitation: |
+    The figure is inlined in the source as a data URI. LibreOffice's
+    HTML import links external images rather than embedding them, and
+    textutil does not embed images in docx at all — with either a
+    relative path or a data URI — which is why this case exists only
+    for the LibreOffice producer.
+
+fixtures:
+  - file: media.docx
+    format: docx
+    # word/media/image1.png, 74 bytes, an 8x8 RGB PNG authored in-repo.
+    expect_assets: 1
+
+ground_truth:
+  text_contains:
+    - Media Case
+    - omicron
+    - sigma
+
+  document_order:
+    - Media Case
+    - omicron
+    - sigma
+
+  headings_recoverable: true
+  images: 1

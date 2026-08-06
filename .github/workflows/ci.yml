@@ -5,28 +5,29 @@ on:
     branches: [master]
   pull_request:
 
+# This workflow deliberately contains no gate logic. What "green" means
+# is defined in ./cvfile and is reproducible with `cv gate` on any Mac,
+# so CI cannot drift from what a developer runs, and a red build can be
+# reproduced without re-running a workflow.
+#
+# macOS only: the clipboard, Finder file references, and the viewer are
+# darwin-only, so a Linux runner would exercise a strict subset while
+# implying a platform vellum does not claim to support.
 jobs:
-  test:
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
+  gate:
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           cache: true
-      - name: gofmt
-        run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
-      - name: go vet
-        run: go vet ./...
-      - name: go test
-        run: go test ./... -count=1
-      - name: build
-        run: go build -o vellum ./cmd/vellum
-      - name: CLI contract
-        run: |
-          ./vellum --version
-          ./vellum --help
-          ./vellum --help-agent | head -5
+
+      - name: Install converters
+        run: brew install pandoc weasyprint poppler
+
+      - name: Install cv
+        run: brew install marcelocantos/tap/cv
+
+      - name: Gate
+        run: cv gate

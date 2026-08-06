@@ -10,12 +10,12 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/marcelocantos/vellum/internal/testdeps"
 )
 
 func TestImportBytes_HTML(t *testing.T) {
-	if _, err := exec.LookPath("pandoc"); err != nil {
-		t.Skip("pandoc not on PATH")
-	}
+	testdeps.Need(t, "pandoc")
 	t.Setenv("VELLUM_IMPORT_CACHE", t.TempDir())
 	html := []byte(`<h1>Title</h1>
 <p>Body with <strong>bold</strong> and <em>italic</em>.</p>
@@ -34,9 +34,7 @@ func TestImportBytes_HTML(t *testing.T) {
 }
 
 func TestImportFile_RTF(t *testing.T) {
-	if _, err := exec.LookPath("pandoc"); err != nil {
-		t.Skip("pandoc not on PATH")
-	}
+	testdeps.Need(t, "pandoc")
 	t.Setenv("VELLUM_IMPORT_CACHE", t.TempDir())
 	dir := t.TempDir()
 	rtfPath := filepath.Join(dir, "doc.rtf")
@@ -62,9 +60,7 @@ Body \b emphasis\b0  and \i slant\i0 .\par
 }
 
 func TestImportBytes_HTMLWithImageExtractsMedia(t *testing.T) {
-	if _, err := exec.LookPath("pandoc"); err != nil {
-		t.Skip("pandoc not on PATH")
-	}
+	testdeps.Need(t, "pandoc")
 	cache := t.TempDir()
 	t.Setenv("VELLUM_IMPORT_CACHE", cache)
 	work := t.TempDir()
@@ -102,18 +98,14 @@ func TestImportBytes_HTMLWithImageExtractsMedia(t *testing.T) {
 }
 
 func TestImportPDF_Smoke(t *testing.T) {
+	testdeps.Need(t, PDFToPPMDep.Name, PDFToTextDep.Name)
 	if err := CheckPDFDeps(); err != nil {
-		t.Skip(err.Error())
+		t.Fatalf("PDF deps present on PATH but CheckPDFDeps failed: %v", err)
 	}
 	// Need a minimal PDF — generate via printf if weasyprint available,
 	// or skip. Try pandoc latex... simplest: use printf %PDF header won't work for pdftoppm.
-	if _, err := exec.LookPath("printf"); err != nil {
-		t.Skip("no printf")
-	}
 	// Create tiny PDF with ghostscript or python reportlab — use weasyprint html
-	if _, err := exec.LookPath("weasyprint"); err != nil {
-		t.Skip("weasyprint not on PATH for fixture PDF")
-	}
+	testdeps.Need(t, "weasyprint")
 	t.Setenv("VELLUM_IMPORT_CACHE", t.TempDir())
 	dir := t.TempDir()
 	html := filepath.Join(dir, "p.html")
