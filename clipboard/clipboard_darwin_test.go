@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -22,6 +23,39 @@ const (
 	utiPlain = "public.utf8-plain-text"
 )
 
+// requirePasteboard skips when there is no usable system pasteboard.
+//
+// GitHub's macOS runners have no window server, so NSPasteboard setData
+// fails outright and reads return whatever a previous process happened
+// to leave behind — which surfaces as a confusing cross-run path
+// mismatch rather than an honest "unavailable". These tests cover real
+// behaviour and pass against a real pasteboard, so they are gated
+// rather than deleted; `cv gate` runs them for real on a developer Mac,
+// which is where this darwin-only surface has to work.
+//
+// The skip reason must mention "pasteboard": cv's skip-census permits
+// exactly this class and fails on any other skip.
+func requirePasteboard(t *testing.T) {
+	t.Helper()
+	// A probe is not enough: on a hosted runner the pasteboard is
+	// intermittently functional — a probe write can succeed and the very
+	// next write still fail with setData, while reads return whatever a
+	// previous process left behind. Nothing observable distinguishes
+	// "works" from "works this once", so key off the environment
+	// instead, which is deterministic.
+	if os.Getenv("CI") != "" {
+		t.Skip("pasteboard unusable on hosted CI runners (no window server); " +
+			"cv gate runs these for real on a developer Mac")
+	}
+	probe := "vellum-pasteboard-probe-" + strconv.Itoa(os.Getpid())
+	if err := Write(Payload{HTML: "<p>" + probe + "</p>"}); err != nil {
+		t.Skipf("pasteboard unavailable (headless session): %v", err)
+	}
+	if !strings.Contains(string(readPasteboardData(utiHTML)), probe) {
+		t.Skip("pasteboard unavailable (headless session): write did not round-trip")
+	}
+}
+
 // TestWriteRoundTrip exercises the macOS NSPasteboard backend end-to-end:
 // writes a known HTML fragment, reads each representation back as raw
 // pasteboard data via readPasteboardData, and asserts that:
@@ -33,6 +67,7 @@ const (
 //     RTF source — the failure mode the textutil+osascript path produces
 //     when only RTF is set and apps fall back to plain text
 func TestWriteRoundTrip(t *testing.T) {
+	requirePasteboard(t)
 	const marker = "vellum-clipboard-roundtrip-marker"
 	html := "<html><body><p><b>" + marker + "</b></p></body></html>"
 
@@ -71,6 +106,7 @@ func TestWriteRoundTrip(t *testing.T) {
 //     PARAGRAPH SEPARATOR as "unusual line terminators". The plain-text
 //     rep must use ordinary U+000A newlines.
 func TestWriteFragmentsHTMLAndStripsLineSeparators(t *testing.T) {
+	requirePasteboard(t)
 	const marker = "vellum-fragment-marker"
 	full := `<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{color:red}</style></head><body><p>` + marker + `</p><p>second paragraph</p></body></html>`
 
@@ -105,6 +141,7 @@ func TestWriteEmptyHTMLRejected(t *testing.T) {
 }
 
 func TestFileRefRoundTrip(t *testing.T) {
+	requirePasteboard(t)
 	dir := t.TempDir()
 	path := dir + "/vellum-file-ref-marker.txt"
 	if err := os.WriteFile(path, []byte("ref"), 0o644); err != nil {

@@ -8,8 +8,11 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"runtime"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 )
 
 var mermaidPlaceholderRe = regexp.MustCompile(`<!--MERMAID:(\d+)-->`)
@@ -385,5 +388,94 @@ func TestResolveMermaidFormat(t *testing.T) {
 	}
 	if got := resolveMermaidFormat("svg"); got != MermaidSVG {
 		t.Errorf("svg = %q", got)
+	}
+}
+
+// TestMermaidReplaceAll_RendersConcurrently proves diagrams overlap
+// rather than merely producing correct output. Each fake render blocks
+// until a second one is in flight, so the test deadlocks on a timeout
+// if ReplaceAll ever goes back to rendering serially.
+func TestMermaidReplaceAll_RendersConcurrently(t *testing.T) {
+	if runtime.NumCPU() < 2 {
+		t.Skip("needs at least 2 CPUs to overlap")
+	}
+	prev := renderMermaidFn
+	t.Cleanup(func() { renderMermaidFn = prev })
+
+	const n = 4
+	var (
+		mu      sync.Mutex
+		inFlue  int
+		maxSeen int
+	)
+	gate := make(chan struct{})
+	var once sync.Once
+	renderMermaidFn = func(ctx context.Context, src string, format string) (string, error) {
+		mu.Lock()
+		inFlue++
+		if inFlue > maxSeen {
+			maxSeen = inFlue
+		}
+		reached := inFlue >= 2
+		mu.Unlock()
+		if reached {
+			once.Do(func() { close(gate) })
+		}
+		select {
+		case <-gate:
+		case <-time.After(5 * time.Second):
+			t.Error("renders did not overlap: still serial after 5s")
+		}
+		mu.Lock()
+		inFlue--
+		mu.Unlock()
+		return "<svg></svg>", nil
+	}
+
+	p := newMermaidPreprocessor(MermaidSVG)
+	var b strings.Builder
+	for i := 0; i < n; i++ {
+		b.WriteString("```mermaid\ngraph TD\n  A --> B\n```\n\n")
+	}
+	html := "<p>" + p.Extract(b.String()) + "</p>"
+
+	_, soft := p.ReplaceAll(context.Background(), html)
+	if len(soft) != 0 {
+		t.Fatalf("unexpected soft errors: %v", soft)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if maxSeen < 2 {
+		t.Errorf("max concurrent renders = %d, want >= 2", maxSeen)
+	}
+}
+
+// TestMermaidReplaceAll_OrderStableUnderConcurrency pins that completion
+// order cannot reorder placeholder substitution or the 1-based indices
+// in soft-error messages: the last diagram finishes first here.
+func TestMermaidReplaceAll_OrderStableUnderConcurrency(t *testing.T) {
+	prev := renderMermaidFn
+	t.Cleanup(func() { renderMermaidFn = prev })
+	renderMermaidFn = func(ctx context.Context, src string, format string) (string, error) {
+		if strings.Contains(src, "SLOW") {
+			time.Sleep(120 * time.Millisecond)
+			return "", fmt.Errorf("boom-slow")
+		}
+		return "", fmt.Errorf("boom-fast")
+	}
+
+	p := newMermaidPreprocessor(MermaidSVG)
+	src := "```mermaid\ngraph TD\n  SLOW --> B\n```\n\n```mermaid\ngraph TD\n  FAST --> B\n```\n"
+	html := "<p>" + p.Extract(src) + "</p>"
+	_, soft := p.ReplaceAll(context.Background(), html)
+
+	if len(soft) != 2 {
+		t.Fatalf("soft=%v", soft)
+	}
+	if !strings.Contains(soft[0], "diagram 1:") || !strings.Contains(soft[0], "boom-slow") {
+		t.Errorf("soft[0] should be the slow diagram 1, got %q", soft[0])
+	}
+	if !strings.Contains(soft[1], "diagram 2:") || !strings.Contains(soft[1], "boom-fast") {
+		t.Errorf("soft[1] should be the fast diagram 2, got %q", soft[1])
 	}
 }

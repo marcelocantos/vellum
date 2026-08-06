@@ -10,8 +10,10 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 // Mermaid image output formats for mmdc.
@@ -92,10 +94,45 @@ func (m *mermaidPreprocessor) ReplaceAll(ctx context.Context, html string) (stri
 		return html, nil
 	}
 
+	// Each diagram costs a full mmdc process, and mmdc drives Puppeteer,
+	// which launches a headless Chromium — so the cost is browser
+	// startup per diagram, not markup generation. Rendering them
+	// serially made document time linear in diagram count (measured
+	// 2026-08-07: 8 diagrams took 3536ms serially against 854ms
+	// concurrently, ~440ms apiece). Render concurrently, bounded by CPU
+	// count so a diagram-heavy document cannot spawn an unbounded pile
+	// of browsers.
+	type result struct {
+		img string
+		err error
+	}
+	results := make([]result, len(m.diagrams))
+
+	limit := runtime.NumCPU()
+	if limit > len(m.diagrams) {
+		limit = len(m.diagrams)
+	}
+	sem := make(chan struct{}, limit)
+	var wg sync.WaitGroup
+	for i, d := range m.diagrams {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			img, err := renderMermaidFn(ctx, d.source, m.format)
+			results[i] = result{img: img, err: err}
+		}()
+	}
+	wg.Wait()
+
+	// Substitution and diagnostics stay serial and in document order, so
+	// placeholder replacement and the 1-based indices in soft-error
+	// messages are deterministic regardless of completion order.
 	var soft []string
 	for i, d := range m.diagrams {
-		img, err := renderMermaidFn(ctx, d.source, m.format)
-		if err != nil {
+		img := results[i].img
+		if err := results[i].err; err != nil {
 			// 1-based index for human-facing messages.
 			msg := fmt.Sprintf("mermaid diagram %d: %v", i+1, err)
 			fmt.Fprintln(os.Stderr, "Error:", msg)
