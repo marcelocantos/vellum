@@ -1,0 +1,68 @@
+# Ground truth for the "styled" corpus case.
+#
+# Same authored body content as ../visual/source.html, produced by a
+# different implementation. The pair isolates the producer as the only
+# variable: textutil writes visual formatting and loses structure,
+# LibreOffice writes semantic styles and keeps it.
+
+name: styled
+provenance:
+  source: source.html
+  producer: /Applications/LibreOffice.app/Contents/MacOS/soffice
+  producer_note: LibreOffice 26.2.5.2; no pandoc lineage.
+  produced: 2026-08-07
+  limitation: |
+    LibreOffice opens HTML as a Writer/Web document. Exporting that to
+    docx keeps both heading levels, but exporting to odt via writer8
+    demotes the first H1 to a plain styled paragraph while keeping the
+    H2 as a real heading — verified by unzipping styled.odt and finding
+    "Alpha Heading" inside <text:p text:style-name="P1"> rather than a
+    <text:h>. The per-fixture heading lists below record this rather
+    than papering over it.
+
+fixtures:
+  - file: styled.docx
+    format: docx
+    headings: [Alpha Heading, Beta Section]
+    structure:
+      lists: preserved
+      tables: preserved
+  - file: styled.odt
+    format: odt
+    # H1 demoted by the producer, not lost by the importer.
+    headings: [Beta Section]
+    structure:
+      lists: preserved
+      tables: preserved
+
+ground_truth:
+  text_contains:
+    - Alpha Heading
+    - emboldened
+    - slanted
+    - Beta Section
+    - bullet gamma
+    - bullet delta
+    - ordered epsilon
+    - ordered zeta
+    - cellEta
+    - cellTheta
+    - cellIota
+    - cellKappa
+    - lambda
+
+  document_order:
+    - Alpha Heading
+    - bullet gamma
+    - ordered epsilon
+    - cellEta
+    - Closing paragraph
+
+  emphasis:
+    bold: [emboldened]
+    italic: [slanted]
+
+  # Unlike the visual case, semantic styles are present, so headings
+  # must come back as ATX headings.
+  headings_recoverable: true
+  images: 0

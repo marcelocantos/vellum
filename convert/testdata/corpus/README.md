@@ -48,16 +48,39 @@ done
 ```
 
 ```sh
-# styled/ — producers that DO write semantic styles, so headings and
-# tables survive. Not yet populated; needs one of these run once and
-# the result committed:
-soffice --headless --convert-to docx source.html    # LibreOffice
-soffice --headless --convert-to odt  source.html
-# or: open source.html in Word and "Save As" .docx
+# styled/ and media/ — LibreOffice, which writes semantic styles, so
+# headings and tables survive. An explicit export filter is required:
+# HTML opens as a Writer/Web document, whose default filter set does
+# not include docx, and a bare --convert-to docx fails with "no export
+# filter found". The separate profile avoids a lock clash if another
+# LibreOffice instance is running.
+SOF=/Applications/LibreOffice.app/Contents/MacOS/soffice
+"$SOF" -env:UserInstallation=file:///tmp/lo-prof --headless \
+  --convert-to docx:"MS Word 2007 XML" --outdir . source.html
+"$SOF" -env:UserInstallation=file:///tmp/lo-prof --headless \
+  --convert-to odt:writer8 --outdir . source.html
 ```
 
-Neither producer can run in CI — that is the point of freezing the
-output rather than generating it at test time.
+LibreOffice cannot run in CI — that is the point of freezing the output
+rather than generating it at test time.
+
+## Producer quirks worth knowing
+
+Each was observed, not assumed, and is recorded in the manifest that
+depends on it:
+
+- **textutil embeds no images in docx**, with either a relative path or
+  a data URI. That is why `media/` exists only for LibreOffice.
+- **LibreOffice's HTML import links external images** rather than
+  embedding them, so `media/source.html` inlines its figure as a
+  `data:` URI — that does get embedded, as `word/media/image1.png`.
+- **LibreOffice's `writer8` odt export demotes the first H1** to a
+  plain styled paragraph while keeping the H2 as a real heading. Its
+  docx export keeps both. Heading expectations are therefore per
+  fixture, not per case.
+- **pandoc emits raw `<img>` rather than `![](…)`** when the source
+  carries sizing attributes, so the media assertion matches on the
+  extracted path rather than on Markdown image syntax.
 
 ## Known failures
 

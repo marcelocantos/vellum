@@ -36,8 +36,14 @@ type manifest struct {
 }
 
 type fixture struct {
-	File          string `yaml:"file"`
-	Format        string `yaml:"format"`
+	File   string `yaml:"file"`
+	Format string `yaml:"format"`
+	// Headings, when set, lists exactly the ATX headings this
+	// producer's output must yield. Producers differ: LibreOffice's
+	// docx export keeps both levels while its odt export demotes the
+	// first H1, so the expectation belongs per fixture, not per case.
+	Headings      []string `yaml:"headings"`
+	ExpectAssets  int      `yaml:"expect_assets"`
 	KnownFailures []struct {
 		Property string `yaml:"property"`
 		Reason   string `yaml:"reason"`
@@ -197,13 +203,71 @@ func TestCorpus_EmphasisPreserved(t *testing.T) {
 // support. Producers that write only visual formatting must not appear
 // to yield headings, and producers that write semantic styles must.
 func TestCorpus_HeadingRecoverability(t *testing.T) {
+	headingLine := regexp.MustCompile(`(?m)^#{1,6} +(.*)$`)
 	eachFixture(t, func(t *testing.T, m manifest, f fixture, md string) {
-		hasHeading := regexp.MustCompile(`(?m)^#{1,6} `).MatchString(md)
-		if want := m.GroundTruth.HeadingsRecoverable; hasHeading != want {
-			t.Errorf("headings_recoverable=%v but imported Markdown %s ATX headings",
-				want, map[bool]string{true: "has", false: "has no"}[hasHeading])
+		var got []string
+		for _, mt := range headingLine.FindAllStringSubmatch(md, -1) {
+			got = append(got, strings.TrimSpace(mt[1]))
+		}
+		if want := m.GroundTruth.HeadingsRecoverable; (len(got) > 0) != want {
+			t.Errorf("headings_recoverable=%v but imported Markdown yielded %v", want, got)
+		}
+		if f.Headings == nil {
+			return
+		}
+		if strings.Join(got, "|") != strings.Join(f.Headings, "|") {
+			t.Errorf("headings = %v, want %v", got, f.Headings)
 		}
 	})
+}
+
+// TestCorpus_MediaExtracted covers the #20 extraction path: an embedded
+// picture must land on disk and be referenced from the Markdown, so a
+// link an agent follows resolves to a real file.
+func TestCorpus_MediaExtracted(t *testing.T) {
+	testdeps.Need(t, "pandoc")
+	for _, m := range loadCorpus(t) {
+		for _, f := range m.Fixtures {
+			if f.ExpectAssets == 0 {
+				continue
+			}
+			t.Run(m.Name+"/"+f.File, func(t *testing.T) {
+				path := filepath.Join(corpusRoot, m.Name, f.File)
+				t.Setenv("VELLUM_IMPORT_CACHE", t.TempDir())
+				res, err := Run(context.Background(), &Request{
+					From: Endpoint{Media: MediaFile, Path: path, Format: f.Format},
+					To:   Endpoint{Media: MediaContent, Format: FormatMarkdown},
+				})
+				if err != nil {
+					t.Fatalf("importing %s: %v", path, err)
+				}
+				if len(res.Assets) != f.ExpectAssets {
+					t.Fatalf("assets = %v, want %d", res.Assets, f.ExpectAssets)
+				}
+				for _, a := range res.Assets {
+					info, serr := os.Stat(a)
+					if serr != nil {
+						t.Errorf("asset %s not on disk: %v", a, serr)
+						continue
+					}
+					if info.Size() == 0 {
+						t.Errorf("asset %s is empty", a)
+					}
+				}
+				// The Markdown must actually point at what was
+				// extracted, so a link an agent follows resolves.
+				// pandoc emits raw <img> rather than ![](…) when the
+				// source carries sizing attributes, so match on the
+				// path rather than on Markdown image syntax.
+				for _, a := range res.Assets {
+					if !strings.Contains(res.Content, a) {
+						t.Errorf("imported Markdown does not reference extracted asset %s:\n%s",
+							a, res.Content)
+					}
+				}
+			})
+		}
+	}
 }
 
 // TestCorpus_ProvenanceIsUntainted is the guard on the guard: it fails
