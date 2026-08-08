@@ -57,6 +57,6 @@ implying a platform vellum does not support.
 
 Merged to master.
 
-## TODOs
+## Followable work
 
-`docs/TODO.md`
+Bullseye targets in `bullseye.yaml` (via the bullseye MCP tools) are the sole record of followable work.
