@@ -53,6 +53,13 @@ type ConvertOutput struct {
 	Assets     []string `json:"assets,omitempty" jsonschema:"absolute paths of extracted media files referenced by the Markdown"`
 }
 
+// serverInstructions is the server-level description clients show
+// alongside the tool list. It is empty: the single convert tool carries
+// its own documentation, and a second place to name tools is a second
+// place to name tools that no longer exist. Anything added here must
+// name only registered tools — see TestAdvertisedToolNamesResolve.
+const serverInstructions = ""
+
 // Serve runs a vellum MCP server on stdio until the client disconnects.
 // version is reported in the Implementation info sent to the client.
 func Serve(ctx context.Context, version string) error {
@@ -60,13 +67,17 @@ func Serve(ctx context.Context, version string) error {
 	if err != nil {
 		return fmt.Errorf("loading config: %w", err)
 	}
-	baseStyle := cfg.Style
-	baseBackend := cfg.Backend
+	return newServer(version, cfg.Style, cfg.Backend).Run(ctx, &mcp.StdioTransport{})
+}
 
+// newServer builds the MCP server with every tool vellum exposes, ready
+// to connect over any transport. Serve wires it to stdio; the tool-name
+// consistency check connects it in memory and reads the wire.
+func newServer(version string, baseStyle *convert.Style, baseBackend string) *mcp.Server {
 	server := mcp.NewServer(&mcp.Implementation{
 		Name:    "vellum",
 		Version: version,
-	}, nil)
+	}, &mcp.ServerOptions{Instructions: serverInstructions})
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:  "convert",
@@ -92,7 +103,7 @@ Disallowed (intractable): to.media content|clipboard with format pdf (binary PDF
 `),
 	}, makeConvertHandler(baseStyle, baseBackend))
 
-	return server.Run(ctx, &mcp.StdioTransport{})
+	return server
 }
 
 func makeConvertHandler(baseStyle *convert.Style, baseBackend string) func(context.Context, *mcp.CallToolRequest, ConvertInput) (*mcp.CallToolResult, ConvertOutput, error) {
