@@ -5,8 +5,8 @@
 
 package clipboard
 
-func writePayload(_ Payload) error {
-	return ErrUnsupported
+func writePayload(_ Payload) (WriteReport, error) {
+	return WriteReport{}, ErrUnsupported
 }
 
 func readClipboard(_ string) ([]byte, error) {

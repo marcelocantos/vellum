@@ -282,8 +282,17 @@ func runOne(ctx context.Context, in inputItem, from, to Endpoint, opts *Options)
 		if err != nil {
 			return nil, err
 		}
-		if err := clipboardWriteFn(clipboard.Payload{HTML: html}); err != nil {
+		rep, err := clipboardWriteFn(clipboard.Payload{HTML: html})
+		if err != nil {
 			return nil, err
+		}
+		if rep.Fallback != "" {
+			// A degraded paste that says nothing leaves the user with
+			// unstyled output forever and no way to know why (🎯T23).
+			soft = append(soft, fmt.Sprintf(
+				"clipboard: rich text came from the %s route, so CSS styling was dropped "+
+					"(structure preserved); preferred route unavailable: %s",
+				rep.Route, rep.Fallback))
 		}
 		return withSoft(res, soft, in)
 

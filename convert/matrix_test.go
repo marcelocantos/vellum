@@ -5,6 +5,7 @@ package convert
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -24,13 +25,18 @@ import (
 // fakeClipboard installs in-memory stand-ins for the pasteboard seams
 // and returns handles to what the sinks captured.
 type fakeClipboard struct {
-	readable     []byte
-	readFormat   string
-	readRefs     []string
-	wroteHTML    string
-	wroteRefs    []string
-	writeCalled  bool
-	refsRecorded bool
+	readable   []byte
+	readFormat string
+	readRefs   []string
+	// writeRoute/writeFallback are what the fake pasteboard reports back
+	// about the conversion route, so the router's degraded-write
+	// diagnostic is testable off a real Mac (🎯T23).
+	writeRoute    clipboard.Route
+	writeFallback string
+	wroteHTML     string
+	wroteRefs     []string
+	writeCalled   bool
+	refsRecorded  bool
 }
 
 func installFakeClipboard(t *testing.T, fc *fakeClipboard) {
@@ -42,10 +48,10 @@ func installFakeClipboard(t *testing.T, fc *fakeClipboard) {
 		clipboardReadFileRefsFn, clipboardWriteFileRefsFn = prevReadRefs, prevWriteRefs
 	})
 
-	clipboardWriteFn = func(p clipboard.Payload) error {
+	clipboardWriteFn = func(p clipboard.Payload) (clipboard.WriteReport, error) {
 		fc.wroteHTML = p.HTML
 		fc.writeCalled = true
-		return nil
+		return clipboard.WriteReport{Route: fc.writeRoute, Fallback: fc.writeFallback}, nil
 	}
 	clipboardReadImportableFn = func() ([]byte, string, error) {
 		return fc.readable, fc.readFormat, nil
@@ -148,6 +154,51 @@ func TestMediaMatrix(t *testing.T) {
 			})
 		}
 	}
+}
+
+// TestClipboardFallbackReported pins the other half of 🎯T23: a write
+// that fell back to a lower-fidelity conversion still succeeds, but it
+// must say so. A silent fallback leaves the user pasting unstyled
+// output forever with nothing to explain it.
+func TestClipboardFallbackReported(t *testing.T) {
+	t.Run("degraded write reports the route", func(t *testing.T) {
+		fc := &fakeClipboard{
+			writeRoute:    clipboard.RoutePandoc,
+			writeFallback: "NSAttributedString HTML importer unavailable",
+		}
+		installFakeClipboard(t, fc)
+
+		res, err := Run(context.Background(), &Request{
+			From: Endpoint{Media: MediaContent, Content: "# Title\n"},
+			To:   Endpoint{Media: MediaClipboard},
+		})
+		var se *SoftError
+		if !errors.As(err, &se) {
+			t.Fatalf("err = %v, want a *SoftError carrying the fallback notice", err)
+		}
+		if len(res.Errors) != 1 || !strings.Contains(res.Errors[0], string(clipboard.RoutePandoc)) {
+			t.Errorf("result errors = %v, want one naming the %s route", res.Errors, clipboard.RoutePandoc)
+		}
+		if !strings.Contains(res.Errors[0], "NSAttributedString HTML importer unavailable") {
+			t.Errorf("result errors = %v, want the reason the preferred route was abandoned", res.Errors)
+		}
+	})
+
+	t.Run("preferred route stays quiet", func(t *testing.T) {
+		fc := &fakeClipboard{writeRoute: clipboard.RouteAppKit}
+		installFakeClipboard(t, fc)
+
+		res, err := Run(context.Background(), &Request{
+			From: Endpoint{Media: MediaContent, Content: "# Title\n"},
+			To:   Endpoint{Media: MediaClipboard},
+		})
+		if err != nil {
+			t.Fatalf("Run: %v", err)
+		}
+		if len(res.Errors) != 0 {
+			t.Errorf("result errors = %v, want none on the preferred route", res.Errors)
+		}
+	})
 }
 
 // TestClipboardSourceErrors covers the failure arms the seam made

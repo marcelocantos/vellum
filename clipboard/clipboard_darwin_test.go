@@ -48,7 +48,7 @@ func requirePasteboard(t *testing.T) {
 			"cv gate runs these for real on a developer Mac")
 	}
 	probe := "vellum-pasteboard-probe-" + strconv.Itoa(os.Getpid())
-	if err := Write(Payload{HTML: "<p>" + probe + "</p>"}); err != nil {
+	if _, err := Write(Payload{HTML: "<p>" + probe + "</p>"}); err != nil {
 		t.Skipf("pasteboard unavailable (headless session): %v", err)
 	}
 	if !strings.Contains(string(readPasteboardData(utiHTML)), probe) {
@@ -71,7 +71,7 @@ func TestWriteRoundTrip(t *testing.T) {
 	const marker = "vellum-clipboard-roundtrip-marker"
 	html := "<html><body><p><b>" + marker + "</b></p></body></html>"
 
-	if err := Write(Payload{HTML: html}); err != nil {
+	if _, err := Write(Payload{HTML: html}); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
 
@@ -110,7 +110,7 @@ func TestWriteFragmentsHTMLAndStripsLineSeparators(t *testing.T) {
 	const marker = "vellum-fragment-marker"
 	full := `<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{color:red}</style></head><body><p>` + marker + `</p><p>second paragraph</p></body></html>`
 
-	if err := Write(Payload{HTML: full}); err != nil {
+	if _, err := Write(Payload{HTML: full}); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
 
@@ -135,7 +135,7 @@ func TestWriteFragmentsHTMLAndStripsLineSeparators(t *testing.T) {
 }
 
 func TestWriteEmptyHTMLRejected(t *testing.T) {
-	if err := Write(Payload{}); err == nil {
+	if _, err := Write(Payload{}); err == nil {
 		t.Fatal("expected error for empty payload, got nil")
 	}
 }
@@ -163,11 +163,4 @@ func TestFileRefRoundTrip(t *testing.T) {
 			t.Fatalf("path: got %q want %q", got[0], path)
 		}
 	}
-}
-
-func firstN(b []byte, n int) []byte {
-	if len(b) < n {
-		return b
-	}
-	return b[:n]
 }

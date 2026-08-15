@@ -29,13 +29,46 @@ type Payload struct {
 	HTML string
 }
 
+// Route names the HTML→rich-text conversion that produced the clipboard's
+// RTF representation. The two routes do not have equal fidelity, so which
+// one ran is part of the result rather than an implementation detail
+// (🎯T23).
+type Route string
+
+const (
+	// RouteAppKit is the preferred route: NSAttributedString parses the
+	// full HTML document including its <head><style>, so CSS reaches the
+	// RTF.
+	RouteAppKit Route = "appkit"
+	// RoutePandoc is the fallback route, used when AppKit's HTML importer
+	// is unavailable. It needs no GUI session and no XPC service, but it
+	// ignores CSS: structural formatting (bold, italic, headings, lists)
+	// survives, styling does not.
+	RoutePandoc Route = "pandoc"
+)
+
+// WriteReport describes how a [Write] was satisfied.
+type WriteReport struct {
+	// Route is the conversion that produced the RTF representation.
+	Route Route
+	// Fallback is why the preferred route was abandoned, and is empty
+	// when the preferred route ran. A non-empty Fallback means the paste
+	// is structurally correct but stylistically degraded, which callers
+	// must surface: a silent fallback leaves a user pasting worse output
+	// forever with no signal.
+	Fallback string
+}
+
 // Write places p on the system clipboard. On success the implementation
 // has confirmed the underlying pasteboard's commit (e.g., NSPasteboard
 // changeCount has advanced) before returning, so a subsequent paste in
 // another application sees the new content with no race window.
-func Write(p Payload) error {
+//
+// The returned [WriteReport] names the conversion route that produced the
+// rich text; check Fallback to detect a degraded write.
+func Write(p Payload) (WriteReport, error) {
 	if p.HTML == "" {
-		return errors.New("clipboard: HTML payload is empty")
+		return WriteReport{}, errors.New("clipboard: HTML payload is empty")
 	}
 	return writePayload(p)
 }
