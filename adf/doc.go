@@ -15,9 +15,10 @@
 // full Confluence-native mapping yet and are handled as documented so they
 // are not silently wrong:
 //
-//   - KaTeX / LaTeX math ($…$, $$…$$, and vellum's math extractors): emitted
-//     as a codeBlock with language "latex" (or "math") so the source is
-//     preserved and visible, not interpreted as prose or dropped.
+//   - KaTeX / LaTeX math ($…$ and $$…$$): rewritten to fenced latex source and
+//     emitted as a codeBlock with language "latex" so the expression is
+//     preserved and visible, not left as prose with dollar signs or dropped.
+//     Explicit ```latex fences take the same path.
 //   - Inline raw HTML other than trivial line breaks: ignored or reduced to
 //     text where goldmark surfaces it; not mapped to storage macros.
 //   - Footnotes and definition lists: not specially mapped (GFM core path

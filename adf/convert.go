@@ -34,7 +34,8 @@ func Convert(markdown string, args *ConvertArgs) (*Document, error) {
 		goldmark.WithExtensions(extension.GFM),
 		goldmark.WithParserOptions(parser.WithAutoHeadingID()),
 	)
-	source := []byte(markdown)
+	// KaTeX residue: rewrite $…$ / $$…$$ into ```latex fences before parse.
+	source := []byte(extractMathAsLatexFences(markdown))
 	root := md.Parser().Parse(text.NewReader(source))
 
 	c := &converter{

@@ -304,6 +304,7 @@ func TestConvert_DefaultImagePolicyIsExternalNotSilentLink(t *testing.T) {
 }
 
 func TestConvert_MathResidueIsCodeBlockNotDropped(t *testing.T) {
+	// Explicit ```latex fence (also the intermediate form for $ delimiters).
 	md := "Before\n\n```latex\nE = mc^2\n```\n\nAfter\n"
 	doc, err := adf.Convert(md, nil)
 	if err != nil {
@@ -315,6 +316,52 @@ func TestConvert_MathResidueIsCodeBlockNotDropped(t *testing.T) {
 	}
 	if !strings.Contains(string(raw), `"language":"latex"`) {
 		t.Fatalf("math residue should be latex codeBlock: %s", raw)
+	}
+}
+
+func TestConvert_DollarMathResidue_DisplayAndInline(t *testing.T) {
+	// Real KaTeX-style delimiters — not a pre-fenced latex block.
+	md := "Intro\n\n$$\nE = mc^2\n$$\n\nInline $a+b$ end.\n"
+	doc, err := adf.Convert(md, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := json.Marshal(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dir := os.Getenv("T26_SCRATCH"); dir != "" {
+		_ = os.WriteFile(filepath.Join(dir, "t26-math-dollars.adf.json"), raw, 0o644)
+	}
+	s := string(raw)
+	// Must not leave raw dollar delimiters as prose-only residue.
+	if strings.Contains(s, `"text":"$$"`) || strings.Contains(s, `"text":"$a+b$"`) {
+		t.Fatalf("dollar delimiters left as prose: %s", s)
+	}
+	if !strings.Contains(s, "E = mc^2") {
+		t.Fatalf("display math expr lost: %s", s)
+	}
+	if !strings.Contains(s, "a+b") {
+		t.Fatalf("inline math expr lost: %s", s)
+	}
+	// At least one latex codeBlock for the residue mapping.
+	if !strings.Contains(s, `"language":"latex"`) {
+		t.Fatalf("want language=latex codeBlock residue: %s", s)
+	}
+	types := collectTypes(doc.Content)
+	if !types["codeBlock"] {
+		t.Fatalf("want codeBlock for math residue: %s", s)
+	}
+	// Code-protected dollars must not be rewritten.
+	mdCode := "Use `$notmath$` in code and\n\n```\n$also$\n```\n"
+	doc2, err := adf.Convert(mdCode, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw2, _ := json.Marshal(doc2)
+	// Inline code keeps $notmath$ as code mark text, not forced latex block only.
+	if !strings.Contains(string(raw2), "$notmath$") && !strings.Contains(string(raw2), "notmath") {
+		t.Fatalf("code-protected math mangled: %s", raw2)
 	}
 }
 
