@@ -17,7 +17,7 @@ import (
 	"github.com/marcelocantos/vellum/viewer"
 )
 
-const version = "0.13.0"
+const version = "0.14.0"
 
 func main() {
 	if err := run(); err != nil {
@@ -36,6 +36,8 @@ func run() error {
 			return runImport(args[1:])
 		case "view":
 			return runView(args[1:])
+		case "serve-view":
+			return runServeView(args[1:])
 		case "install-viewer":
 			return runInstallViewer(args[1:])
 		case "uninstall-viewer":
@@ -303,13 +305,59 @@ func runUninstallViewer(args []string) error {
 	return nil
 }
 
+func runServeView(args []string) error {
+	var (
+		showHelp bool
+		addr     string
+	)
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		switch {
+		case a == "--help" || a == "-help":
+			showHelp = true
+		case a == "--addr":
+			if i+1 >= len(args) {
+				return fmt.Errorf("%s requires an argument", a)
+			}
+			i++
+			addr = args[i]
+		case strings.HasPrefix(a, "--addr="):
+			addr = a[len("--addr="):]
+		case strings.HasPrefix(a, "-"):
+			return fmt.Errorf("unknown flag for serve-view: %s", a)
+		default:
+			return fmt.Errorf("serve-view takes no positional arguments")
+		}
+	}
+	if showHelp {
+		printServeViewUsage()
+		return nil
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		return err
+	}
+	srv := &viewer.Server{
+		Addr:    addr,
+		Style:   cfg.Style,
+		Backend: cfg.Backend,
+	}
+	fmt.Fprintf(os.Stderr, "vellum view server listening on %s\n", srv.Origin())
+	return srv.ListenAndServe(context.Background())
+}
+
 func printViewUsage() {
 	fmt.Print(`Usage: vellum view [options] <file.md>
        vellum --open [options] <file.md>
 
-Render a Markdown file to a cache location and open it in the OS default
-viewer. Never writes a PDF/HTML next to the source file. Unchanged
-sources hit the cache (keyed by absolute path + mtime).
+Open a Markdown file as rendered HTML on the localhost view server
+(http://127.0.0.1:18742 by default), or as PDF via a cache file.
+HTML mode converts one file per browser request — in-page .md links
+stay on the server; reload re-converts when the source is newer.
+Never writes next to the source file.
+
+Requires the view server (auto-started if needed). Prefer a persistent
+daemon: brew services start vellum  (or: vellum serve-view).
 
 Options:
   --help              Show this help
@@ -318,13 +366,33 @@ Options:
                       (only relevant with --pdf)
 
 Examples:
-  vellum view notes.md            # HTML → browser (fast default)
+  vellum view notes.md            # HTML → browser via view server
   vellum view --pdf notes.md      # PDF → Preview
   vellum --open notes.md          # flag form of view
 
-Cache lives under the user cache dir (…/Caches/vellum/view on macOS).
-Pruned on each view: entries older than 7 days are dropped; if total
-size still exceeds 50 MB, oldest entries are evicted until under cap.
+HTML cache lives under the user cache dir (…/Caches/vellum/view on macOS),
+managed by the view server. Pruned on each convert: entries older than
+7 days are dropped; if total size still exceeds 50 MB, oldest entries
+are evicted until under cap.
+`)
+}
+
+func printServeViewUsage() {
+	fmt.Print(`Usage: vellum serve-view [--addr host:port]
+
+Run the localhost Markdown view server (foreground). Binds loopback
+only — default 127.0.0.1:18742 (override with --addr or VELLUM_VIEW_ADDR).
+
+Each GET of a .md/.markdown path converts that one file to HTML (no
+link-graph crawl). Relative .md links are rewritten to same-origin
+URLs. Reload re-converts when the source mtime/size changes.
+
+Install as a user service via Homebrew:
+
+  brew services start vellum
+
+Or run in the foreground for debugging. Cmd-click / vellum view open
+URLs on this server.
 `)
 }
 
@@ -677,6 +745,7 @@ func printUsage() {
        vellum --mcp
        vellum import [options] <file>
        vellum view [options] <file.md>
+       vellum serve-view [--addr host:port]
        vellum install-viewer | uninstall-viewer
 
 Document preparation — media-orthogonal conversion (file, content,
@@ -688,7 +757,7 @@ Options:
   --version           Print version number
   --mcp               Run as an MCP (Model Context Protocol) server on stdio
   --to-clipboard      Sugar: file|stdin → clipboard (macOS)
-  --open              Alias for 'view': render to cache and open (macOS)
+  --open              Alias for 'view': open via localhost view server (macOS)
   -o <path>           Output path (single input file only)
   --backend <name>    Renderer backend: "weasyprint" (default) or "prince"
 
@@ -696,8 +765,9 @@ Subcommands:
   convert             Media-orthogonal conversion (--from / --to). See
                       "vellum convert --help".
   import              Alias: rich-text → Markdown. See "vellum import --help".
-  view                Render a Markdown file to cache and open it
+  view                Open Markdown via the localhost view server
                       (HTML default; --pdf for PDF). See "vellum view --help".
+  serve-view          Run the localhost Markdown view server (brew services)
   install-viewer      Install Vellum Viewer.app as the default .md handler
   uninstall-viewer    Remove Vellum Viewer.app
 
@@ -708,6 +778,7 @@ Examples:
   vellum convert --from clipboard --to content
   vellum import doc.docx                 # → Markdown on stdout
   vellum view notes.md                   # rendered HTML in browser
+  vellum serve-view                      # localhost view daemon
 
 Renderer (default WeasyPrint, optional Prince) must be on PATH for PDF
 output. pandoc must be on PATH for rich-text import paths.

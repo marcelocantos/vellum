@@ -1,9 +1,9 @@
 // Copyright 2026 Marcelo Cantos
 // SPDX-License-Identifier: Apache-2.0
 
-// Package viewer renders Markdown to a cache location and opens it in the
-// OS default viewer. It also installs/uninstalls a macOS app bundle that
-// registers vellum as the default handler for .md files.
+// Package viewer renders Markdown via a localhost view server (HTML) or a
+// cache file (PDF) and opens the result. It also installs/uninstalls a macOS
+// app bundle that registers vellum as the default handler for .md files.
 package viewer
 
 import (
@@ -12,7 +12,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -49,11 +48,11 @@ type ViewOptions struct {
 	// Format is the rendered form (HTML default, PDF optional).
 	Format Format
 	// Style and Backend are forwarded to convert for PDF mode; Style also
-	// applies to HTML rendering.
+	// applies to HTML rendering on the view server.
 	Style   *convert.Style
 	Backend string
-	// Open, when non-nil, opens the rendered path. Defaults to OS open.
-	// Tests inject a no-op or recorder.
+	// Open, when non-nil, opens the rendered path or view URL. Defaults to
+	// OS open. Tests inject a no-op or recorder.
 	Open func(path string) error
 	// CacheDir overrides the default cache root (for tests).
 	CacheDir string
@@ -65,18 +64,22 @@ type ViewOptions struct {
 	MaxAge time.Duration
 	// Now, when non-nil, supplies the clock for age checks (tests).
 	Now func() time.Time
+	// ViewBaseURL is the view-server origin (e.g. http://127.0.0.1:18742).
+	// Empty uses DefaultViewOrigin. Tests point this at an httptest.
+	ViewBaseURL string
+	// SkipEnsureServer, when true, does not auto-start serve-view (tests
+	// that already run a Server, or callers that require brew services).
+	SkipEnsureServer bool
 }
 
-// View renders inputPath to a cache location keyed only by absolute source
-// path and format (not mtime). The rendered file is stable so a browser
-// tab can be reloaded after Markdown changes; Cmd-click / `vellum view`
-// still re-renders in place when the source is newer than the stamp.
-// Unchanged sources hit the cache and skip re-render. The cache never
-// writes next to the source file.
+// View opens inputPath in the OS viewer. HTML mode opens a localhost view
+// server URL (one GET = one convert; in-page .md links stay on-origin). PDF
+// mode still renders to a path-keyed cache file and opens that file.
 //
-// After the entry is ready, the cache is pruned to CacheMaxAge and
-// CacheMaxBytes (see package constants; overridable via ViewOptions).
-func View(ctx context.Context, inputPath string, opts *ViewOptions) (renderedPath string, err error) {
+// HTML conversion happens on the server when the browser loads (or reloads)
+// the URL; View itself does not crawl the Markdown link graph. The server
+// re-converts when the source stamp/mtime changes.
+func View(ctx context.Context, inputPath string, opts *ViewOptions) (opened string, err error) {
 	if opts == nil {
 		opts = &ViewOptions{}
 	}
@@ -92,6 +95,36 @@ func View(ctx context.Context, inputPath string, opts *ViewOptions) (renderedPat
 		return "", fmt.Errorf("input is a directory: %s", absInput)
 	}
 
+	if opts.Format != FormatPDF {
+		return viewHTML(absInput, opts)
+	}
+	return viewPDF(ctx, absInput, info, opts)
+}
+
+func viewHTML(absInput string, opts *ViewOptions) (string, error) {
+	origin := opts.ViewBaseURL
+	if origin == "" {
+		origin = DefaultViewOrigin()
+	}
+	if !opts.SkipEnsureServer {
+		if err := EnsureViewServer(origin); err != nil {
+			return "", err
+		}
+	} else if err := ProbeViewServer(origin); err != nil {
+		return "", fmt.Errorf("view server not reachable at %s: %w", origin, err)
+	}
+	u := ViewURL(origin, absInput)
+	openFn := opts.Open
+	if openFn == nil {
+		openFn = openPath
+	}
+	if err := openFn(u); err != nil {
+		return u, fmt.Errorf("opening %s: %w", u, err)
+	}
+	return u, nil
+}
+
+func viewPDF(ctx context.Context, absInput string, info os.FileInfo, opts *ViewOptions) (string, error) {
 	cacheRoot, err := resolveCacheDir(opts.CacheDir)
 	if err != nil {
 		return "", err
@@ -100,11 +133,7 @@ func View(ctx context.Context, inputPath string, opts *ViewOptions) (renderedPat
 		return "", fmt.Errorf("creating cache dir: %w", err)
 	}
 
-	ext := ".html"
-	if opts.Format == FormatPDF {
-		ext = ".pdf"
-	}
-	cachePath := filepath.Join(cacheRoot, cacheName(absInput, ext))
+	cachePath := filepath.Join(cacheRoot, cacheName(absInput, ".pdf"))
 	now := time.Now
 	if opts.Now != nil {
 		now = opts.Now
@@ -113,20 +142,14 @@ func View(ctx context.Context, inputPath string, opts *ViewOptions) (renderedPat
 
 	hit := false
 	if st, err := os.Stat(cachePath); err == nil && !st.IsDir() {
-		// Age-expired entries are treated as misses so content re-renders
-		// and the stale file is eligible for prune. Source mtime/size is
-		// recorded in a sidecar so LRU touches on the HTML do not fake a hit
-		// after the Markdown changed, and so regeneration stays in-place.
 		ageOK := maxAge < 0 || now().Sub(st.ModTime()) <= maxAge
 		if ageOK && stampMatches(cachePath, info) {
 			hit = true
-			// Touch mtime so LRU-by-mtime size eviction prefers active entries.
 			_ = os.Chtimes(cachePath, now(), now())
 		}
 	}
 	if !hit {
 		if err := renderToCache(ctx, absInput, cachePath, opts); err != nil {
-			// Soft Mermaid failures still produced a cache file — open it.
 			var se *convert.SoftError
 			if !errors.As(err, &se) {
 				return "", err
@@ -134,7 +157,6 @@ func View(ctx context.Context, inputPath string, opts *ViewOptions) (renderedPat
 		}
 	}
 
-	// Best-effort prune; never fail the view because cleanup failed.
 	_ = pruneCache(cacheRoot, cachePath, effectiveMaxBytes(opts.MaxBytes), maxAge, now())
 
 	openFn := opts.Open
@@ -261,48 +283,15 @@ func listCacheEntries(dir string) ([]cacheEntry, error) {
 }
 
 func renderToCache(ctx context.Context, absInput, cachePath string, opts *ViewOptions) error {
+	// PDF only — HTML is served by Server (one GET = one convert).
 	cOpts := &convert.Options{Style: opts.Style, Backend: opts.Backend}
-
-	switch opts.Format {
-	case FormatPDF:
-		if err := convert.CheckDeps(opts.Backend); err != nil {
-			return err
-		}
-		if err := convert.Convert(ctx, absInput, cachePath, cOpts); err != nil {
-			return err
-		}
-		return writeStamp(cachePath, absInput)
-	default:
-		// HTML: inject <base> so relative images resolve against the
-		// source Markdown's directory even though the HTML lives in cache.
-		base := url.URL{Scheme: "file", Path: filepath.Dir(absInput) + string(filepath.Separator)}
-		cOpts.HeadExtra = fmt.Sprintf(
-			`<meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate">`+"\n"+
-				`<meta http-equiv="Pragma" content="no-cache">`+"\n"+
-				`<base href="%s">`,
-			base.String(),
-		)
-		html, soft, err := convert.RenderFile(ctx, absInput, cOpts)
-		if err != nil {
-			return err
-		}
-		tmp := cachePath + ".tmp"
-		if err := os.WriteFile(tmp, []byte(html), 0o644); err != nil {
-			return fmt.Errorf("writing cache: %w", err)
-		}
-		if err := os.Rename(tmp, cachePath); err != nil {
-			_ = os.Remove(tmp)
-			return fmt.Errorf("finalising cache: %w", err)
-		}
-		if err := writeStamp(cachePath, absInput); err != nil {
-			return err
-		}
-		// Soft Mermaid failures already logged to stderr; view still opens.
-		if len(soft) > 0 {
-			return &convert.SoftError{Messages: soft}
-		}
-		return nil
+	if err := convert.CheckDeps(opts.Backend); err != nil {
+		return err
 	}
+	if err := convert.Convert(ctx, absInput, cachePath, cOpts); err != nil {
+		return err
+	}
+	return writeStamp(cachePath, absInput)
 }
 
 func cacheName(absPath string, ext string) string {
