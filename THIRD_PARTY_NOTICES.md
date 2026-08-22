@@ -13,6 +13,8 @@ dependencies.
 
 - **github.com/modelcontextprotocol/go-sdk** v1.5.0 —
   https://github.com/modelcontextprotocol/go-sdk/blob/v1.5.0/LICENSE
+- **gopkg.in/yaml.v3** v3.0.0-20200313102051-9f266ea9e77c —
+  https://github.com/go-yaml/yaml/blob/v3/LICENSE
 - **gopkg.in/yaml.v2** v2.3.0 —
   https://github.com/go-yaml/yaml/blob/v2.3.0/LICENSE
 

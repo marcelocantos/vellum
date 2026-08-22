@@ -32,7 +32,7 @@ Markdown → PDF path still: goldmark → HTML template → WeasyPrint/Prince.
 | `mcp/` | MCP server (single `convert` tool) |
 | `embed/` | Embedded assets (CSS, HTML templates) |
 | `internal/testdeps/` | Test gate for external converters (`VELLUM_REQUIRE_DEPS`) |
-| `viewer/` | Cached render + open; macOS default .md handler |
+| `viewer/` | Localhost view server (HTML) + cached PDF open; macOS default .md handler |
 
 ### External dependencies
 
