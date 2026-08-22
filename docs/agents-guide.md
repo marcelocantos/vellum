@@ -82,14 +82,16 @@ must succeed before vellum is usable — do not stop after `brew install`.**
    }
    ```
 
-   vellum is a **stdio** MCP server, not HTTP. It is spawned per
-   connection by the MCP client. There is no daemon to start, no port
-   to check, and no `brew services` entry. The Homebrew formula
-   installs a thin shell wrapper as `vellum` that prepends the
-   canonical tool dirs (`#{HOMEBREW_PREFIX}/bin`, `/usr/local/bin`,
-   `$HOME/.cargo/bin`, etc.) before exec'ing the real binary, so
-   `weasyprint`, `node`, `mmdc`, and `prince` resolve regardless of
-   how the MCP client's environment was set up.
+   vellum's MCP mode is **stdio**, not HTTP. It is spawned per
+   connection by the MCP client — there is no MCP daemon to start and
+   no MCP port to check. (Separately, `brew services start vellum`
+   runs the optional **Markdown view server** on `127.0.0.1:18742` for
+   `vellum view` / Cmd-click; that is unrelated to MCP registration.)
+   The Homebrew formula installs a thin shell wrapper as `vellum` that
+   prepends the canonical tool dirs (`#{HOMEBREW_PREFIX}/bin`,
+   `/usr/local/bin`, `$HOME/.cargo/bin`, etc.) before exec'ing the real
+   binary, so `weasyprint`, `node`, `mmdc`, and `prince` resolve
+   regardless of how the MCP client's environment was set up.
 
 4. **Restart the agent session.** MCP client config changes are only
    picked up on session start. The current session will not see vellum
@@ -318,15 +320,21 @@ Shorthands (expand into the same router):
 These are CLI-only (not MCP tools) — humans double-click Markdown; agents
 already work with files and `convert`.
 
-- `vellum view <file.md>` / `vellum --open <file.md>` — render to a
-  cache location keyed by absolute path and format (not mtime), so a
-  browser tab can reload after Markdown changes. A stamp sidecar
-  records source mtime+size; View re-renders in place when the source
-  is newer. HTML includes Cache-Control: no-store. Never next to the
-  source. **HTML default** (browser, fast); pass `--pdf` for
-  Preview-quality typography. Cache health: entries older than 7 days
-  are dropped on each view; if the cache still exceeds 50 MB, oldest
-  entries are evicted until under the cap.
+- `vellum serve-view` — localhost Markdown view server (default
+  `127.0.0.1:18742`; override with `--addr` or `VELLUM_VIEW_ADDR`).
+  Binds loopback only. Prefer a persistent daemon:
+  `brew services start vellum`. Each GET of a `.md`/`.markdown` path
+  converts that one file to HTML (no link-graph crawl). Relative
+  `.md` links are rewritten to same-origin URLs so clicks stay in the
+  browser; reload re-converts when the source mtime/size changes.
+- `vellum view <file.md>` / `vellum --open <file.md>` — open the file
+  as an `http://127.0.0.1:18742/…` URL on the view server (**not**
+  `file://`). HTML default (browser, fast); pass `--pdf` for
+  Preview-quality typography via a cache file. If the server is down,
+  `view` auto-starts `serve-view` when it can; prefer
+  `brew services start vellum` for a lasting daemon. Cache health
+  (server-side): entries older than 7 days are dropped; if the cache
+  still exceeds 50 MB, oldest entries are evicted until under the cap.
 - `vellum install-viewer` — write `~/Applications/Vellum Viewer.app`
   (Cocoa document handler, compiled with clang at install time — shell
   scripts cannot receive Launch Services open-document Apple Events),

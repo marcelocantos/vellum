@@ -72,6 +72,7 @@ Usage: vellum [options] <input.md...>
        vellum import [options] <file>
        vellum convert --from <media> --to <media> [path|-]
        vellum view [options] <file.md>
+       vellum serve-view [--addr host:port]
        vellum install-viewer | uninstall-viewer
 
 Options:
@@ -80,7 +81,7 @@ Options:
   --version           Print version
   --mcp               Run as an MCP server on stdio
   --to-clipboard      Sugar: file|stdin → clipboard (macOS)
-  --open              Render to cache and open (alias for `view`)
+  --open              Open via the localhost view server (alias for `view`)
   -o <path>           Output path (single input file only)
   --backend <name>    Renderer backend: "weasyprint" (default) or "prince"
 
@@ -88,8 +89,9 @@ Subcommands:
   convert             Media-orthogonal conversion (file, content, clipboard,
                       file_reference). See `vellum convert --help`.
   import              Alias: rich-text → Markdown. See `vellum import --help`.
-  view                Render Markdown to a cache location and open it
+  view                Open Markdown via the localhost view server
                       (HTML default; --pdf for PDF fidelity)
+  serve-view          Run the localhost Markdown view server (brew services)
   install-viewer      Install Vellum Viewer.app as the default .md handler
   uninstall-viewer    Remove Vellum Viewer.app
 ```
@@ -103,21 +105,31 @@ echo '# Hi' | vellum convert --from content --to clipboard
 vellum convert --from clipboard --to content
 vellum convert --from file --to content notes.docx
 vellum import doc.docx                 # sugar → Markdown on stdout
+brew services start vellum             # localhost view daemon (127.0.0.1:18742)
 vellum view notes.md                   # open rendered HTML in the browser
 vellum install-viewer                  # double-click .md → rendered view
 ```
 
 ### macOS Markdown viewer
 
-`vellum view` / `vellum --open` renders to a **cache** keyed by absolute
-source path and format (not mtime), so a browser tab can reload after
-Markdown changes. A stamp sidecar records source mtime and size; View
-re-renders in place when the source is newer and cache-hits when it is
-not. HTML includes `Cache-Control: no-store`. The cache never writes next
-to the source. HTML is the default (fast, no WeasyPrint needed for a
-casual read); pass `--pdf` for full typography in Preview. The cache is
-pruned on each view: entries older than 7 days are dropped, then oldest
-entries are evicted until total size is under 50 MB.
+`vellum view` / `vellum --open` open Markdown as an **`http://127.0.0.1:18742/…`
+URL** on the localhost view server (not `file://`), so in-page `.md` links
+stay in the browser and reloads pick up edits. HTML is the default (fast, no
+WeasyPrint needed for a casual read); pass `--pdf` for full typography in
+Preview via a cache file.
+
+Start the daemon with Homebrew (preferred) or in the foreground:
+
+```sh
+brew services start vellum
+# or: vellum serve-view
+```
+
+Each GET converts **one** Markdown path (no link-graph crawl). Relative
+`.md`/`.markdown` links are rewritten to same-origin URLs. The server binds
+loopback only (override with `--addr` / `VELLUM_VIEW_ADDR`). Cache health:
+entries older than 7 days are dropped, then oldest entries are evicted until
+total size is under 50 MB.
 
 `vellum install-viewer` generates `~/Applications/Vellum Viewer.app`,
 registers it with Launch Services, and (with [`duti`](https://github.com/moretension/duti) on `PATH`) sets it as the default handler for Markdown. The app executable is a small Cocoa binary (compiled with clang at install time) that receives Launch Services open-document Apple Events and runs `vellum --open` — a shell-script launcher cannot receive those events. Requires Xcode Command Line Tools. Uninstall with `vellum uninstall-viewer`. Debug log: `~/Library/Logs/vellum-viewer.log`.

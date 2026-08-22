@@ -106,6 +106,14 @@ jobs:
             depends_on "poppler"
             depends_on "weasyprint"
 
+            service do
+              run [opt_bin/"vellum", "serve-view"]
+              keep_alive true
+              log_path var/"log/vellum-view.log"
+              error_log_path var/"log/vellum-view.log"
+              working_dir var
+            end
+
             def caveats
               <<~EOS
                 vellum is installed with WeasyPrint as the default renderer (BSD-3, open-source).
@@ -123,5 +131,9 @@ jobs:
                 Pandoc handles rich-text import (RTF, DOCX, HTML, … → Markdown
                 with media extraction). Poppler (pdftoppm/pdftotext) handles PDF
                 import (page images + text). Both are formula dependencies.
+
+                Markdown view server (localhost HTML for vellum view / Cmd-click):
+                  brew services start vellum
+                Binds 127.0.0.1:18742 only. Override with VELLUM_VIEW_ADDR.
               EOS
             end

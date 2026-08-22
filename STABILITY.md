@@ -21,7 +21,7 @@ change between minor releases — though in practice we aim to minimise churn.
 
 ## Interaction surface catalogue
 
-Snapshot as of **v0.13.0** (`const version` in `cmd/vellum`). Annotations:
+Snapshot as of **v0.14.0** (`const version` in `cmd/vellum`). Annotations:
 **stable** (unlikely to change), **needs review** (functional but may be
 refined), **fluid** (actively evolving).
 
@@ -118,10 +118,17 @@ Package paths are under `github.com/marcelocantos/vellum/…`.
 - `func HTMLToRTF(html, resourcePath string) ([]byte, error)` — **needs review** (`--standalone`; CSS is ignored)
 - `func HTMLToPlain(html string) ([]byte, error)` — **needs review**
 
-**`viewer`** — cached render + open; macOS default Markdown handler (added in v0.6.0). Cache filename is `sha256(absPath)[:8]+ext` (not mtime). A `.stamp` sidecar records source mtime+size so View re-renders in place when Markdown changes (🎯T28). HTML injects `Cache-Control: no-store`.
+**`viewer`** — localhost view server (HTML) + cached PDF open; macOS default Markdown handler (added in v0.6.0; view server in v0.14.0). Cache filename is `sha256(absPath)[:8]+ext` (not mtime). A `.stamp` sidecar records source mtime+size so HTML/PDF re-render in place when Markdown changes (🎯T28).
 
-- `func View(ctx context.Context, inputPath string, opts *ViewOptions) (string, error)` — **needs review**
-- `type ViewOptions struct { Format Format; Style *convert.Style; Backend string; Open func(string) error; CacheDir string; MaxBytes int64; MaxAge time.Duration; Now func() time.Time }` — **needs review**
+- `func View(ctx context.Context, inputPath string, opts *ViewOptions) (string, error)` — **needs review** (HTML opens `http://127.0.0.1:18742/…` view-server URL; PDF still opens a cache file)
+- `type ViewOptions struct { Format Format; Style *convert.Style; Backend string; Open func(string) error; CacheDir string; MaxBytes int64; MaxAge time.Duration; Now func() time.Time; ViewBaseURL string; SkipEnsureServer bool }` — **needs review**
+- `type Server struct { Addr string; CacheDir string; Style *convert.Style; Backend string; … }` — **needs review** (added in v0.14.0)
+- `func (*Server) ListenAndServe(ctx context.Context) error` — **needs review** (loopback-only bind)
+- `func (*Server) Handler() http.Handler` — **needs review**
+- `func ViewURL(origin, absPath string) string` — **needs review**
+- `func EnsureViewServer(origin string) error` — **needs review**
+- `func ProbeViewServer(origin string) error` — **needs review**
+- `const DefaultViewAddr, HealthPath` — **needs review** (`127.0.0.1:18742`, `/healthz`)
 - `const FormatHTML, FormatPDF` — **needs review**
 - `const CacheMaxBytes, CacheMaxAge` — **needs review** (50 MiB / 7 days defaults)
 - `func InstallViewer(opts *InstallOptions) (appPath string, err error)` — **needs review** (macOS only; v0.7.0 compiles a Cocoa document-handler binary at install time — shell-script CFBundleExecutable cannot receive Launch Services open-document Apple Events)
@@ -147,7 +154,7 @@ Binary: `vellum`.
 | `--version`      | Print version string to stdout, exit 0              | stable    |
 | `--mcp`          | Run as stdio MCP server                             | stable    |
 | `--to-clipboard` | Sugar: file or stdin (`-`) → clipboard rich (macOS) | needs review |
-| `--open`         | Render to cache and open (alias for `view`). Added in v0.6.0. | needs review |
+| `--open`         | Open via localhost view server (alias for `view`). Added in v0.6.0; server URL behaviour in v0.14.0. | needs review |
 | `--pdf`          | With `--open`/`view`: high-fidelity PDF instead of HTML. Added in v0.6.0. | needs review |
 | `-o <path>`      | Output path (single-input only)                     | stable    |
 | `--output <path>`| Same as `-o`                                        | stable    |
@@ -165,7 +172,8 @@ Binary: `vellum`.
 | `vellum import --from-clipboard` | Sugar: clipboard rich → Markdown (macOS). Added in v0.5.0. | needs review |
 | `vellum import … -o <path>` | Write the Markdown to a file instead of stdout. | needs review |
 | `vellum import … --from <fmt>` | Override pandoc format autodetection. | needs review |
-| `vellum view <file>` | Render to cache (HTML default) and open. Added in v0.6.0. | needs review |
+| `vellum view <file>` | Open via localhost view server (HTML → `http://127.0.0.1:18742/…`) or PDF cache file. Added in v0.6.0; server behaviour in v0.14.0. | needs review |
+| `vellum serve-view` | Run the localhost Markdown view server (loopback only). Added in v0.14.0. | needs review |
 | `vellum install-viewer` | Install Vellum Viewer.app as default .md handler (macOS). Added in v0.6.0. | needs review |
 | `vellum uninstall-viewer` | Remove Vellum Viewer.app. Added in v0.6.0. | needs review |
 
@@ -250,6 +258,8 @@ not listed here is either GFM (via goldmark's GFM extension) or not supported.
 
 ### Environment variables
 
+- `VELLUM_VIEW_ADDR=<host:port>` — loopback listen address for `vellum serve-view`
+  (default `127.0.0.1:18742`). **needs review** (added in v0.14.0).
 - `VELLUM_DEBUG_HTML=<path>` — if set, vellum writes the assembled HTML to
   this path before invoking the PDF backend (WeasyPrint default, or Prince).
   Intended for development only. Does not document the KaTeX CSS CDN link

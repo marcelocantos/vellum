@@ -5,6 +5,9 @@ package viewer
 
 import (
 	"context"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,125 +15,245 @@ import (
 	"time"
 )
 
-func TestView_HTMLCacheHit(t *testing.T) {
+func startTestServer(t *testing.T, s *Server) *httptest.Server {
+	t.Helper()
+	if s.CacheDir == "" {
+		s.CacheDir = t.TempDir()
+	}
+	ts := httptest.NewServer(s.Handler())
+	t.Cleanup(ts.Close)
+	return ts
+}
+
+func TestServer_OneConvertPerGET(t *testing.T) {
 	dir := t.TempDir()
-	cache := filepath.Join(dir, "cache")
-	md := filepath.Join(dir, "doc.md")
-	if err := os.WriteFile(md, []byte("# Hello\n\ncache test body\n"), 0o644); err != nil {
+	linked := filepath.Join(dir, "other.md")
+	if err := os.WriteFile(linked, []byte("# Other\n\nlinked body\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	main := filepath.Join(dir, "main.md")
+	if err := os.WriteFile(main, []byte("# Main\n\nSee [other](other.md).\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	var opened []string
-	opts := &ViewOptions{
-		Format:   FormatHTML,
-		CacheDir: cache,
-		Open: func(p string) error {
-			opened = append(opened, p)
-			return nil
-		},
+	s := &Server{CacheDir: filepath.Join(dir, "cache")}
+	ts := startTestServer(t, s)
+
+	if s.ConvertCount.Load() != 0 {
+		t.Fatalf("ConvertCount before GET: %d", s.ConvertCount.Load())
 	}
 
-	ctx := context.Background()
-	p1, err := View(ctx, md, opts)
-	if err != nil {
-		t.Fatalf("first View: %v", err)
-	}
-	if !strings.HasSuffix(p1, ".html") {
-		t.Errorf("expected .html cache path, got %s", p1)
-	}
-	body, err := os.ReadFile(p1)
+	resp, err := http.Get(ViewURL(ts.URL, main))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(body), "cache test body") {
-		t.Errorf("rendered HTML missing body text:\n%s", body)
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status %d: %s", resp.StatusCode, body)
 	}
-	if !strings.Contains(string(body), `<base href="`) {
-		t.Errorf("rendered HTML missing <base href> for relative assets")
+	if s.ConvertCount.Load() != 1 {
+		t.Fatalf("ConvertCount after one GET: %d (eager crawl?)", s.ConvertCount.Load())
+	}
+	html := string(body)
+	if !strings.Contains(html, "See") {
+		t.Errorf("missing body:\n%s", html)
+	}
+	wantLink := ViewURL(ts.URL, linked)
+	if !strings.Contains(html, wantLink) {
+		t.Errorf("expected rewritten link %q in:\n%s", wantLink, html)
+	}
+	if strings.Contains(html, `href="other.md"`) {
+		t.Errorf("relative .md href should have been rewritten:\n%s", html)
 	}
 
-	// Second view must reuse the same path (cache hit). Content is not
-	// re-rendered; mtime may advance (LRU touch for size eviction).
-	size1, _ := os.Stat(p1)
-	p2, err := View(ctx, md, opts)
+	// Second GET must cache-hit (no second convert) while linked file stays unconverted.
+	resp2, err := http.Get(ViewURL(ts.URL, main))
 	if err != nil {
-		t.Fatalf("second View: %v", err)
+		t.Fatal(err)
 	}
-	if p1 != p2 {
-		t.Errorf("cache miss: %s vs %s", p1, p2)
-	}
-	size2, _ := os.Stat(p2)
-	if size1.Size() != size2.Size() {
-		t.Errorf("cache file size changed on hit: %d → %d", size1.Size(), size2.Size())
-	}
-	if len(opened) != 2 {
-		t.Errorf("open called %d times, want 2", len(opened))
+	resp2.Body.Close()
+	if s.ConvertCount.Load() != 1 {
+		t.Fatalf("ConvertCount after cache hit: %d", s.ConvertCount.Load())
 	}
 }
 
-func TestView_CacheInvalidatesOnMtime(t *testing.T) {
+func TestServer_ReloadReconvertsOnMtime(t *testing.T) {
 	dir := t.TempDir()
-	cache := filepath.Join(dir, "cache")
 	md := filepath.Join(dir, "doc.md")
 	if err := os.WriteFile(md, []byte("# v1\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	s := &Server{CacheDir: filepath.Join(dir, "cache")}
+	ts := startTestServer(t, s)
 
-	opts := &ViewOptions{
-		Format:   FormatHTML,
-		CacheDir: cache,
-		Open:     func(string) error { return nil },
-	}
-	ctx := context.Background()
-	p1, err := View(ctx, md, opts)
-	if err != nil {
-		t.Fatalf("first View: %v", err)
+	get := func() string {
+		resp, err := http.Get(ViewURL(ts.URL, md))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		b, _ := io.ReadAll(resp.Body)
+		return string(b)
 	}
 
-	// Bump mtime and content.
+	if !strings.Contains(get(), "v1") {
+		t.Fatal("expected v1")
+	}
+	if s.ConvertCount.Load() != 1 {
+		t.Fatalf("count=%d", s.ConvertCount.Load())
+	}
+
 	time.Sleep(10 * time.Millisecond)
 	if err := os.WriteFile(md, []byte("# v2 updated\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	// Ensure mtime advances even on coarse filesystems.
 	future := time.Now().Add(2 * time.Second)
 	if err := os.Chtimes(md, future, future); err != nil {
 		t.Fatal(err)
 	}
 
-	p2, err := View(ctx, md, opts)
+	body := get()
+	if !strings.Contains(body, "v2 updated") {
+		t.Errorf("reload missing updated content:\n%s", body)
+	}
+	if s.ConvertCount.Load() != 2 {
+		t.Fatalf("expected re-convert after mtime, count=%d", s.ConvertCount.Load())
+	}
+}
+
+func TestServer_BindsLoopbackOnly(t *testing.T) {
+	s := &Server{Addr: "0.0.0.0:0"}
+	err := s.ListenAndServe(context.Background())
+	if err == nil {
+		t.Fatal("expected non-loopback bind to fail")
+	}
+	if !strings.Contains(err.Error(), "loopback") {
+		t.Errorf("error should mention loopback: %v", err)
+	}
+}
+
+func TestServer_Healthz(t *testing.T) {
+	s := &Server{CacheDir: t.TempDir()}
+	ts := startTestServer(t, s)
+	resp, err := http.Get(ts.URL + HealthPath)
 	if err != nil {
-		t.Fatalf("second View: %v", err)
+		t.Fatal(err)
 	}
-	if p1 == p2 {
-		t.Errorf("expected new cache path after mtime change; both %s", p1)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status %d", resp.StatusCode)
 	}
-	body, _ := os.ReadFile(p2)
-	if !strings.Contains(string(body), "v2 updated") {
-		t.Errorf("new cache missing updated content:\n%s", body)
+}
+
+func TestView_OpensServerURLNotFile(t *testing.T) {
+	dir := t.TempDir()
+	md := filepath.Join(dir, "doc.md")
+	if err := os.WriteFile(md, []byte("# Hello\n\ncache test body\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s := &Server{CacheDir: filepath.Join(dir, "cache")}
+	ts := startTestServer(t, s)
+
+	var opened []string
+	u, err := View(context.Background(), md, &ViewOptions{
+		Format:           FormatHTML,
+		ViewBaseURL:      ts.URL,
+		SkipEnsureServer: true,
+		Open: func(p string) error {
+			opened = append(opened, p)
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := ViewURL(ts.URL, md)
+	if u != want {
+		t.Errorf("View returned %q, want %q", u, want)
+	}
+	if len(opened) != 1 || opened[0] != want {
+		t.Errorf("Open got %v, want [%s]", opened, want)
+	}
+	if strings.HasPrefix(u, "/") || strings.HasSuffix(u, ".html") {
+		t.Errorf("HTML View must open server URL, not cache file: %s", u)
+	}
+	// View itself must not convert — only the subsequent GET does.
+	if s.ConvertCount.Load() != 0 {
+		t.Fatalf("View must not eagerly convert; ConvertCount=%d", s.ConvertCount.Load())
+	}
+	resp, err := http.Get(u)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if !strings.Contains(string(body), "cache test body") {
+		t.Errorf("GET missing body:\n%s", body)
+	}
+	if !strings.Contains(string(body), "Cache-Control") {
+		t.Errorf("missing Cache-Control")
+	}
+	if s.ConvertCount.Load() != 1 {
+		t.Fatalf("after GET ConvertCount=%d", s.ConvertCount.Load())
 	}
 }
 
 func TestView_MissingFile(t *testing.T) {
 	_, err := View(context.Background(), filepath.Join(t.TempDir(), "nope.md"), &ViewOptions{
-		CacheDir: t.TempDir(),
-		Open:     func(string) error { return nil },
+		ViewBaseURL:      "http://127.0.0.1:9",
+		SkipEnsureServer: true,
+		Open:             func(string) error { return nil },
 	})
 	if err == nil {
 		t.Fatal("expected error for missing file")
 	}
 }
 
+func TestRewriteMarkdownHrefs(t *testing.T) {
+	dir := "/docs/notes"
+	src := dir + "/index.md"
+	origin := "http://127.0.0.1:18742"
+	in := `<p><a href="other.md">o</a> <a href="./sub/x.markdown#frag">x</a> ` +
+		`<a href="https://example.com/a.md">ext</a> <a href="img.png">img</a></p>`
+	out := rewriteMarkdownHrefs(in, src, origin)
+	if !strings.Contains(out, origin+"/docs/notes/other.md") {
+		t.Errorf("other.md: %s", out)
+	}
+	if !strings.Contains(out, origin+"/docs/notes/sub/x.markdown#frag") {
+		t.Errorf("x.markdown#frag: %s", out)
+	}
+	if !strings.Contains(out, `href="https://example.com/a.md"`) {
+		t.Errorf("external md must stay: %s", out)
+	}
+	if !strings.Contains(out, `href="img.png"`) {
+		t.Errorf("non-md must stay: %s", out)
+	}
+}
+
 func TestCacheNameStable(t *testing.T) {
-	mt := time.Unix(1_700_000_000, 123)
-	a := cacheName("/abs/path.md", mt, ".html")
-	b := cacheName("/abs/path.md", mt, ".html")
+	a := cacheName("/abs/path.md", ".html")
+	b := cacheName("/abs/path.md", ".html")
 	if a != b {
 		t.Errorf("unstable cache name: %s vs %s", a, b)
 	}
-	c := cacheName("/other.md", mt, ".html")
+	if strings.Contains(a, "-") {
+		t.Errorf("cache name should not include mtime suffix, got %s", a)
+	}
+	c := cacheName("/other.md", ".html")
 	if a == c {
 		t.Error("different paths produced same cache name")
+	}
+	if cacheName("/abs/path.md", ".pdf") == a {
+		t.Error("html and pdf must not share a cache name")
+	}
+}
+
+func TestCacheNameIndependentOfMtime(t *testing.T) {
+	a := cacheName("/docs/note.md", ".html")
+	b := cacheName("/docs/note.md", ".html")
+	if a != b {
+		t.Fatalf("%s vs %s", a, b)
 	}
 }
 
@@ -145,7 +268,6 @@ func TestPruneCache_AgeExpiry(t *testing.T) {
 		}
 	}
 	now := time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC)
-	// old: 8 days ago; fresh + keep: now
 	_ = os.Chtimes(old, now.Add(-8*24*time.Hour), now.Add(-8*24*time.Hour))
 	_ = os.Chtimes(fresh, now, now)
 	_ = os.Chtimes(keep, now, now)
@@ -167,8 +289,6 @@ func TestPruneCache_AgeExpiry(t *testing.T) {
 func TestPruneCache_SizeCapDropsOldest(t *testing.T) {
 	dir := t.TempDir()
 	now := time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC)
-	// Three 10-byte files; cap at 25 bytes → one oldest must go.
-	// Names encode order for debugging.
 	files := []struct {
 		name string
 		age  time.Duration
@@ -203,7 +323,6 @@ func TestPruneCache_SizeCapDropsOldest(t *testing.T) {
 func TestPruneCache_NeverDeletesKeepEvenIfOverCap(t *testing.T) {
 	dir := t.TempDir()
 	keep := filepath.Join(dir, "keep.html")
-	// Single 100-byte file with 10-byte cap — still kept.
 	if err := os.WriteFile(keep, make([]byte, 100), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -213,83 +332,5 @@ func TestPruneCache_NeverDeletesKeepEvenIfOverCap(t *testing.T) {
 	}
 	if _, err := os.Stat(keep); err != nil {
 		t.Fatalf("keep must survive even when alone over cap: %v", err)
-	}
-}
-
-func TestView_ExpiredCacheIsMiss(t *testing.T) {
-	dir := t.TempDir()
-	cache := filepath.Join(dir, "cache")
-	md := filepath.Join(dir, "doc.md")
-	if err := os.WriteFile(md, []byte("# body once\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	// Fixed clock for deterministic age.
-	base := time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)
-	clock := base
-	opts := &ViewOptions{
-		Format:   FormatHTML,
-		CacheDir: cache,
-		MaxAge:   7 * 24 * time.Hour,
-		MaxBytes: -1,
-		Now:      func() time.Time { return clock },
-		Open:     func(string) error { return nil },
-	}
-	ctx := context.Background()
-	p1, err := View(ctx, md, opts)
-	if err != nil {
-		t.Fatal(err)
-	}
-	// Age the cache file past MaxAge without changing source mtime.
-	old := clock.Add(-8 * 24 * time.Hour)
-	if err := os.Chtimes(p1, old, old); err != nil {
-		t.Fatal(err)
-	}
-	// Advance wall clock so age check fires; re-render should rewrite p1.
-	clock = base.Add(time.Hour)
-	infoBefore, _ := os.Stat(p1)
-	p2, err := View(ctx, md, opts)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if p1 != p2 {
-		// Same source mtime → same cache path; content re-written in place.
-		t.Errorf("path changed unexpectedly: %s → %s", p1, p2)
-	}
-	infoAfter, _ := os.Stat(p2)
-	if !infoAfter.ModTime().After(infoBefore.ModTime()) {
-		t.Error("expired entry should have been re-rendered (mtime advanced)")
-	}
-}
-
-func TestView_SizeCapDuringView(t *testing.T) {
-	dir := t.TempDir()
-	cache := filepath.Join(dir, "cache")
-	if err := os.MkdirAll(cache, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	// Pre-seed a large old file that must be evicted.
-	junk := filepath.Join(cache, "deadbeef-oldjunk.html")
-	if err := os.WriteFile(junk, make([]byte, 200), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	old := time.Now().Add(-time.Hour)
-	_ = os.Chtimes(junk, old, old)
-
-	md := filepath.Join(dir, "doc.md")
-	if err := os.WriteFile(md, []byte("# tiny\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	_, err := View(context.Background(), md, &ViewOptions{
-		Format:   FormatHTML,
-		CacheDir: cache,
-		MaxBytes: 150, // junk alone is 200 → must go after new render
-		MaxAge:   -1,
-		Open:     func(string) error { return nil },
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(junk); !os.IsNotExist(err) {
-		t.Error("size cap should have removed the large old entry during View")
 	}
 }

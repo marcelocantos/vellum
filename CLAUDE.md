@@ -33,7 +33,7 @@ Markdown → PDF path still: source preprocessors → goldmark → HTML template
 | `mcp/` | MCP server (single `convert` tool) |
 | `embed/` | Embedded assets (CSS, HTML templates) |
 | `internal/testdeps/` | Test gate for external converters (`VELLUM_REQUIRE_DEPS`) |
-| `viewer/` | Cached render + open; path-stable cache filename; macOS default .md handler |
+| `viewer/` | Localhost view server (HTML) + cached PDF open; macOS default .md handler |
 
 ### External dependencies
 
@@ -60,6 +60,6 @@ implying a platform vellum does not support.
 
 Merged to master.
 
-## TODOs
+## Followable work
 
-`docs/TODO.md`
+Bullseye targets in `bullseye.yaml` (via the bullseye MCP tools) are the sole record of followable work.

@@ -7,10 +7,13 @@ package clipboard
 
 import (
 	"bytes"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 )
 
@@ -37,6 +40,7 @@ const (
 // exactly this class and fails on any other skip.
 func requirePasteboard(t *testing.T) {
 	t.Helper()
+	lockPasteboard(t)
 	// A probe is not enough: on a hosted runner the pasteboard is
 	// intermittently functional — a probe write can succeed and the very
 	// next write still fail with setData, while reads return whatever a
@@ -48,12 +52,72 @@ func requirePasteboard(t *testing.T) {
 			"cv gate runs these for real on a developer Mac")
 	}
 	probe := "vellum-pasteboard-probe-" + strconv.Itoa(os.Getpid())
-	if err := Write(Payload{HTML: "<p>" + probe + "</p>"}); err != nil {
+	if _, err := Write(Payload{HTML: "<p>" + probe + "</p>"}); err != nil {
 		t.Skipf("pasteboard unavailable (headless session): %v", err)
 	}
 	if !strings.Contains(string(readPasteboardData(utiHTML)), probe) {
 		t.Skip("pasteboard unavailable (headless session): write did not round-trip")
 	}
+}
+
+// pasteboardLockPath names the lock that serialises every process
+// running these tests. The general pasteboard belongs to the login
+// session, so the lock is scoped by uid and lives outside any per-run
+// temporary directory — two test binaries must agree on the path
+// without inheriting an environment from each other.
+var pasteboardLockPath = fmt.Sprintf("/tmp/vellum-pasteboard-test-%d.lock", os.Getuid())
+
+// lockPasteboard takes an exclusive machine-wide lock and holds it for
+// the rest of the calling test.
+//
+// NSPasteboard has no compare-and-swap. declareTypes:owner: transfers
+// ownership of the general pasteboard, and setData:forType: from a
+// process that has since lost ownership returns NO — reported here as
+// "clipboard: NSPasteboard setData failed". So two processes writing at
+// once is not a race one of them usually wins; it is a race one of them
+// necessarily loses, whatever the timing.
+//
+// `cv gate` runs exactly that: `test` and `skip-census` each run
+// `go test ./...`, and cv builds prerequisites in parallel (-j auto), so
+// two copies of this package drive the one pasteboard concurrently.
+// That is the whole of the 2026-08-15 gate failure, reproduced on the
+// first attempt by running two copies of this test binary side by side:
+// the sandbox child's write lost its declared types and exited 1, and
+// requirePasteboard's own probe turned the same loss into a skip.
+//
+// The lock is what makes exclusivity structural rather than lucky. It
+// is held across the sandbox child's run too: the child re-executes this
+// binary in TestMain and never reaches a test, so the parent's hold
+// covers it and there is no second acquisition to deadlock on.
+//
+// It cannot defend against a human pressing ⌘C mid-gate — nothing can,
+// the pasteboard is genuinely shared — but that is a person at the
+// keyboard, not a scheduling accident the gate produces on its own.
+func lockPasteboard(t *testing.T) {
+	t.Helper()
+	f, err := os.OpenFile(pasteboardLockPath, os.O_RDWR|os.O_CREATE, 0o666)
+	if err != nil {
+		t.Fatalf("opening pasteboard lock %s: %v", pasteboardLockPath, err)
+	}
+	for {
+		err = syscall.Flock(int(f.Fd()), syscall.LOCK_EX)
+		// The Go runtime preempts goroutines with signals, so a blocking
+		// flock returns EINTR on a schedule of its own. Reissuing the
+		// same wait is how the call is spelled correctly; it is not a
+		// retry of a failed lock.
+		if errors.Is(err, syscall.EINTR) {
+			continue
+		}
+		break
+	}
+	if err != nil {
+		f.Close()
+		t.Fatalf("locking %s: %v", pasteboardLockPath, err)
+	}
+	t.Cleanup(func() {
+		syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+		f.Close()
+	})
 }
 
 // TestWriteRoundTrip exercises the macOS NSPasteboard backend end-to-end:
@@ -71,7 +135,7 @@ func TestWriteRoundTrip(t *testing.T) {
 	const marker = "vellum-clipboard-roundtrip-marker"
 	html := "<html><body><p><b>" + marker + "</b></p></body></html>"
 
-	if err := Write(Payload{HTML: html}); err != nil {
+	if _, err := Write(Payload{HTML: html}); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
 
@@ -110,7 +174,7 @@ func TestWriteFragmentsHTMLAndStripsLineSeparators(t *testing.T) {
 	const marker = "vellum-fragment-marker"
 	full := `<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{color:red}</style></head><body><p>` + marker + `</p><p>second paragraph</p></body></html>`
 
-	if err := Write(Payload{HTML: full}); err != nil {
+	if _, err := Write(Payload{HTML: full}); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
 
@@ -135,7 +199,7 @@ func TestWriteFragmentsHTMLAndStripsLineSeparators(t *testing.T) {
 }
 
 func TestWriteEmptyHTMLRejected(t *testing.T) {
-	if err := Write(Payload{}); err == nil {
+	if _, err := Write(Payload{}); err == nil {
 		t.Fatal("expected error for empty payload, got nil")
 	}
 }
@@ -163,11 +227,4 @@ func TestFileRefRoundTrip(t *testing.T) {
 			t.Fatalf("path: got %q want %q", got[0], path)
 		}
 	}
-}
-
-func firstN(b []byte, n int) []byte {
-	if len(b) < n {
-		return b
-	}
-	return b[:n]
 }
