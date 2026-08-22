@@ -14,7 +14,7 @@ Pre-1.0 and under active development. Interfaces, flags, and output may change b
 
 ## Requirements
 
-vellum shells out to external tools at conversion time. All must be on `PATH`:
+vellum shells out to external tools at conversion time. Each must be on `PATH` when that path is used:
 
 - **One of two renderer backends:**
   - **[WeasyPrint](https://www.courtbouillon.org/weasyprint)** 60 or later — **default**. BSD-3 licensed, open-source, no commercial entanglement. Install with `brew install weasyprint` (or `pipx install weasyprint`).
@@ -260,8 +260,8 @@ want to.
 Chromium. Install it with `brew install`, or drop the binary on a box.
 
 **Native on the desktop too.** `vellum install-viewer` makes rendered
-Markdown the default double-click behaviour on macOS, with a content-
-addressed render cache.
+Markdown the default double-click behaviour on macOS, with a path-stable
+render cache that reloads in the same browser tab.
 
 ## How vellum compares
 

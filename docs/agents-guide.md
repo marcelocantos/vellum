@@ -30,7 +30,9 @@ must succeed before vellum is usable — do not stop after `brew install`.**
    ```
 
 2. **Install the runtime dependencies.** vellum shells out to external
-   tools. All must be on `PATH` before the first conversion:
+   tools. MCP startup requires the PDF backend, `node`, and `mmdc` on
+   `PATH` even for non-PDF calls. pandoc and poppler are needed only
+   for import:
 
    ```sh
    # Renderer: WeasyPrint (default, BSD-3). Alternatively/additionally
@@ -45,6 +47,8 @@ must succeed before vellum is usable — do not stop after `brew install`.**
    # Pandoc for the inverse direction (rich text → Markdown via
    # rich-text import / clipboard → Markdown via convert).
    brew install pandoc
+   # Poppler for PDF import (pdftoppm page images + pdftotext).
+   brew install poppler
    ```
 
    `mmdc` requires a specific Chromium version on first run. If it
@@ -86,8 +90,8 @@ must succeed before vellum is usable — do not stop after `brew install`.**
    The Homebrew formula installs a thin shell wrapper as `vellum` that
    prepends the canonical tool dirs (`#{HOMEBREW_PREFIX}/bin`,
    `/usr/local/bin`, `$HOME/.cargo/bin`, etc.) before exec'ing the real
-   binary, so `node`, `mmdc`, and `prince` resolve regardless of how
-   the MCP client's environment was set up.
+   binary, so `weasyprint`, `node`, `mmdc`, and `prince` resolve
+   regardless of how the MCP client's environment was set up.
 
 4. **Restart the agent session.** MCP client config changes are only
    picked up on session start. The current session will not see vellum
@@ -98,9 +102,11 @@ must succeed before vellum is usable — do not stop after `brew install`.**
 
    - Check the binary: `vellum --version` should print the installed
      version.
-   - Check the runtime deps: `vellum --help-agent` prints this guide;
-     the first real conversion will fail fast with a readable error if
-     any dependency is missing.
+   - Check the runtime deps: `vellum --help-agent` prints this guide.
+     MCP startup (`vellum --mcp`) checks the selected PDF backend plus
+     `node` and `mmdc`. CLI PDF conversion fails at exec if the backend
+     is missing. pandoc and poppler are checked only when an import
+     path needs them.
    - Call a tool: convert a trivial one-line Markdown string with
      `convert` (`from.media=content`, `to.media=content`) or write a
      one-line `.md` file to PDF (`from.media=file`, `to.media=file`)
@@ -266,7 +272,9 @@ Response shape:
   "to_format": "rich",
   "paths": [],
   "content": "",
-  "errors": []
+  "errors": [],
+  "media_dir": "",
+  "assets": []
 }
 ```
 
@@ -275,6 +283,9 @@ also in the tool's text message.
 
 Rich-text import paths require `pandoc` on `PATH`. Clipboard writes
 commit the pasteboard before return — no race window for paste.
+macOS `Write` prefers AppKit (`NSAttributedString`); if that importer
+is unavailable it falls back to pandoc HTML→RTF (structure preserved,
+CSS dropped) and the fallback reason is a soft error in `errors`.
 
 **Migration** from older tool names (removed):
 
@@ -419,10 +430,13 @@ diagram does not fit; most diagrams render correctly at 1.0.
 
 ## Security notes
 
-- vellum invokes three external binaries: the renderer (`weasyprint`
-  by default, optionally `prince`), `node` (KaTeX math rendering), and
-  `mmdc` (Mermaid diagrams). All rendering happens locally; no data is
-  sent to external services.
+- vellum invokes local binaries: the renderer (`weasyprint` by
+  default, optionally `prince`), `node` (KaTeX math HTML), `mmdc`
+  (Mermaid diagrams), and lazily `pandoc` (rich-text import /
+  clipboard fallback) and `pdftoppm`/`pdftotext` (PDF import). Math
+  and Mermaid rendering run locally. Assembled HTML still links KaTeX
+  CSS from jsDelivr (`cdn.jsdelivr.net`); WeasyPrint or a browser may
+  fetch that stylesheet.
 - Neither renderer executes JavaScript from the input HTML during
   typesetting (Prince's JS engine is off by default; WeasyPrint has none).
 - KaTeX runs in `throwOnError: false` mode, so malformed math
@@ -440,11 +454,12 @@ diagnostic.
 
 Common failure modes:
 
-- A required dependency is missing. vellum checks the selected PDF
-  backend (`weasyprint` by default, or `prince`), plus `node` and
-  `mmdc` when those paths are needed; pandoc is checked lazily only
-  on rich-text import. Missing tools are listed with install
-  instructions.
+- A required dependency is missing. MCP startup checks the selected
+  PDF backend (`weasyprint` by default, or `prince`) plus `node` and
+  `mmdc`. CLI PDF conversion does not preflight those binaries — a
+  missing renderer fails at exec. pandoc is checked lazily only on
+  rich-text import; poppler only on PDF import. Missing tools are
+  listed with install instructions when a check runs.
 - The `katex` node package is not installed globally. Fix with
   `npm install -g katex`.
 - A Mermaid diagram fails to render (invalid syntax, missing
