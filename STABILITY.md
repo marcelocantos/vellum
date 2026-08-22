@@ -21,9 +21,9 @@ change between minor releases — though in practice we aim to minimise churn.
 
 ## Interaction surface catalogue
 
-Snapshot as of **v0.11.0**. Annotations: **stable** (unlikely to change),
-**needs review** (functional but may be refined), **fluid** (actively
-evolving).
+Snapshot as of **v0.13.0** (`const version` in `cmd/vellum`). Annotations:
+**stable** (unlikely to change), **needs review** (functional but may be
+refined), **fluid** (actively evolving).
 
 ### Go package API
 
@@ -31,25 +31,27 @@ Package paths are under `github.com/marcelocantos/vellum/…`.
 
 **`convert`** — the Markdown → PDF pipeline.
 
-- `func Convert(ctx context.Context, inputPath, outputPath string, opts *Options) error` — **stable**
-- `func RenderFile(ctx context.Context, inputPath string, opts *Options) (string, error)` — **needs review** (added in v0.2.0 for clipboard / rich delivery; returns the post-pipeline HTML)
-- `func Render(ctx context.Context, src []byte, opts *Options) (string, error)` — **needs review** (same; may return `*SoftError` after still producing HTML when Mermaid soft-fails — 🎯T10 / v0.9.0)
-- `type SoftError struct { Messages []string }` — **needs review** (added in v0.9.0; non-fatal diagnostics; document still written; CLI non-zero exit / MCP `errors`)
-- `type Options struct { CSS string; HeadExtra string; Style *Style; Backend string }` — **needs review** (Style + Backend added in v0.4.0; CSS + HeadExtra preserved as escape hatches)
+- `func Convert(ctx context.Context, inputPath, outputPath string, opts *Options) error` — **stable** (viewer PDF path still calls this; CLI/MCP PDF go through `Run`)
+- `func RenderFile(ctx context.Context, inputPath string, opts *Options) (html string, soft []string, err error)` — **needs review** (second return is non-fatal Mermaid diagnostics; not `*SoftError`)
+- `func Render(ctx context.Context, src []byte, opts *Options) (html string, soft []string, err error)` — **needs review** (same)
+- `type SoftError struct { Messages []string }` — **needs review** (added in v0.9.0; `Convert` / `Run` wrap `soft` into this after still producing output; CLI non-zero exit / MCP `errors`)
+- `type Options struct { CSS string; HeadExtra string; Style *Style; Backend string; MermaidFormat string }` — **needs review** (`MermaidFormat` is `MermaidSVG` default or `MermaidPNG`; PDF sinks force PNG)
+- `const MermaidSVG, MermaidPNG` — **needs review**
 - `type Style struct { ... }` — **needs review** (13-field customisation surface added in v0.4.0; field set likely to grow before 1.0)
 - `type Backend interface` — **needs review** (added in v0.4.0; the surface is small but extension shape may evolve)
 - `func ResolveBackend(name string) (Backend, error)` — **needs review** (same)
 - `const BackendWeasyPrint, BackendPrince, DefaultBackend` — **needs review** (default name may change pre-1.0)
 - `type Dep struct { Name, Purpose, Install string }` — **stable**
 - `func RequiredDeps(backendName string) []Dep` — **stable** (signature changed in v0.4.0 to take backend name)
-- `func CheckDeps(backendName string) error` — **stable** (signature changed in v0.4.0 to take backend name)
+- `func CheckDeps(backendName string) error` — **stable** (signature changed in v0.4.0 to take backend name; MCP startup and viewer PDF call it; CLI `convert` / `Run` do not)
 
 **`convert` (router)** — media-orthogonal `Run` (🎯T14).
 
 - `func Run(ctx context.Context, req *Request) (*Result, error)` — **needs review**
 - `type Media`, `Endpoint`, `Request`, `Result`, `FilePair` — **needs review**
+- `Result.MediaDir`, `Result.Assets` — **needs review** (extracted import media; also on MCP `ConvertOutput`)
 - `const MediaFile, MediaContent, MediaClipboard, MediaFileReference` — **needs review**
-- `const FormatMarkdown, FormatHTML, FormatRTF, FormatPDF, FormatRich` — **needs review**
+- `const FormatMarkdown, FormatHTML, FormatRTF, FormatPDF, FormatRich` — **needs review** (`FormatRTF` is inferred from `.rtf`; file sinks currently refuse it — 🎯T25)
 
 **`mcp`** — the stdio MCP server.
 
@@ -57,17 +59,22 @@ Package paths are under `github.com/marcelocantos/vellum/…`.
 - **Single tool** `convert` with `from`/`to` media endpoints (+ optional `files` sugar) — **needs review** (replaced the four-tool surface: old `convert_to_clipboard`, `convert_from_clipboard`, `import` removed)
 - `type Endpoint`, `FilePair`, `ConvertInput`, `ConvertOutput` — **needs review**
 
-**`clipboard`** — system-clipboard read/write (added in v0.2.0; reads added in v0.5.0; file refs in 🎯T14).
+**`clipboard`** — system-clipboard read/write (added in v0.2.0; reads added in v0.5.0; file refs in 🎯T14). macOS `Write` tries AppKit `NSAttributedString` first, then falls back to pandoc HTML→RTF (🎯T23).
 
 - `type Payload struct { HTML string }` — **needs review** (single-field today; RTF + plain text are derived; may grow explicit fields)
-- `func Write(p Payload) error` — **needs review** (macOS implementation only; non-macOS returns `ErrUnsupported`)
+- `type Route string` — **needs review** (`RouteAppKit` preferred; `RoutePandoc` fallback drops CSS, keeps structure)
+- `const RouteAppKit, RoutePandoc` — **needs review**
+- `type WriteReport struct { Route Route; Fallback string }` — **needs review** (`Fallback` is empty on the AppKit path; a non-empty value is a degraded paste that `convert.Run` surfaces as a soft error)
+- `func Write(p Payload) (WriteReport, error)` — **needs review** (macOS implementation only; non-macOS returns `ErrUnsupported`)
 - `func ReadRTF() ([]byte, error)` — **needs review** (added in v0.5.0; macOS only)
 - `func ReadHTML() ([]byte, error)` — **needs review** (same)
 - `func ReadRichText() (data []byte, format string, err error)` — **needs review** (RTF preferred, HTML fallback; format is "rtf"/"html"/"")
+- `func ReadPDF() ([]byte, error)` — **needs review** (public.pdf / com.adobe.pdf; PowerPoint slide copies)
+- `func ReadImportable() (data []byte, format string, err error)` — **needs review** (RTF, then HTML, then PDF)
 - `type FileRefPayload struct { Paths []string }` — **needs review** (Finder-style file references)
 - `func WriteFileRefs(p FileRefPayload) error` — **needs review** (macOS; pasteboard-owned NSFilenamesPboardType so data survives process exit)
 - `func ReadFileRefs() ([]string, error)` — **needs review**
-- `const FormatRTF, FormatHTML` — **needs review**
+- `const FormatRTF, FormatHTML, FormatPDF` — **needs review**
 - `var ErrUnsupported error` — **stable**
 
 **`embed`** — compile-time assets.
@@ -85,13 +92,33 @@ Package paths are under `github.com/marcelocantos/vellum/…`.
 - `func Path() (string, error)` — **needs review** (XDG-aware path resolution)
 - `func Load() (*Config, error)` — **needs review** (missing file returns empty Config, not error)
 
-**`importer`** — rich-text → Markdown via pandoc (added in v0.5.0).
+**`importer`** — rich-text → Markdown via pandoc; PDF via Poppler (added in v0.5.0).
 
-- `func ImportFile(ctx context.Context, inputPath, format string) (string, error)` — **needs review**
-- `func ImportBytes(ctx context.Context, data []byte, format string) (string, error)` — **needs review**
+- `func ImportFile(ctx context.Context, inputPath string, opts *Options) (Result, error)` — **needs review**
+- `func ImportBytes(ctx context.Context, data []byte, opts *Options) (Result, error)` — **needs review** (format required on bytes)
+- `func ImportFileMarkdown(ctx context.Context, inputPath, format string) (string, error)` — **needs review** (legacy Markdown-only wrapper)
+- `func ImportBytesMarkdown(ctx context.Context, data []byte, format string) (string, error)` — **needs review** (same)
+- `type Options struct { Format string; MediaDir string }` — **needs review**
+- `type Result struct { Markdown string; MediaDir string; Assets []string }` — **needs review**
 - `func CheckDep() error` — **needs review** (lazy pandoc dependency check)
+- `var PandocDep struct { Name, Purpose, Install string }` — **needs review**
 
-**`viewer`** — cached render + open; macOS default Markdown handler (added in v0.6.0).
+**`adf`** — Markdown → Atlassian Document Format (library only; not a `convert.Run` sink or MCP `to.format`). Isolated goldmark+GFM parser; no network, no mmdc (🎯T26).
+
+- `func Convert(markdown string, args *ConvertArgs) (*Document, error)` — **needs review**
+- `func ConvertJSON(markdown string, args *ConvertArgs) ([]byte, error)` — **needs review**
+- `type Document`, `Node`, `Mark`, `ConvertArgs` — **needs review**
+- `type ImagePolicy` / `const ImagePolicyExternal, ImagePolicyLink, ImagePolicyFail` — **needs review** (default external; no silent relative→link)
+- Math residue: `$…$` / `$$…$$` rewritten to `latex` codeBlock (declared in `adf/doc.go`). Footnotes and definition lists are not specially mapped.
+
+**`internal/pandoc`** — HTML → RTF/plain export helper. Not a public import path. Import (rich text → Markdown) stays in `importer/`. Used by the clipboard pandoc fallback.
+
+- `const Binary = "pandoc"` — **needs review**
+- `func Available() error` — **needs review**
+- `func HTMLToRTF(html, resourcePath string) ([]byte, error)` — **needs review** (`--standalone`; CSS is ignored)
+- `func HTMLToPlain(html string) ([]byte, error)` — **needs review**
+
+**`viewer`** — cached render + open; macOS default Markdown handler (added in v0.6.0). Cache filename is `sha256(absPath)[:8]+ext` (not mtime). A `.stamp` sidecar records source mtime+size so View re-renders in place when Markdown changes (🎯T28). HTML injects `Cache-Control: no-store`.
 
 - `func View(ctx context.Context, inputPath string, opts *ViewOptions) (string, error)` — **needs review**
 - `type ViewOptions struct { Format Format; Style *convert.Style; Backend string; Open func(string) error; CacheDir string; MaxBytes int64; MaxAge time.Duration; Now func() time.Time }` — **needs review**
@@ -100,7 +127,6 @@ Package paths are under `github.com/marcelocantos/vellum/…`.
 - `func InstallViewer(opts *InstallOptions) (appPath string, err error)` — **needs review** (macOS only; v0.7.0 compiles a Cocoa document-handler binary at install time — shell-script CFBundleExecutable cannot receive Launch Services open-document Apple Events)
 - `func UninstallViewer(opts *InstallOptions) error` — **needs review** (macOS only)
 - `const BundleID, AppName` — **needs review**
-- `var PandocDep struct { Name, Purpose, Install string }` — **needs review**
 
 ### CLI surface
 
@@ -194,9 +220,13 @@ Removed: `convert_to_clipboard`, `convert_from_clipboard`, `import`.
     "to_format": "…",
     "paths": ["…"],
     "content": "…",
-    "errors": ["…"]
+    "errors": ["…"],
+    "media_dir": "…",
+    "assets": ["…"]
   }
   ```
+
+  `media_dir` / `assets` are set on rich-text and PDF import. **needs review**
 
 - **Text content**: Markdown/HTML body when `to.media=content`; otherwise a short summary. **needs review**.
 - **`isError`**: set to `true` when the conversion fails (or when a batch has no successful paths and only errors). **needs review**.
@@ -220,10 +250,11 @@ not listed here is either GFM (via goldmark's GFM extension) or not supported.
 
 ### Environment variables
 
-- `VELLUM_DEBUG_HTML=<path>` — if set, vellum writes the post-preprocessing
-  HTML to this path before invoking Prince. Intended for development only.
-  **needs review** (may be renamed with a `VELLUM_DEBUG_*` namespace if more
-  debug hooks are added).
+- `VELLUM_DEBUG_HTML=<path>` — if set, vellum writes the assembled HTML to
+  this path before invoking the PDF backend (WeasyPrint default, or Prince).
+  Intended for development only. Does not document the KaTeX CSS CDN link
+  injected into that HTML. **needs review** (may be renamed with a
+  `VELLUM_DEBUG_*` namespace if more debug hooks are added).
 
 ### Embedded assets
 
@@ -292,8 +323,9 @@ Features and changes explicitly deferred past 1.0.
 - **Bundled Chromium.** Distributing a Chromium binary alongside
   vellum would solve the `mmdc` setup pain but adds ~200 MB to the
   release and introduces a security-update treadmill. Stays external.
-- **Alternative output formats.** Markdown → HTML and Markdown → EPUB
-  are plausible but not in scope. 1.0 is Markdown → PDF.
+- **Further writers.** Markdown, HTML, PDF, and clipboard rich already
+  ship. File RTF (🎯T25), EPUB, and ADF-as-a-`Run` sink (🎯T27) are not
+  1.0 commitments.
 - **Additional renderers.** vellum now supports WeasyPrint (default) and
   Prince (opt-in). No plans to add wkhtmltopdf (deprecated/abandoned) or
   headless Chrome (Chromium footprint is prohibitive for a CLI tool).
