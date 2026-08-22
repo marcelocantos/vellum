@@ -48,6 +48,9 @@ func TestView_HTMLCacheHit(t *testing.T) {
 	if !strings.Contains(string(body), `<base href="`) {
 		t.Errorf("rendered HTML missing <base href> for relative assets")
 	}
+	if !strings.Contains(string(body), `Cache-Control`) {
+		t.Errorf("rendered HTML missing Cache-Control so file:// reload is not sticky")
+	}
 
 	// Second view must reuse the same path (cache hit). Content is not
 	// re-rendered; mtime may advance (LRU touch for size eviction).
@@ -102,12 +105,12 @@ func TestView_CacheInvalidatesOnMtime(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second View: %v", err)
 	}
-	if p1 == p2 {
-		t.Errorf("expected new cache path after mtime change; both %s", p1)
+	if p1 != p2 {
+		t.Errorf("expected stable cache path after mtime change: %s vs %s", p1, p2)
 	}
 	body, _ := os.ReadFile(p2)
 	if !strings.Contains(string(body), "v2 updated") {
-		t.Errorf("new cache missing updated content:\n%s", body)
+		t.Errorf("in-place cache missing updated content:\n%s", body)
 	}
 }
 
@@ -122,15 +125,20 @@ func TestView_MissingFile(t *testing.T) {
 }
 
 func TestCacheNameStable(t *testing.T) {
-	mt := time.Unix(1_700_000_000, 123)
-	a := cacheName("/abs/path.md", mt, ".html")
-	b := cacheName("/abs/path.md", mt, ".html")
+	a := cacheName("/abs/path.md", ".html")
+	b := cacheName("/abs/path.md", ".html")
 	if a != b {
 		t.Errorf("unstable cache name: %s vs %s", a, b)
 	}
-	c := cacheName("/other.md", mt, ".html")
+	if strings.Contains(a, "-") {
+		t.Errorf("cache name should not include mtime suffix, got %s", a)
+	}
+	c := cacheName("/other.md", ".html")
 	if a == c {
 		t.Error("different paths produced same cache name")
+	}
+	if cacheName("/abs/path.md", ".pdf") == a {
+		t.Error("html and pdf must not share a cache name")
 	}
 }
 
@@ -258,6 +266,16 @@ func TestView_ExpiredCacheIsMiss(t *testing.T) {
 	infoAfter, _ := os.Stat(p2)
 	if !infoAfter.ModTime().After(infoBefore.ModTime()) {
 		t.Error("expired entry should have been re-rendered (mtime advanced)")
+	}
+}
+
+func TestCacheNameIndependentOfMtime(t *testing.T) {
+	// Regression: mtime in the filename made browser tabs point at a dead file
+	// after Markdown was edited. Path+ext only.
+	a := cacheName("/docs/note.md", ".html")
+	b := cacheName("/docs/note.md", ".html")
+	if a != b {
+		t.Fatalf("%s vs %s", a, b)
 	}
 }
 

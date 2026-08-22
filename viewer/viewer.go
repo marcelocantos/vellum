@@ -67,9 +67,12 @@ type ViewOptions struct {
 	Now func() time.Time
 }
 
-// View renders inputPath to a cache location (keyed by absolute path +
-// mtime + format) and opens the result. Unchanged sources hit the cache
-// and skip re-render. The cache never writes next to the source file.
+// View renders inputPath to a cache location keyed only by absolute source
+// path and format (not mtime). The rendered file is stable so a browser
+// tab can be reloaded after Markdown changes; Cmd-click / `vellum view`
+// still re-renders in place when the source is newer than the stamp.
+// Unchanged sources hit the cache and skip re-render. The cache never
+// writes next to the source file.
 //
 // After the entry is ready, the cache is pruned to CacheMaxAge and
 // CacheMaxBytes (see package constants; overridable via ViewOptions).
@@ -101,7 +104,7 @@ func View(ctx context.Context, inputPath string, opts *ViewOptions) (renderedPat
 	if opts.Format == FormatPDF {
 		ext = ".pdf"
 	}
-	cachePath := filepath.Join(cacheRoot, cacheName(absInput, info.ModTime(), ext))
+	cachePath := filepath.Join(cacheRoot, cacheName(absInput, ext))
 	now := time.Now
 	if opts.Now != nil {
 		now = opts.Now
@@ -111,8 +114,11 @@ func View(ctx context.Context, inputPath string, opts *ViewOptions) (renderedPat
 	hit := false
 	if st, err := os.Stat(cachePath); err == nil && !st.IsDir() {
 		// Age-expired entries are treated as misses so content re-renders
-		// and the stale file is eligible for prune.
-		if maxAge < 0 || now().Sub(st.ModTime()) <= maxAge {
+		// and the stale file is eligible for prune. Source mtime/size is
+		// recorded in a sidecar so LRU touches on the HTML do not fake a hit
+		// after the Markdown changed, and so regeneration stays in-place.
+		ageOK := maxAge < 0 || now().Sub(st.ModTime()) <= maxAge
+		if ageOK && stampMatches(cachePath, info) {
 			hit = true
 			// Touch mtime so LRU-by-mtime size eviction prefers active entries.
 			_ = os.Chtimes(cachePath, now(), now())
@@ -179,12 +185,22 @@ func pruneCache(dir, keepPath string, maxBytes int64, maxAge time.Duration, now 
 			kept = append(kept, e)
 			continue
 		}
-		if strings.HasSuffix(e.path, ".tmp") {
+		if strings.HasSuffix(e.path, ".tmp") || strings.HasSuffix(e.path, ".stamp") {
+			// Stamps are companions of the rendered file; drop orphans here
+			// and when the HTML/PDF is deleted below.
+			if strings.HasSuffix(e.path, ".stamp") {
+				rendered := strings.TrimSuffix(e.path, ".stamp")
+				if _, err := os.Stat(rendered); err == nil {
+					kept = append(kept, e)
+					continue
+				}
+			}
 			_ = os.Remove(e.path)
 			continue
 		}
 		if maxAge >= 0 && now.Sub(e.modTime) > maxAge {
 			_ = os.Remove(e.path)
+			_ = os.Remove(stampPath(e.path))
 			continue
 		}
 		kept = append(kept, e)
@@ -215,6 +231,7 @@ func pruneCache(dir, keepPath string, maxBytes int64, maxAge time.Duration, now 
 		if err := os.Remove(e.path); err != nil {
 			continue
 		}
+		_ = os.Remove(stampPath(e.path))
 		total -= e.size
 	}
 	return nil
@@ -251,12 +268,20 @@ func renderToCache(ctx context.Context, absInput, cachePath string, opts *ViewOp
 		if err := convert.CheckDeps(opts.Backend); err != nil {
 			return err
 		}
-		return convert.Convert(ctx, absInput, cachePath, cOpts)
+		if err := convert.Convert(ctx, absInput, cachePath, cOpts); err != nil {
+			return err
+		}
+		return writeStamp(cachePath, absInput)
 	default:
 		// HTML: inject <base> so relative images resolve against the
 		// source Markdown's directory even though the HTML lives in cache.
 		base := url.URL{Scheme: "file", Path: filepath.Dir(absInput) + string(filepath.Separator)}
-		cOpts.HeadExtra = fmt.Sprintf(`<base href="%s">`, base.String())
+		cOpts.HeadExtra = fmt.Sprintf(
+			`<meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate">`+"\n"+
+				`<meta http-equiv="Pragma" content="no-cache">`+"\n"+
+				`<base href="%s">`,
+			base.String(),
+		)
 		html, soft, err := convert.RenderFile(ctx, absInput, cOpts)
 		if err != nil {
 			return err
@@ -269,6 +294,9 @@ func renderToCache(ctx context.Context, absInput, cachePath string, opts *ViewOp
 			_ = os.Remove(tmp)
 			return fmt.Errorf("finalising cache: %w", err)
 		}
+		if err := writeStamp(cachePath, absInput); err != nil {
+			return err
+		}
 		// Soft Mermaid failures already logged to stderr; view still opens.
 		if len(soft) > 0 {
 			return &convert.SoftError{Messages: soft}
@@ -277,9 +305,42 @@ func renderToCache(ctx context.Context, absInput, cachePath string, opts *ViewOp
 	}
 }
 
-func cacheName(absPath string, mtime time.Time, ext string) string {
+func cacheName(absPath string, ext string) string {
 	sum := sha256.Sum256([]byte(absPath))
-	return hex.EncodeToString(sum[:8]) + "-" + strconv.FormatInt(mtime.UnixNano(), 16) + ext
+	return hex.EncodeToString(sum[:8]) + ext
+}
+
+func stampPath(cachePath string) string {
+	return cachePath + ".stamp"
+}
+
+func writeStamp(cachePath, absInput string) error {
+	info, err := os.Stat(absInput)
+	if err != nil {
+		return fmt.Errorf("stamp stat source: %w", err)
+	}
+	body := strconv.FormatInt(info.ModTime().UnixNano(), 10) + " " + strconv.FormatInt(info.Size(), 10) + "\n"
+	if err := os.WriteFile(stampPath(cachePath), []byte(body), 0o644); err != nil {
+		return fmt.Errorf("writing cache stamp: %w", err)
+	}
+	return nil
+}
+
+func stampMatches(cachePath string, source os.FileInfo) bool {
+	data, err := os.ReadFile(stampPath(cachePath))
+	if err != nil {
+		return false
+	}
+	fields := strings.Fields(string(data))
+	if len(fields) < 2 {
+		return false
+	}
+	mtime, err1 := strconv.ParseInt(fields[0], 10, 64)
+	size, err2 := strconv.ParseInt(fields[1], 10, 64)
+	if err1 != nil || err2 != nil {
+		return false
+	}
+	return mtime == source.ModTime().UnixNano() && size == source.Size()
 }
 
 func resolveCacheDir(override string) (string, error) {
