@@ -1,0 +1,524 @@
+# hygiene.yaml — declared, drift-validated hygiene posture for vellum.
+# Schema reference: the `hygiene` skill (~/.claude/skills/hygiene/SKILL.md).
+# Validate with `/hygiene`; aggregate the fleet with `/hygiene fleet`.
+# Tracks steady-state ("we maintain X"), the complement to bullseye.yaml
+# ("achieve X").
+#
+# Tiers are PER DIMENSION (schema v1): a dimension's held tier is the highest T
+# such that every item in it with tier <= T is satisfied. `floors` is the
+# per-dimension ratchet (below floor => DRIFT); `aspires` is the gap horizon;
+# `enforce` is intent-only and does not affect tiers.
+#
+# Honest snapshot: cv gate on macos-latest is the definition of green
+# (gofmt, vet, VELLUM_REQUIRE_DEPS=1 -race, skip-census, CLI contract).
+# Gaps (gitleaks, govulncheck, CodeQL, Dependabot, CHANGELOG, SECURITY.md,
+# signing, fuzz, benches, committed hooks, AGENTS.md, Makefile==cv) sit
+# above each floor.
+
+schema_version: 1
+
+repo: vellum
+aspires: 3
+floors:            # per-dimension held-tier ratchet; below floor => DRIFT
+  correctness: 2
+  security: 2
+  quality: 2
+  deps: 2
+  release: 2
+  governance: 2
+  build: 2
+  docs: 2
+  perf: 0          # no benchmark suite
+  vcs: 0           # no committed git hooks
+  agent: 2
+
+tiers:
+  1: baseline    # LICENSE + README + .gitignore; tests build & run
+  2: maintained  # full matrix, lint/format, release + governance
+  3: hardened    # formal specs, security scanning, SBOM/signing, fuzzing, perf
+
+items:
+
+  # ============================== CORRECTNESS =============================
+  - id: correctness.tests
+    dim: correctness
+    desc: cv gate (fmt, vet, VELLUM_REQUIRE_DEPS=1 -race, skip-census, CLI) on every push/PR
+    state: enforced
+    cadence: continuous
+    enforce: blocking
+    tier: 1
+    evidence: {ci_step: {workflow: ci.yml, name: Gate}}
+
+  - id: correctness.macos-gate
+    dim: correctness
+    desc: Product gate runs on macos-latest (clipboard, file refs, and viewer are darwin-only)
+    state: enforced
+    cadence: continuous
+    enforce: blocking
+    tier: 2
+    evidence: {ci_job: ci.yml#gate}
+
+  - id: correctness.race
+    dim: correctness
+    desc: Suite runs with -race (Mermaid renderer is concurrent)
+    state: enforced
+    cadence: continuous
+    enforce: blocking
+    tier: 2
+    evidence: {file: {path: cvfile, matches: 'go test \./\.\.\. -count=1 -race'}}
+
+  - id: correctness.skip-census
+    dim: correctness
+    desc: Skip census ratchets at 0 non-pasteboard skips under VELLUM_REQUIRE_DEPS=1
+    state: enforced
+    cadence: continuous
+    enforce: blocking
+    tier: 2
+    evidence: {file: {path: cvfile, matches: '(?m)^!skip-census:'}}
+
+  - id: correctness.cli-contract
+    dim: correctness
+    desc: CLI contract (--version, --help, --help-agent) is a gate component
+    state: enforced
+    cadence: continuous
+    enforce: blocking
+    tier: 2
+    evidence: {file: {path: cvfile, matches: '(?m)^!cli-contract:'}}
+
+  - id: correctness.release-multitarget
+    dim: correctness
+    desc: Release builds darwin-arm64, linux-amd64, and linux-arm64
+    state: present
+    cadence: per-release
+    enforce: warning
+    tier: 2
+    evidence: {ci_job: release.yml#build}
+
+  - id: correctness.windows
+    dim: correctness
+    desc: Windows CI / port
+    state: skipped
+    cadence: continuous
+    enforce: informational
+    tier: 3
+    reason: >-
+      Product is macOS-only (clipboard, Finder file references, viewer).
+      CLAUDE.md and cvfile reject a Linux runner as implying a platform
+      vellum does not support; Windows is the same class.
+    evidence: {absent: {ci_job: ci.yml#windows}}
+
+  - id: correctness.fuzzing
+    dim: correctness
+    desc: Go fuzz harnesses over markdown/import parsers
+    state: planned
+    cadence: continuous
+    enforce: informational
+    tier: 3
+    reason: Package tests and the import corpus cover parsers; no Fuzz targets or make fuzz.
+    evidence: {absent: {make_target: fuzz}}
+
+  # =========================== SECURITY / SUPPLY ==========================
+  - id: security.dep-pinning
+    dim: security
+    desc: go.sum committed — reproducible, pinned module graph
+    state: present
+    cadence: per-release
+    enforce: warning
+    tier: 2
+    evidence: {file: {path: go.sum}}
+
+  - id: security.github-secret-scan
+    dim: security
+    desc: GitHub secret scanning enabled on the public repo
+    state: enforced
+    cadence: continuous
+    enforce: blocking
+    tier: 2
+    evidence: {gh_setting: {key: security_and_analysis.secret_scanning.status, equals: enabled}}
+
+  - id: security.secret-scan-push
+    dim: security
+    desc: GitHub secret-scanning push protection enabled
+    state: enforced
+    cadence: continuous
+    enforce: blocking
+    tier: 2
+    evidence:
+      gh_setting:
+        key: security_and_analysis.secret_scanning_push_protection.status
+        equals: enabled
+
+  - id: security.gitleaks
+    dim: security
+    desc: Secret scanning (gitleaks) in pre-commit and/or CI
+    state: planned
+    cadence: continuous
+    enforce: warning
+    tier: 3
+    reason: >-
+      GitHub secret scanning + push protection are on; no gitleaks config
+      or CI invocation.
+    evidence: {absent: {scanner: {tool: gitleaks}}}
+
+  - id: security.dep-vuln-scan
+    dim: security
+    desc: Vulnerability scanning of Go modules (govulncheck)
+    state: planned
+    cadence: periodic:30d
+    enforce: warning
+    tier: 3
+    reason: go.sum is pinned but no govulncheck (or OSV) job runs against it.
+    evidence: {absent: {scanner: {tool: govulncheck}}}
+
+  - id: security.sast-codeql
+    dim: security
+    desc: CodeQL static analysis for Go
+    state: planned
+    cadence: continuous
+    enforce: warning
+    tier: 3
+    reason: No CodeQL workflow; go vet in cv gate is the only static check.
+    evidence: {absent: {ci_job: ci.yml#codeql}}
+
+  - id: security.actions-perms
+    dim: security
+    desc: GitHub Actions default token permissions scoped to least privilege
+    state: planned
+    cadence: once-must-hold
+    enforce: warning
+    tier: 3
+    reason: ci.yml has no top-level permissions block; inherits the repo default.
+    evidence: {absent: {file: {path: .github/workflows/ci.yml, matches: '(?m)^permissions:'}}}
+
+  - id: security.signed-releases
+    dim: security
+    desc: Release artifacts carry provenance / are signed (cosign/sigstore)
+    state: planned
+    cadence: per-release
+    enforce: informational
+    tier: 3
+    reason: release.yml uploads tarballs via gh release; no signing/attestation step.
+    evidence: {absent: {ci_step: {workflow: release.yml, name: Sign}}}
+
+  # ============================== CODE QUALITY ============================
+  - id: quality.fmt
+    dim: quality
+    desc: gofmt -l is a blocking cv gate component (CI runs cv gate)
+    state: enforced
+    cadence: continuous
+    enforce: blocking
+    tier: 2
+    evidence: {file: {path: cvfile, matches: '(?m)^!fmt:'}}
+
+  - id: quality.vet
+    dim: quality
+    desc: go vet ./... is a blocking cv gate component (CI runs cv gate)
+    state: enforced
+    cadence: continuous
+    enforce: blocking
+    tier: 2
+    evidence: {file: {path: cvfile, matches: '(?m)^!vet:'}}
+
+  - id: quality.golangci
+    dim: quality
+    desc: golangci-lint / staticcheck config and CI invocation
+    state: planned
+    cadence: continuous
+    enforce: informational
+    tier: 3
+    reason: No .golangci.yml; gofmt + go vet in cv gate are the only static checks.
+    evidence: {absent: {file: {path: .golangci.yml}}}
+
+  - id: quality.makefile-gate
+    dim: quality
+    desc: Makefile bullseye is the same oracle as cv bullseye
+    state: planned
+    cadence: continuous
+    enforce: warning
+    tier: 3
+    reason: >-
+      Makefile bullseye is gofmt/vet/build/test without -race,
+      VELLUM_REQUIRE_DEPS, skip-census, or the CLI contract (ENT-001).
+      cv gate is the definition of green.
+    evidence: {absent: {file: {path: Makefile, matches: 'cv bullseye'}}}
+
+  # =========================== DEPENDENCY HEALTH ==========================
+  - id: deps.lock
+    dim: deps
+    desc: go.sum lockfile is committed
+    state: present
+    cadence: once-must-hold
+    enforce: warning
+    tier: 2
+    evidence: {file: {path: go.sum}}
+
+  - id: deps.dependabot
+    dim: deps
+    desc: Automated dependency-update PRs (Dependabot or Renovate)
+    state: planned
+    cadence: periodic:30d
+    enforce: informational
+    tier: 3
+    reason: No .github/dependabot.yml; GitHub Dependabot security updates are disabled.
+    evidence: {absent: {file: {path: .github/dependabot.yml}}}
+
+  # ========================== RELEASE & VERSIONING =======================
+  - id: release.semver-minor
+    dim: release
+    desc: Git tags are MINOR-only (vMAJOR.MINOR.0)
+    state: enforced
+    cadence: per-release
+    enforce: blocking
+    tier: 2
+    evidence:
+      command: test -z "$(git tag | grep -vE '^v[0-9]+\.[0-9]+\.0$')"
+
+  - id: release.version-matches-tag
+    dim: release
+    desc: cmd/vellum const version matches the latest git tag
+    state: enforced
+    cadence: per-release
+    enforce: blocking
+    tier: 2
+    evidence:
+      command: >-
+        test "$(sed -n 's/^const version = "\([0-9][0-9.]*\)"/\1/p' cmd/vellum/main.go)"
+        = "$(git describe --tags --abbrev=0 | tr -d v)"
+
+  - id: release.ci-built
+    dim: release
+    desc: Release binaries are built by CI across target triples, never locally
+    state: present
+    cadence: per-release
+    enforce: warning
+    tier: 2
+    evidence: {ci_job: release.yml#build}
+
+  - id: release.homebrew
+    dim: release
+    desc: Published to the Homebrew tap on release (homebrew-releaser job)
+    state: present
+    cadence: per-release
+    enforce: informational
+    tier: 2
+    evidence: {ci_job: release.yml#homebrew}
+
+  - id: release.changelog
+    dim: release
+    desc: A maintained CHANGELOG records user-visible changes per release
+    state: planned
+    cadence: per-release
+    enforce: warning
+    tier: 3
+    reason: History lives in git + GitHub release notes; no curated CHANGELOG.md.
+    evidence: {absent: {file: {path: CHANGELOG.md}}}
+
+  - id: release.gate-on-publish
+    dim: release
+    desc: Published releases re-run the macOS cv gate (not a Linux subset)
+    state: planned
+    cadence: per-release
+    enforce: warning
+    tier: 3
+    reason: >-
+      release.yml test job is ubuntu-latest `go test ./...` without converters;
+      the step name still says pipeline tests skip without Prince (ENT-002).
+      CI gate is macOS `cv gate`.
+    evidence: {absent: {ci_step: {workflow: release.yml, name: Gate}}}
+
+  # ============================ GOVERNANCE / META ========================
+  - id: governance.license
+    dim: governance
+    desc: Apache-2.0 LICENSE present
+    state: present
+    cadence: once-must-hold
+    enforce: blocking
+    tier: 1
+    evidence: {file: {path: LICENSE, matches: 'Apache License'}}
+
+  - id: governance.readme
+    dim: governance
+    desc: README present and current
+    state: present
+    cadence: once-must-hold
+    enforce: blocking
+    tier: 1
+    evidence: {file: {path: README.md}}
+
+  - id: governance.gitignore
+    dim: governance
+    desc: .gitignore covers binary, dist, IDE/OS files, and test PDF artifacts
+    state: present
+    cadence: once-must-hold
+    enforce: warning
+    tier: 1
+    evidence: {file: {path: .gitignore}}
+
+  - id: governance.squash-only
+    dim: governance
+    desc: Repo is squash-merge only, with delete-branch-on-merge
+    state: enforced
+    cadence: once-must-hold
+    enforce: blocking
+    tier: 2
+    evidence: {gh_setting: {key: allow_merge_commit, equals: false}}
+
+  - id: governance.notices
+    dim: governance
+    desc: THIRD_PARTY_NOTICES.md attributes compiled-in Go module licenses
+    state: present
+    cadence: once-must-hold
+    enforce: warning
+    tier: 2
+    evidence: {file: {path: THIRD_PARTY_NOTICES.md, matches: 'Third-Party Notices'}}
+
+  - id: governance.security-md
+    dim: governance
+    desc: SECURITY.md documents the vulnerability-disclosure process
+    state: planned
+    cadence: once-must-hold
+    enforce: informational
+    tier: 3
+    reason: Public repo without a published disclosure policy yet.
+    evidence: {absent: {file: {path: SECURITY.md}}}
+
+  - id: governance.codeowners
+    dim: governance
+    desc: CODEOWNERS file names review owners
+    state: planned
+    cadence: once-must-hold
+    enforce: informational
+    tier: 3
+    reason: Solo-owned repo; no CODEOWNERS file.
+    evidence: {absent: {file: {path: .github/CODEOWNERS}}}
+
+  # ================================= BUILD ===============================
+  - id: build.ci
+    dim: build
+    desc: CI installs converters + cv and runs the local gate
+    state: enforced
+    cadence: continuous
+    enforce: blocking
+    tier: 1
+    evidence: {ci_job: ci.yml#gate}
+
+  - id: build.go-version
+    dim: build
+    desc: Go toolchain version pinned in go.mod
+    state: present
+    cadence: once-must-hold
+    enforce: informational
+    tier: 2
+    evidence: {file: {path: go.mod, matches: '(?m)^go 1\.26'}}
+
+  - id: build.reproducible-lock
+    dim: build
+    desc: Committed go.sum makes the module graph reproducible
+    state: present
+    cadence: once-must-hold
+    enforce: warning
+    tier: 2
+    evidence: {file: {path: go.sum}}
+
+  # ============================ DOCUMENTATION ============================
+  - id: docs.agents-guide
+    dim: docs
+    desc: docs/agents-guide.md is the shipped agent-facing install/operate guide
+    state: present
+    cadence: once-must-hold
+    enforce: warning
+    tier: 1
+    evidence: {file: {path: docs/agents-guide.md}}
+
+  - id: docs.stability
+    dim: docs
+    desc: STABILITY.md catalogues the public interaction surface
+    state: present
+    cadence: per-release
+    enforce: warning
+    tier: 2
+    evidence: {file: {path: STABILITY.md}}
+
+  - id: docs.md-links
+    dim: docs
+    desc: Internal markdown links resolve (no dead cross-references)
+    state: planned
+    cadence: continuous
+    enforce: informational
+    tier: 3
+    reason: Docs exist but are not link-checked in CI.
+    evidence: {absent: {make_target: check-md-links}}
+
+  - id: docs.todo
+    dim: docs
+    desc: docs/TODO.md exists as the repo TODO sink
+    state: skipped
+    cadence: once-must-hold
+    enforce: informational
+    tier: 3
+    reason: >-
+      Global convention uses bullseye.yaml as the intent ledger;
+      docs/TODO.md is banned.
+    evidence: {absent: {file: {path: docs/TODO.md}}}
+
+  # ============================== PERFORMANCE ===========================
+  - id: perf.benchmarks
+    dim: perf
+    desc: Go benchmark suite exists and is invocable
+    state: planned
+    cadence: per-release
+    enforce: informational
+    tier: 3
+    reason: No Benchmark functions and no make bench target.
+    evidence: {absent: {make_target: bench}}
+
+  # ============================== VCS / HISTORY =========================
+  - id: vcs.pre-commit-hook
+    dim: vcs
+    desc: Committed git hooks (scripts/hooks) gate locally before commit
+    state: planned
+    cadence: once-must-hold
+    enforce: informational
+    tier: 3
+    reason: No scripts/hooks; core.hooksPath is the default .git/hooks.
+    evidence: {absent: {file: {path: scripts/hooks/pre-commit}}}
+
+  # =================== AGENT-READINESS / ONBOARDING ====================
+  - id: agent.claude-md
+    dim: agent
+    desc: CLAUDE.md documents architecture, gate, and delivery for agents
+    state: present
+    cadence: once-must-hold
+    enforce: warning
+    tier: 1
+    evidence: {file: {path: CLAUDE.md}}
+
+  - id: agent.bullseye
+    dim: agent
+    desc: bullseye.yaml is the intent ledger for followable work
+    state: present
+    cadence: once-must-hold
+    enforce: informational
+    tier: 2
+    evidence: {file: {path: bullseye.yaml}}
+
+  - id: agent.cli-help
+    dim: agent
+    desc: Binary exposes --version, --help, and --help-agent
+    state: present
+    cadence: once-must-hold
+    enforce: informational
+    tier: 2
+    evidence: {file: {path: cmd/vellum/main.go, matches: '"--help-agent"'}}
+
+  - id: agent.agents-md
+    dim: agent
+    desc: Repo-root AGENTS.md for multi-tool coding-agent conventions
+    state: planned
+    cadence: once-must-hold
+    enforce: informational
+    tier: 3
+    reason: >-
+      Project conventions live in CLAUDE.md. Shared layout prefers
+      AGENTS.md as canonical with a thin CLAUDE.md adapter; not split yet.
+    evidence: {absent: {file: {path: AGENTS.md}}}

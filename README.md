@@ -14,7 +14,7 @@ Pre-1.0 and under active development. Interfaces, flags, and output may change b
 
 ## Requirements
 
-vellum shells out to external tools at conversion time. All must be on `PATH`:
+vellum shells out to external tools at conversion time. Each must be on `PATH` when that path is used:
 
 - **One of two renderer backends:**
   - **[WeasyPrint](https://www.courtbouillon.org/weasyprint)** 60 or later — **default**. BSD-3 licensed, open-source, no commercial entanglement. Install with `brew install weasyprint` (or `pipx install weasyprint`).
@@ -109,12 +109,15 @@ vellum install-viewer                  # double-click .md → rendered view
 
 ### macOS Markdown viewer
 
-`vellum view` / `vellum --open` renders to a **cache** keyed by source path
-+ mtime (never littering a PDF next to the source) and opens the result.
-HTML is the default (fast, no WeasyPrint needed for a casual read); pass
-`--pdf` for full typography in Preview. The cache is pruned on each view:
-entries older than 7 days are dropped, then oldest entries are evicted
-until total size is under 50 MB.
+`vellum view` / `vellum --open` renders to a **cache** keyed by absolute
+source path and format (not mtime), so a browser tab can reload after
+Markdown changes. A stamp sidecar records source mtime and size; View
+re-renders in place when the source is newer and cache-hits when it is
+not. HTML includes `Cache-Control: no-store`. The cache never writes next
+to the source. HTML is the default (fast, no WeasyPrint needed for a
+casual read); pass `--pdf` for full typography in Preview. The cache is
+pruned on each view: entries older than 7 days are dropped, then oldest
+entries are evicted until total size is under 50 MB.
 
 `vellum install-viewer` generates `~/Applications/Vellum Viewer.app`,
 registers it with Launch Services, and (with [`duti`](https://github.com/moretension/duti) on `PATH`) sets it as the default handler for Markdown. The app executable is a small Cocoa binary (compiled with clang at install time) that receives Launch Services open-document Apple Events and runs `vellum --open` — a shell-script launcher cannot receive those events. Requires Xcode Command Line Tools. Uninstall with `vellum uninstall-viewer`. Debug log: `~/Library/Logs/vellum-viewer.log`.
@@ -245,8 +248,8 @@ want to.
 Chromium. Install it with `brew install`, or drop the binary on a box.
 
 **Native on the desktop too.** `vellum install-viewer` makes rendered
-Markdown the default double-click behaviour on macOS, with a content-
-addressed render cache.
+Markdown the default double-click behaviour on macOS, with a path-stable
+render cache that reloads in the same browser tab.
 
 ## How vellum compares
 
