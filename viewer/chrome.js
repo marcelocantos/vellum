@@ -466,6 +466,7 @@
     lightbox.hidden = true;
     document.body.style.overflow = "";
     if (content) content.replaceChildren();
+    focusScrollPane();
   }
 
   function zoomAt(clientX, clientY, factor) {
