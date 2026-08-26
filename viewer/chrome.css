@@ -163,6 +163,10 @@ body.vellum-view {
   overflow: auto;
 }
 
+.vellum-scroll:focus {
+  outline: none;
+}
+
 .vellum-docname {
   margin-left: auto;
   font-size: 12px;

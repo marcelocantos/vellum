@@ -86,7 +86,7 @@ func chromeOpen(sourcePath string) string {
 		`<span class="vellum-docname">` + html.EscapeString(name) + `</span>` +
 		`<span class="vellum-status" id="vellum-status" hidden></span>` +
 		`</header>` +
-		`<div class="vellum-scroll">` +
+		`<div class="vellum-scroll" id="vellum-scroll" tabindex="0" role="region" aria-label="Document">` +
 		`<article class="vellum-article">`
 }
 

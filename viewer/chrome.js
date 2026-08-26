@@ -4,6 +4,7 @@
 
   const source = chrome.getAttribute("data-source") || "";
   const article = chrome.querySelector(".vellum-article");
+  const scrollPane = document.getElementById("vellum-scroll");
   const toc = document.getElementById("vellum-toc");
   const tocNav = document.getElementById("vellum-toc-nav");
   const status = document.getElementById("vellum-status");
@@ -11,6 +12,10 @@
   const stage = document.getElementById("vellum-lightbox-stage");
   const content = document.getElementById("vellum-lightbox-content");
   const hint = document.getElementById("vellum-lightbox-hint");
+
+  function focusScrollPane() {
+    if (scrollPane) scrollPane.focus({ preventScroll: true });
+  }
 
   function setStatus(msg, ok) {
     if (!status) return;
@@ -253,6 +258,7 @@
 
   buildTOC();
   fillTOC();
+  focusScrollPane();
 
   const lb = {
     scale: 1,
