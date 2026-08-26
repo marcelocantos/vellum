@@ -296,44 +296,97 @@
     }
   }
 
+  function svgViewBoxSize(svg) {
+    const vb = svg.viewBox && svg.viewBox.baseVal;
+    if (vb && vb.width > 0 && vb.height > 0) {
+      return { w: vb.width, h: vb.height };
+    }
+    return null;
+  }
+
+  function prepareSvgForLightbox(svg) {
+    const clone = svg.cloneNode(true);
+    const size = svgViewBoxSize(clone);
+    clone.removeAttribute("width");
+    clone.removeAttribute("height");
+    clone.style.removeProperty("max-width");
+    clone.style.removeProperty("width");
+    clone.style.removeProperty("height");
+    if (size) {
+      clone.setAttribute("width", String(size.w));
+      clone.setAttribute("height", String(size.h));
+    }
+    return clone;
+  }
+
+  function svgDataUrl(svg) {
+    const xml = new XMLSerializer().serializeToString(prepareSvgForLightbox(svg));
+    return "data:image/svg+xml;charset=utf-8," + encodeURIComponent(xml);
+  }
+
   function measureNode(node) {
     if (node.tagName === "IMG") {
       lb.naturalW = node.naturalWidth || node.width || node.offsetWidth;
       lb.naturalH = node.naturalHeight || node.height || node.offsetHeight;
       return;
     }
-    try {
-      const box = node.getBBox();
-      lb.naturalW = box.width || node.clientWidth;
-      lb.naturalH = box.height || node.clientHeight;
-    } catch (e) {
-      lb.naturalW = node.clientWidth || node.offsetWidth;
-      lb.naturalH = node.clientHeight || node.offsetHeight;
-    }
+    lb.naturalW = node.clientWidth || node.offsetWidth;
+    lb.naturalH = node.clientHeight || node.offsetHeight;
   }
 
   function openLightbox(el) {
     if (!lightbox || !content || !stage) return;
     content.replaceChildren();
-    const clone = el.cloneNode(true);
-    if (clone.removeAttribute) {
-      clone.removeAttribute("width");
-      clone.removeAttribute("height");
+    lb.naturalW = 0;
+    lb.naturalH = 0;
+
+    let displayEl;
+    const svg =
+      el.tagName === "svg"
+        ? el
+        : el.classList && el.classList.contains("mermaid-svg")
+          ? el.querySelector("svg")
+          : null;
+
+    if (svg) {
+      // Serialize to a data URL so styles/defs stay self-contained — cloning
+      // inline SVG breaks on duplicate ids (#my-svg) and width="100%" sizing.
+      const size = svgViewBoxSize(svg);
+      displayEl = document.createElement("img");
+      displayEl.alt = "";
+      displayEl.src = svgDataUrl(svg);
+      if (size) {
+        lb.naturalW = size.w;
+        lb.naturalH = size.h;
+      }
+    } else if (el.tagName === "IMG") {
+      displayEl = el.cloneNode(true);
+      if (displayEl.removeAttribute) {
+        displayEl.removeAttribute("width");
+        displayEl.removeAttribute("height");
+      }
+      displayEl.style.maxWidth = "none";
+      displayEl.style.maxHeight = "none";
+      displayEl.style.width = "auto";
+      displayEl.style.height = "auto";
+    } else {
+      return;
     }
-    clone.style.maxWidth = "none";
-    clone.style.maxHeight = "none";
-    clone.style.width = "auto";
-    clone.style.height = "auto";
-    content.appendChild(clone);
+
+    content.appendChild(displayEl);
     lightbox.hidden = false;
     document.body.style.overflow = "hidden";
     const ready = function () {
-      measureNode(clone);
+      if (!lb.naturalW || !lb.naturalH) measureNode(displayEl);
       fitContent();
     };
-    if (clone.tagName === "IMG" && !clone.complete) {
-      clone.addEventListener("load", ready, { once: true });
+    if (displayEl.tagName === "IMG" && !displayEl.complete) {
+      displayEl.addEventListener("load", ready, { once: true });
     } else {
+      if (displayEl.tagName === "IMG" && displayEl.naturalWidth) {
+        lb.naturalW = lb.naturalW || displayEl.naturalWidth;
+        lb.naturalH = lb.naturalH || displayEl.naturalHeight;
+      }
       requestAnimationFrame(ready);
     }
   }
@@ -370,6 +423,12 @@
       if (img && article.contains(img)) {
         ev.preventDefault();
         openLightbox(img);
+        return;
+      }
+      const mermaid = t.closest(".mermaid-svg");
+      if (mermaid && article.contains(mermaid)) {
+        ev.preventDefault();
+        openLightbox(mermaid);
         return;
       }
       const svg = t.closest("svg");
