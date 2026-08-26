@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="520" height="160" viewBox="0 0 520 160" role="img" aria-label="Vellum conversion pipeline">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f6f8fa"/>
+      <stop offset="100%" stop-color="#eef2f7"/>
+    </linearGradient>
+    <linearGradient id="node" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#f3f4f6"/>
+    </linearGradient>
+    <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+      <path d="M0,0 L8,4 L0,8 Z" fill="#656d76"/>
+    </marker>
+  </defs>
+  <rect width="520" height="160" rx="12" fill="url(#bg)" stroke="#d1d9e0"/>
+  <text x="260" y="28" text-anchor="middle" font-family="ui-sans-serif, system-ui, sans-serif" font-size="14" font-weight="600" fill="#1f2328">vellum pipeline</text>
+  <g font-family="ui-sans-serif, system-ui, sans-serif" font-size="12" fill="#1f2328">
+    <rect x="24" y="56" width="88" height="56" rx="10" fill="url(#node)" stroke="#d1d9e0"/>
+    <text x="68" y="80" text-anchor="middle" font-weight="600">Markdown</text>
+    <text x="68" y="98" text-anchor="middle" fill="#656d76">source</text>
+
+    <rect x="152" y="56" width="88" height="56" rx="10" fill="url(#node)" stroke="#d1d9e0"/>
+    <text x="196" y="80" text-anchor="middle" font-weight="600">goldmark</text>
+    <text x="196" y="98" text-anchor="middle" fill="#656d76">HTML</text>
+
+    <rect x="280" y="56" width="88" height="56" rx="10" fill="url(#node)" stroke="#d1d9e0"/>
+    <text x="324" y="80" text-anchor="middle" font-weight="600">chrome</text>
+    <text x="324" y="98" text-anchor="middle" fill="#656d76">view UI</text>
+
+    <rect x="408" y="56" width="88" height="56" rx="10" fill="url(#node)" stroke="#d1d9e0"/>
+    <text x="452" y="80" text-anchor="middle" font-weight="600">WeasyPrint</text>
+    <text x="452" y="98" text-anchor="middle" fill="#656d76">PDF</text>
+  </g>
+  <path d="M112 84 H152 M240 84 H280 M368 84 H408" stroke="#656d76" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="260" y="138" text-anchor="middle" font-family="ui-sans-serif, system-ui, sans-serif" font-size="11" fill="#656d76">Click to open the figure viewer</text>
+</svg>

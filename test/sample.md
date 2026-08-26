@@ -98,6 +98,7 @@ Term 2
 ### JavaScript
 
 ```javascript
+// ES2022 private class field — #listeners is per-instance, not visible outside this class.
 class EventEmitter {
   #listeners = new Map();
 
@@ -476,7 +477,23 @@ This paragraph references a footnote[^1] and another[^longnote].
 
 ## Images
 
-![Placeholder — a small inline SVG](data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjEwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iIzQ0OTVkNCIgcng9IjgiLz48dGV4dCB4PSIxMDAiIHk9IjU1IiBmb250LWZhbWlseT0ic2Fucy1zZXJpZiIgZm9udC1zaXplPSIxNiIgZmlsbD0id2hpdGUiIHRleHQtYW5jaG9yPSJtaWRkbGUiPkltYWdlIFBsYWNlaG9sZGVyPC90ZXh0Pjwvc3ZnPg==)
+![Vellum conversion pipeline](pipeline.svg)
+
+### SVG diagram
+
+Vector figure — exercises inline SVG in HTML/PDF and the figure lightbox.
+
+### Line art (PNG)
+
+![Quill over manuscript — line art raster](line-art.png)
+
+Lossless PNG with crisp strokes; good for checking raster scaling and lightbox zoom.
+
+### Photograph (JPEG)
+
+![Warm desk still life — photographic JPEG](desk-photo.jpg)
+
+Lossy JPEG with smooth gradients and grain; good for checking photo rendering and compression artefacts.
 
 ## Horizontal Rules
 
