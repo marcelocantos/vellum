@@ -124,6 +124,23 @@
     if (scrollPane) scrollPane.focus({ preventScroll: true });
   }
 
+  function scheduleFocusScrollPane() {
+    window.setTimeout(function () {
+      if (lightbox && !lightbox.hidden) return;
+      if (!scrollPane) return;
+      const active = document.activeElement;
+      if (active === scrollPane || scrollPane.contains(active)) return;
+      focusScrollPane();
+    }, 0);
+  }
+
+  if (scrollPane) {
+    scrollPane.addEventListener("focusout", function () {
+      if (lightbox && !lightbox.hidden) return;
+      scheduleFocusScrollPane();
+    });
+  }
+
   function setStatus(msg, ok) {
     if (!status) return;
     status.hidden = !msg;
@@ -573,7 +590,7 @@
     lightbox.hidden = true;
     document.body.style.overflow = "";
     if (content) content.replaceChildren();
-    focusScrollPane();
+    scheduleFocusScrollPane();
   }
 
   function zoomAt(clientX, clientY, factor) {
