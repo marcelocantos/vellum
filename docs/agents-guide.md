@@ -10,7 +10,8 @@ vellum has two directions:
    Markdown via pandoc. Source can be a file or the system clipboard.
 
 Both directions run as either a command-line tool or as a single MCP
-(Model Context Protocol) `convert` tool over stdio.
+(Model Context Protocol) `convert` tool over streamable HTTP (preferred)
+or stdio (fallback).
 
 ## Installation
 
@@ -30,9 +31,10 @@ must succeed before vellum is usable — do not stop after `brew install`.**
    ```
 
 2. **Install the runtime dependencies.** vellum shells out to external
-   tools. MCP startup requires the PDF backend, `node`, and `mmdc` on
-   `PATH` even for non-PDF calls. pandoc and poppler are needed only
-   for import:
+   tools. The HTTP daemon starts without a PDF-backend gate (Markdown
+   view still works). `convert` reports missing tools on the call. Stdio
+   `--mcp` still checks the selected PDF backend, `node`, and `mmdc`
+   at startup. pandoc and poppler are needed only for import:
 
    ```sh
    # Renderer: WeasyPrint (default, BSD-3). Alternatively/additionally
@@ -60,38 +62,64 @@ must succeed before vellum is usable — do not stop after `brew install`.**
    npx puppeteer browsers install chrome-headless-shell@<version>
    ```
 
-3. **Register vellum as an MCP server.** For Claude Code, run the
-   one-liner below. This writes a user-scope entry to `~/.claude.json`
-   so the server is available in every project:
+3. **Start the daemon and register vellum as an HTTP MCP server.**
 
    ```sh
-   claude mcp add --scope user vellum -- vellum --mcp
+   brew services start vellum
    ```
 
-   For other MCP clients, add this block to the client's MCP config
-   (for example, `.mcp.json` in the project root):
+   Confirm one `vellum` process is listening (do **not** use bare
+   `curl` against `/mcp` — MCP only accepts POST with a JSON-RPC body,
+   so plain `curl` returns nothing and reads as "server not ready"):
+
+   ```sh
+   lsof -iTCP:18742 -sTCP:LISTEN
+   ```
+
+   vellum speaks streamable HTTP at `http://127.0.0.1:18742/mcp` on
+   the same loopback listener as the Markdown view server.
+
+   **Grok Build:**
+
+   ```sh
+   grok mcp add --transport http vellum http://localhost:18742/mcp
+   ```
+
+   **Claude Code** (one command — global install for all projects):
+
+   ```sh
+   claude mcp add --scope user --transport http vellum http://127.0.0.1:18742/mcp
+   ```
+
+   **Other MCP clients** (for example `.mcp.json` in a project):
 
    ```json
    {
      "mcpServers": {
        "vellum": {
-         "command": "vellum",
-         "args": ["--mcp"]
+         "transport": "http",
+         "url": "http://127.0.0.1:18742/mcp"
        }
      }
    }
    ```
 
-   vellum's MCP mode is **stdio**, not HTTP. It is spawned per
-   connection by the MCP client — there is no MCP daemon to start and
-   no MCP port to check. (Separately, `brew services start vellum`
-   runs the optional **Markdown view server** on `127.0.0.1:18742` for
-   `vellum view` / Cmd-click; that is unrelated to MCP registration.)
+   Stdio-only clients can spawn `vellum --mcp`, or route through a
+   gateway such as [mcpbridge](https://github.com/marcelocantos/mcpbridge):
+
+   ```sh
+   claude mcp add --scope user vellum -- mcpbridge http://127.0.0.1:18742/mcp
+   ```
+
+   Prefer the HTTP registration: one brew-service process serves every
+   agent session. Do not add a per-session `vellum --mcp` stdio
+   server when the daemon is already running.
+
    The Homebrew formula installs a thin shell wrapper as `vellum` that
    prepends the canonical tool dirs (`#{HOMEBREW_PREFIX}/bin`,
    `/usr/local/bin`, `$HOME/.cargo/bin`, etc.) before exec'ing the real
    binary, so `weasyprint`, `node`, `mmdc`, and `prince` resolve
-   regardless of how the MCP client's environment was set up.
+   regardless of how the client or launchd environment was set up.
 
 4. **Restart the agent session.** MCP client config changes are only
    picked up on session start. The current session will not see vellum
@@ -103,9 +131,10 @@ must succeed before vellum is usable — do not stop after `brew install`.**
    - Check the binary: `vellum --version` should print the installed
      version.
    - Check the runtime deps: `vellum --help-agent` prints this guide.
-     MCP startup (`vellum --mcp`) checks the selected PDF backend plus
-     `node` and `mmdc`. CLI PDF conversion fails at exec if the backend
-     is missing. pandoc and poppler are checked only when an import
+     The HTTP daemon does not fail-fast on PDF deps. Stdio
+     `vellum --mcp` checks the selected PDF backend plus `node` and
+     `mmdc`. CLI PDF conversion fails at exec if the backend is
+     missing. pandoc and poppler are checked only when an import
      path needs them.
    - Call a tool: convert a trivial one-line Markdown string with
      `convert` (`from.media=content`, `to.media=content`) or write a
@@ -121,7 +150,8 @@ is ready.
 ## Preferred invocation
 
 When running inside an AI agent, prefer the MCP interface over the CLI.
-Start vellum with `vellum --mcp` and call the single `convert` tool.
+Connect to the brew-service HTTP endpoint
+(`http://127.0.0.1:18742/mcp`) and call the single `convert` tool.
 The CLI (`vellum convert --from … --to …`) is fine for interactive use;
 MCP returns structured results (paths, content, errors) that are easier
 to consume programmatically.
@@ -320,13 +350,18 @@ Shorthands (expand into the same router):
 These are CLI-only (not MCP tools) — humans double-click Markdown; agents
 already work with files and `convert`.
 
-- `vellum serve-view` — localhost Markdown view server (default
-  `127.0.0.1:18742`; override with `--addr` or `VELLUM_VIEW_ADDR`).
-  Binds loopback only. Prefer a persistent daemon:
-  `brew services start vellum`. Each GET of a `.md`/`.markdown` path
-  converts that one file to HTML (no link-graph crawl). Relative
-  `.md` links are rewritten to same-origin URLs so clicks stay in the
-  browser; reload re-converts when the source mtime/size changes.
+- `vellum serve-view` — localhost daemon (default `127.0.0.1:18742`;
+  override with `--addr` or `VELLUM_VIEW_ADDR`). Binds loopback only.
+  Hosts the Markdown view server **and** streamable HTTP MCP at
+  `/mcp`. Prefer a persistent daemon: `brew services start vellum`.
+  Each GET of a `.md`/`.markdown` path converts that one file to HTML
+  (no link-graph crawl). Relative `.md` links are rewritten to
+  same-origin URLs so clicks stay in the browser; reload re-converts
+  when the source mtime/size changes. Served HTML is wrapped with view
+  chrome (TOC sidebar, PDF / clipboard / Finder toolbar, figure
+  lightbox). Chrome is injected per response; the convert-cache file
+  stays chrome-free. Actions live under `/_vellum/` (`GET …/pdf`,
+  `POST …/clipboard`, `POST …/reveal`).
 - `vellum view <file.md>` / `vellum --open <file.md>` — open the file
   as an `http://127.0.0.1:18742/…` URL on the view server (**not**
   `file://`). HTML default (browser, fast); pass `--pdf` for
@@ -454,12 +489,15 @@ diagnostic.
 
 Common failure modes:
 
-- A required dependency is missing. MCP startup checks the selected
-  PDF backend (`weasyprint` by default, or `prince`) plus `node` and
-  `mmdc`. CLI PDF conversion does not preflight those binaries — a
-  missing renderer fails at exec. pandoc is checked lazily only on
-  rich-text import; poppler only on PDF import. Missing tools are
-  listed with install instructions when a check runs.
+- A required dependency is missing. The HTTP brew-service daemon
+  starts without a PDF-backend gate. `convert` reports missing tools
+  on the call. Stdio `vellum --mcp` still checks the selected PDF
+  backend (`weasyprint` by default, or `prince`) plus `node` and
+  `mmdc` at startup. CLI PDF conversion does not preflight those
+  binaries — a missing renderer fails at exec. pandoc is checked
+  lazily only on rich-text import; poppler only on PDF import.
+  Missing tools are listed with install instructions when a check
+  runs.
 - The `katex` node package is not installed globally. Fix with
   `npm install -g katex`.
 - A Mermaid diagram fails to render (invalid syntax, missing

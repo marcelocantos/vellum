@@ -1,0 +1,305 @@
+/* View-server chrome. Injected at serve time; not present in convert-cache HTML. */
+
+html:has(body.vellum-view) {
+  height: 100%;
+}
+
+body.vellum-view {
+  max-width: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  height: 100%;
+  overflow: hidden;
+}
+
+.vellum-chrome {
+  display: flex;
+  align-items: stretch;
+  height: 100%;
+}
+
+.vellum-toc {
+  flex: 0 0 16.5rem;
+  width: 16.5rem;
+  height: 100%;
+  overflow: auto;
+  padding: 12px 12px 24px;
+  background: #f6f8fa;
+  border-right: 1px solid #d1d9e0;
+  box-sizing: border-box;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.vellum-toc[hidden],
+.vellum-toc.is-collapsed {
+  display: none;
+}
+
+.vellum-toc-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.vellum-toc-title {
+  font-weight: 600;
+  color: #1f2328;
+}
+
+.vellum-toc-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.vellum-toc-actions button,
+.vellum-toolbar button {
+  appearance: none;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.2;
+  padding: 4px 8px;
+  border: 1px solid #d1d9e0;
+  border-radius: 6px;
+  background: #fff;
+  color: #1f2328;
+  cursor: pointer;
+}
+
+.vellum-toc-actions button:hover,
+.vellum-toolbar button:hover {
+  background: #f3f4f6;
+}
+
+.vellum-toc-nav {
+  --toc-gutter: 1.4rem;
+}
+
+.vellum-toc-nav ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.vellum-toc-nav ol ol {
+  padding-left: var(--toc-gutter);
+  margin-top: 2px;
+}
+
+.vellum-toc-item {
+  margin: 0;
+}
+
+.vellum-toc-row {
+  display: flex;
+  align-items: flex-start;
+}
+
+.vellum-toc-twist {
+  flex: 0 0 var(--toc-gutter);
+  width: var(--toc-gutter);
+  height: 1.5rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #656d76;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1.5rem;
+}
+
+/* Keep the gutter on leaves so parent titles are not more inset than their children.
+   [hidden] is display:none in the UA sheet; override so the column still measures. */
+.vellum-toc-twist[hidden] {
+  visibility: hidden;
+  display: inline-block !important;
+}
+
+.vellum-toc-item.is-collapsed > .vellum-toc-kids {
+  display: none;
+}
+
+.vellum-toc-nav a {
+  display: block;
+  flex: 1;
+  min-width: 0;
+  padding: 2px 4px;
+  border-radius: 4px;
+  color: #1f2328;
+  text-decoration: none;
+  word-break: break-word;
+}
+
+.vellum-toc-nav a:hover {
+  background: rgba(175, 184, 193, 0.2);
+  text-decoration: none;
+}
+
+.vellum-main {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.vellum-toolbar {
+  flex: 0 0 auto;
+  z-index: 4;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: #fff;
+  border-bottom: 1px solid #d1d9e0;
+}
+
+.vellum-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.vellum-docname {
+  margin-left: auto;
+  font-size: 12px;
+  color: #656d76;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 40%;
+}
+
+.vellum-status {
+  font-size: 12px;
+  color: #1a7f37;
+}
+
+.vellum-status.is-error {
+  color: #cf222e;
+}
+
+.vellum-article {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 32px;
+}
+
+.vellum-article img,
+.vellum-article .mermaid-svg,
+.vellum-article .mermaid-svg svg {
+  cursor: zoom-in;
+}
+
+.vellum-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  background: rgba(15, 17, 21, 0.92);
+  color: #fff;
+}
+
+.vellum-lightbox[hidden] {
+  display: none;
+}
+
+.vellum-lightbox-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  flex: 0 0 auto;
+}
+
+.vellum-lightbox-bar button {
+  appearance: none;
+  font: inherit;
+  font-size: 13px;
+  padding: 4px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 6px;
+  background: transparent;
+  color: #fff;
+  cursor: pointer;
+}
+
+.vellum-lightbox-bar button:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.vellum-lightbox-stage {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  cursor: grab;
+  touch-action: none;
+}
+
+.vellum-lightbox-stage.is-panning {
+  cursor: grabbing;
+}
+
+.vellum-lightbox-content {
+  transform-origin: 0 0;
+  width: max-content;
+  height: max-content;
+}
+
+.vellum-lightbox-content img,
+.vellum-lightbox-content svg {
+  display: block;
+  max-width: none;
+  max-height: none;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.vellum-lightbox-hint {
+  font-size: 12px;
+  opacity: 0.7;
+}
+
+@media (max-width: 880px) {
+  .vellum-toc {
+    position: fixed;
+    z-index: 6;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  }
+  .vellum-toc:not(.is-open) {
+    display: none;
+  }
+}
+
+@media print {
+  .vellum-toc,
+  .vellum-toolbar,
+  .vellum-lightbox {
+    display: none !important;
+  }
+  html:has(body.vellum-view),
+  body.vellum-view {
+    height: auto;
+    overflow: visible;
+  }
+  body.vellum-view {
+    max-width: 980px !important;
+    margin: 0 auto !important;
+    padding: 0 !important;
+  }
+  .vellum-chrome,
+  .vellum-main,
+  .vellum-scroll {
+    height: auto;
+    overflow: visible;
+    display: block;
+  }
+  .vellum-article {
+    padding: 0;
+  }
+}

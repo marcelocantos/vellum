@@ -146,6 +146,53 @@ func TestServer_Healthz(t *testing.T) {
 	}
 }
 
+func TestServer_MCPPathReserved(t *testing.T) {
+	hit := false
+	s := &Server{
+		CacheDir: t.TempDir(),
+		MCP: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			hit = true
+			w.WriteHeader(http.StatusNoContent)
+		}),
+	}
+	ts := startTestServer(t, s)
+
+	resp, err := http.Get(ts.URL + MCPPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if !hit {
+		t.Fatal("GET /mcp must hit the MCP handler, not the view filesystem")
+	}
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("status %d", resp.StatusCode)
+	}
+
+	// View routes still work alongside MCP.
+	health, err := http.Get(ts.URL + HealthPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	health.Body.Close()
+	if health.StatusCode != http.StatusOK {
+		t.Fatalf("healthz status %d", health.StatusCode)
+	}
+}
+
+func TestServer_MCPPathNotFilesystemWhenUnset(t *testing.T) {
+	s := &Server{CacheDir: t.TempDir()}
+	ts := startTestServer(t, s)
+	resp, err := http.Get(ts.URL + MCPPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("unset MCP /mcp status %d, want 404 (reserved, not a file)", resp.StatusCode)
+	}
+}
+
 func TestView_OpensServerURLNotFile(t *testing.T) {
 	dir := t.TempDir()
 	md := filepath.Join(dir, "doc.md")

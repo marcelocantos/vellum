@@ -132,8 +132,13 @@ jobs:
                 with media extraction). Poppler (pdftoppm/pdftotext) handles PDF
                 import (page images + text). Both are formula dependencies.
 
-                Markdown view server (localhost HTML for vellum view / Cmd-click):
+                Localhost daemon (Markdown view + HTTP MCP at /mcp):
                   brew services start vellum
                 Binds 127.0.0.1:18742 only. Override with VELLUM_VIEW_ADDR.
+                Confirm with: lsof -iTCP:18742 -sTCP:LISTEN
+                Do not probe /mcp with bare curl.
+                MCP clients: http://127.0.0.1:18742/mcp
+                  claude mcp add --scope user --transport http vellum http://127.0.0.1:18742/mcp
+                Restart the agent session after registration.
               EOS
             end

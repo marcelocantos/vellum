@@ -17,7 +17,7 @@ import (
 	"github.com/marcelocantos/vellum/viewer"
 )
 
-const version = "0.14.0"
+const version = "0.15.0"
 
 func main() {
 	if err := run(); err != nil {
@@ -341,8 +341,9 @@ func runServeView(args []string) error {
 		Addr:    addr,
 		Style:   cfg.Style,
 		Backend: cfg.Backend,
+		MCP:     vellummcp.HTTPHandler(version, cfg.Style, cfg.Backend),
 	}
-	fmt.Fprintf(os.Stderr, "vellum view server listening on %s\n", srv.Origin())
+	fmt.Fprintf(os.Stderr, "vellum server listening on %s (view + MCP %s%s)\n", srv.Origin(), srv.Origin(), viewer.MCPPath)
 	return srv.ListenAndServe(context.Background())
 }
 
@@ -357,7 +358,8 @@ stay on the server; reload re-converts when the source is newer.
 Never writes next to the source file.
 
 Requires the view server (auto-started if needed). Prefer a persistent
-daemon: brew services start vellum  (or: vellum serve-view).
+daemon: brew services start vellum  (or: vellum serve-view). That
+process also hosts streamable HTTP MCP at /mcp.
 
 Options:
   --help              Show this help
@@ -380,12 +382,19 @@ are evicted until under cap.
 func printServeViewUsage() {
 	fmt.Print(`Usage: vellum serve-view [--addr host:port]
 
-Run the localhost Markdown view server (foreground). Binds loopback
-only — default 127.0.0.1:18742 (override with --addr or VELLUM_VIEW_ADDR).
+Run the localhost daemon (foreground): Markdown view server plus
+streamable HTTP MCP at /mcp. Binds loopback only — default
+127.0.0.1:18742 (override with --addr or VELLUM_VIEW_ADDR).
 
 Each GET of a .md/.markdown path converts that one file to HTML (no
 link-graph crawl). Relative .md links are rewritten to same-origin
-URLs. Reload re-converts when the source mtime/size changes.
+URLs. Reload re-converts when the source mtime/size changes. Served
+pages include view chrome (TOC, figure lightbox, PDF/clipboard/Finder
+actions under /_vellum/). Chrome is not written into the convert cache.
+
+MCP clients connect to http://127.0.0.1:18742/mcp (do not probe /mcp
+with bare curl — it only accepts MCP JSON-RPC). Prefer this over
+spawning vellum --mcp per session.
 
 Install as a user service via Homebrew:
 
@@ -755,7 +764,8 @@ Options:
   --help              Show this help message
   --help-agent        Show this help plus the embedded agent guide
   --version           Print version number
-  --mcp               Run as an MCP (Model Context Protocol) server on stdio
+  --mcp               Run as an MCP server on stdio (fallback; prefer
+                      brew services + HTTP at /mcp)
   --to-clipboard      Sugar: file|stdin → clipboard (macOS)
   --open              Alias for 'view': open via localhost view server (macOS)
   -o <path>           Output path (single input file only)
@@ -767,7 +777,8 @@ Subcommands:
   import              Alias: rich-text → Markdown. See "vellum import --help".
   view                Open Markdown via the localhost view server
                       (HTML default; --pdf for PDF). See "vellum view --help".
-  serve-view          Run the localhost Markdown view server (brew services)
+  serve-view          Run the localhost daemon: Markdown view + HTTP MCP
+                      at /mcp (brew services)
   install-viewer      Install Vellum Viewer.app as the default .md handler
   uninstall-viewer    Remove Vellum Viewer.app
 
@@ -778,7 +789,7 @@ Examples:
   vellum convert --from clipboard --to content
   vellum import doc.docx                 # → Markdown on stdout
   vellum view notes.md                   # rendered HTML in browser
-  vellum serve-view                      # localhost view daemon
+  vellum serve-view                      # localhost view + MCP daemon
 
 Renderer (default WeasyPrint, optional Prince) must be on PATH for PDF
 output. pandoc must be on PATH for rich-text import paths.

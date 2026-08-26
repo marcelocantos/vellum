@@ -2,7 +2,7 @@
 
 Document preparation MCP server — converts GitHub-flavoured Markdown to PDF via [goldmark](https://github.com/yuin/goldmark) and [WeasyPrint](https://www.courtbouillon.org/weasyprint) (or [Prince](https://www.princexml.com/) opt-in), and the inverse: rich-text formats (RTF, DOCX, HTML, ODT, EPUB, …) back to Markdown via [pandoc](https://pandoc.org/).
 
-vellum is primarily a stdio [Model Context Protocol](https://modelcontextprotocol.io/) server, exposing both conversion directions as a single media-orthogonal `convert` tool for AI agents. It also ships a direct CLI for scripted and interactive use.
+vellum is primarily an HTTP [Model Context Protocol](https://modelcontextprotocol.io/) server (streamable HTTP at `/mcp` on the brew-service daemon), exposing both conversion directions as a single media-orthogonal `convert` tool for AI agents. It also ships a direct CLI for scripted and interactive use, and a stdio MCP fallback (`vellum --mcp`).
 
 On macOS, `vellum install-viewer` registers **Vellum Viewer** as the default `.md` handler so double-clicking Markdown opens a rendered view (HTML by default). Details: [macOS Markdown viewer](#macos-markdown-viewer).
 
@@ -42,27 +42,41 @@ Substitute `<version>` with the value printed in the error message.
 
 ## Installation
 
-### Homebrew
+Installing vellum is a multi-step process. Do not stop after `brew install`.
+
+1. **Install the binary** (Homebrew preferred):
 
 ```sh
 brew install marcelocantos/tap/vellum
 ```
 
-### go install
+   Alternatives: `go install github.com/marcelocantos/vellum/cmd/vellum@latest`,
+   or a prebuilt binary from the [GitHub releases](https://github.com/marcelocantos/vellum/releases)
+   (macOS arm64, Linux x86_64, Linux arm64).
+
+2. **Install runtime dependencies** (WeasyPrint, node, KaTeX, mermaid-cli,
+   pandoc, poppler — see [Requirements](#requirements)). The formula pulls
+   most of these; `npm install -g katex` is still a separate step.
+
+3. **Start the daemon:**
 
 ```sh
-go install github.com/marcelocantos/vellum/cmd/vellum@latest
+brew services start vellum
 ```
 
-### Binary download
+   Confirm it is listening with `lsof -iTCP:18742 -sTCP:LISTEN`. Do **not**
+   probe `/mcp` with bare `curl` — MCP only accepts POST with a JSON-RPC
+   body, so a plain GET looks like “server not ready”. Non-Homebrew
+   installs can run `vellum serve-view` in the foreground.
 
-Prebuilt binaries for macOS arm64, Linux x86_64, and Linux arm64 are attached to each [GitHub release](https://github.com/marcelocantos/vellum/releases).
+4. **Register HTTP MCP** at `http://127.0.0.1:18742/mcp` and **restart the
+   agent session**. `vellum --mcp` is a stdio fallback only.
 
 ### Quick start for agentic coding tools
 
 If you use an AI coding agent (Claude Code, Cursor, etc.), paste this prompt to install vellum end-to-end:
 
-> Install vellum from https://github.com/marcelocantos/vellum. Run `brew install marcelocantos/tap/vellum`, register it as a stdio MCP server (`vellum --mcp`), then let me know so I can restart the session. After restart, run `vellum --help-agent` and confirm the `convert` tool is callable.
+> Install vellum from https://github.com/marcelocantos/vellum. This is a multi-step install — do not stop after brew install. Run `brew install marcelocantos/tap/vellum`, `npm install -g katex` if needed, start the service (`brew services start vellum`), confirm it is listening with `lsof -iTCP:18742 -sTCP:LISTEN` (do not curl /mcp), register it as an HTTP MCP server at `http://127.0.0.1:18742/mcp`, then let me know so I can restart the session. After restart, run `vellum --help-agent` and confirm the `convert` tool is callable.
 
 ## CLI usage
 
@@ -79,7 +93,7 @@ Options:
   --help              Show help
   --help-agent        Show help plus the embedded agent guide
   --version           Print version
-  --mcp               Run as an MCP server on stdio
+  --mcp               Run as an MCP server on stdio (fallback)
   --to-clipboard      Sugar: file|stdin → clipboard (macOS)
   --open              Open via the localhost view server (alias for `view`)
   -o <path>           Output path (single input file only)
@@ -91,7 +105,7 @@ Subcommands:
   import              Alias: rich-text → Markdown. See `vellum import --help`.
   view                Open Markdown via the localhost view server
                       (HTML default; --pdf for PDF fidelity)
-  serve-view          Run the localhost Markdown view server (brew services)
+  serve-view          Run the localhost daemon: Markdown view + HTTP MCP at /mcp
   install-viewer      Install Vellum Viewer.app as the default .md handler
   uninstall-viewer    Remove Vellum Viewer.app
 ```
@@ -105,7 +119,7 @@ echo '# Hi' | vellum convert --from content --to clipboard
 vellum convert --from clipboard --to content
 vellum convert --from file --to content notes.docx
 vellum import doc.docx                 # sugar → Markdown on stdout
-brew services start vellum             # localhost view daemon (127.0.0.1:18742)
+brew services start vellum             # view + HTTP MCP daemon (127.0.0.1:18742)
 vellum view notes.md                   # open rendered HTML in the browser
 vellum install-viewer                  # double-click .md → rendered view
 ```
@@ -126,10 +140,15 @@ brew services start vellum
 ```
 
 Each GET converts **one** Markdown path (no link-graph crawl). Relative
-`.md`/`.markdown` links are rewritten to same-origin URLs. The server binds
+`.md`/`.markdown` links are rewritten to same-origin URLs. The served page
+adds view chrome (not written into the convert cache): a heading table of
+contents with expand/collapse, a toolbar to download PDF, copy the
+rendered document to the clipboard, or reveal the source in Finder, and
+a full-viewport zoom/pan viewer for images and SVG (including Mermaid).
+The same process hosts streamable HTTP MCP at `/mcp`. The server binds
 loopback only (override with `--addr` / `VELLUM_VIEW_ADDR`). Cache health:
-entries older than 7 days are dropped, then oldest entries are evicted until
-total size is under 50 MB.
+entries older than 7 days are dropped, then oldest entries are evicted
+until total size is under 50 MB.
 
 `vellum install-viewer` generates `~/Applications/Vellum Viewer.app`,
 registers it with Launch Services, and (with [`duti`](https://github.com/moretension/duti) on `PATH`) sets it as the default handler for Markdown. The app executable is a small Cocoa binary (compiled with clang at install time) that receives Launch Services open-document Apple Events and runs `vellum --open` — a shell-script launcher cannot receive those events. Requires Xcode Command Line Tools. Uninstall with `vellum uninstall-viewer`. Debug log: `~/Library/Logs/vellum-viewer.log`.
@@ -138,24 +157,24 @@ With no `-o`, each input file is converted to a sibling `.pdf` with the same bas
 
 ## MCP server
 
-Run vellum as an MCP server over stdio:
-
-```sh
-vellum --mcp
-```
-
-Configure it in any MCP-capable client (for example, Claude Code's `.mcp.json`):
+The brew-service daemon hosts streamable HTTP MCP at
+`http://127.0.0.1:18742/mcp` (same process as the Markdown view server).
+Start it with `brew services start vellum` (or `vellum serve-view`).
 
 ```json
 {
   "mcpServers": {
     "vellum": {
-      "command": "vellum",
-      "args": ["--mcp"]
+      "transport": "http",
+      "url": "http://127.0.0.1:18742/mcp"
     }
   }
 }
 ```
+
+`vellum --mcp` remains as a stdio fallback for clients that cannot speak
+HTTP. Prefer the HTTP registration so each agent session does not spawn
+another process.
 
 The server exposes a **single** tool, `convert`, with media-orthogonal
 `from` / `to` (media: `file`, `content`, `clipboard`, `file_reference`).

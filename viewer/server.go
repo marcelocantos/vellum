@@ -26,11 +26,16 @@ const (
 	DefaultViewAddr = "127.0.0.1:18742"
 	// HealthPath is the liveness probe path (not a filesystem path).
 	HealthPath = "/healthz"
+	// MCPPath is the streamable HTTP MCP endpoint (not a filesystem path).
+	MCPPath = "/mcp"
 )
+
+var errIsDirectory = errors.New("is a directory")
 
 // Server serves one Markdown→HTML conversion per GET. Relative .md links are
 // rewritten to same-origin URLs. Non-Markdown paths under the same listener
 // are served as static files so relative images resolve without file://.
+// When MCP is set, streamable HTTP MCP is mounted at MCPPath on this listener.
 type Server struct {
 	// Addr is the listen address (host:port). Empty means DefaultViewAddr.
 	// Host must be loopback; Serve rejects non-loopback binds.
@@ -50,6 +55,17 @@ type Server struct {
 
 	// RenderFile, when non-nil, replaces convert.RenderFile (tests).
 	RenderFile func(ctx context.Context, path string, opts *convert.Options) (string, []string, error)
+
+	// MCP, when non-nil, is mounted at MCPPath so the brew-service
+	// process hosts streamable HTTP MCP on the same listener as the view.
+	MCP http.Handler
+
+	// WriteClipboard, when non-nil, replaces clipboard.Write (tests).
+	WriteClipboard func(html string) error
+	// Reveal, when non-nil, replaces `open -R` (tests).
+	Reveal func(path string) error
+	// ConvertPDF, when non-nil, replaces convert.Convert for PDF download (tests).
+	ConvertPDF func(ctx context.Context, input, output string) error
 }
 
 // Origin returns the http://host:port origin for Addr (no trailing slash).
@@ -86,6 +102,13 @@ func (s *Server) Handler() http.Handler {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		_, _ = io.WriteString(w, "ok\n")
 	})
+	if s != nil && s.MCP != nil {
+		mux.Handle(MCPPath, s.MCP)
+		mux.Handle(MCPPath+"/", s.MCP)
+	}
+	mux.HandleFunc(ChromePDFPath, s.handlePDF)
+	mux.HandleFunc(ChromeClipboardPath, s.handleClipboard)
+	mux.HandleFunc(ChromeRevealPath, s.handleReveal)
 	mux.HandleFunc("/", s.handlePath)
 	return mux
 }
@@ -168,6 +191,14 @@ func requireLoopbackAddr(addr string) error {
 }
 
 func (s *Server) handlePath(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == MCPPath || strings.HasPrefix(r.URL.Path, MCPPath+"/") {
+		http.NotFound(w, r)
+		return
+	}
+	if r.URL.Path == strings.TrimSuffix(ChromePrefix, "/") || strings.HasPrefix(r.URL.Path, ChromePrefix) {
+		http.NotFound(w, r)
+		return
+	}
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -205,28 +236,52 @@ func urlPathToFS(p string) (string, error) {
 }
 
 func (s *Server) serveMarkdown(w http.ResponseWriter, r *http.Request, absPath string) {
-	info, err := os.Stat(absPath)
+	body, err := s.cachedHTML(r.Context(), absPath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			http.NotFound(w, r)
 			return
 		}
+		if errors.Is(err, errIsDirectory) {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if info.IsDir() {
-		http.Error(w, "is a directory", http.StatusBadRequest)
+	origin := requestOrigin(r)
+	html := rewriteMarkdownHrefs(string(body), absPath, origin)
+	// Ensure <base> matches this request's origin (cache may predate a port change).
+	html = ensureBaseHref(html, origin+pathURL(filepath.Dir(absPath))+"/")
+	html = injectChrome(html, absPath)
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
+	w.Header().Set("Pragma", "no-cache")
+	if r.Method == http.MethodHead {
+		w.WriteHeader(http.StatusOK)
 		return
+	}
+	_, _ = io.WriteString(w, html)
+}
+
+// cachedHTML returns convert HTML for absPath (chrome-free). It is the
+// payload for both the view page (chrome is injected after) and clipboard.
+func (s *Server) cachedHTML(ctx context.Context, absPath string) ([]byte, error) {
+	info, err := os.Stat(absPath)
+	if err != nil {
+		return nil, err
+	}
+	if info.IsDir() {
+		return nil, errIsDirectory
 	}
 
 	cacheRoot, err := resolveCacheDir(s.CacheDir)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+		return nil, err
 	}
 	if err := os.MkdirAll(cacheRoot, 0o755); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+		return nil, err
 	}
 	cachePath := filepath.Join(cacheRoot, cacheName(absPath, ".html"))
 	now := time.Now
@@ -234,7 +289,6 @@ func (s *Server) serveMarkdown(w http.ResponseWriter, r *http.Request, absPath s
 		now = s.Now
 	}
 	maxAge := effectiveMaxAge(s.MaxAge)
-	origin := requestOrigin(r)
 
 	hit := false
 	if st, err := os.Stat(cachePath); err == nil && !st.IsDir() {
@@ -245,33 +299,15 @@ func (s *Server) serveMarkdown(w http.ResponseWriter, r *http.Request, absPath s
 		}
 	}
 	if !hit {
-		if err := s.renderMarkdown(r.Context(), absPath, cachePath); err != nil {
+		if err := s.renderMarkdown(ctx, absPath, cachePath); err != nil {
 			var se *convert.SoftError
 			if !errors.As(err, &se) {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
+				return nil, err
 			}
 		}
 	}
 	_ = pruneCache(cacheRoot, cachePath, effectiveMaxBytes(s.MaxBytes), maxAge, now())
-
-	body, err := os.ReadFile(cachePath)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	html := rewriteMarkdownHrefs(string(body), absPath, origin)
-	// Ensure <base> matches this request's origin (cache may predate a port change).
-	html = ensureBaseHref(html, origin+pathURL(filepath.Dir(absPath))+"/")
-
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
-	w.Header().Set("Pragma", "no-cache")
-	if r.Method == http.MethodHead {
-		w.WriteHeader(http.StatusOK)
-		return
-	}
-	_, _ = io.WriteString(w, html)
+	return os.ReadFile(cachePath)
 }
 
 func requestOrigin(r *http.Request) string {

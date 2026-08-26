@@ -21,7 +21,7 @@ change between minor releases — though in practice we aim to minimise churn.
 
 ## Interaction surface catalogue
 
-Snapshot as of **v0.14.0** (`const version` in `cmd/vellum`). Annotations:
+Snapshot as of **v0.15.0** (`const version` in `cmd/vellum`). Annotations:
 **stable** (unlikely to change), **needs review** (functional but may be
 refined), **fluid** (actively evolving).
 
@@ -53,9 +53,10 @@ Package paths are under `github.com/marcelocantos/vellum/…`.
 - `const MediaFile, MediaContent, MediaClipboard, MediaFileReference` — **needs review**
 - `const FormatMarkdown, FormatHTML, FormatRTF, FormatPDF, FormatRich` — **needs review** (`FormatRTF` is inferred from `.rtf`; file sinks currently refuse it — 🎯T25)
 
-**`mcp`** — the stdio MCP server.
+**`mcp`** — the MCP server (streamable HTTP preferred; stdio fallback).
 
-- `func Serve(ctx context.Context, version string) error` — **stable**
+- `func Serve(ctx context.Context, version string) error` — **stable** (stdio fallback)
+- `func HTTPHandler(version string, baseStyle *convert.Style, baseBackend string) http.Handler` — **needs review** (streamable HTTP; mounted at `/mcp` on the brew-service daemon, 🎯T31)
 - **Single tool** `convert` with `from`/`to` media endpoints (+ optional `files` sugar) — **needs review** (replaced the four-tool surface: old `convert_to_clipboard`, `convert_from_clipboard`, `import` removed)
 - `type Endpoint`, `FilePair`, `ConvertInput`, `ConvertOutput` — **needs review**
 
@@ -118,13 +119,13 @@ Package paths are under `github.com/marcelocantos/vellum/…`.
 - `func HTMLToRTF(html, resourcePath string) ([]byte, error)` — **needs review** (`--standalone`; CSS is ignored)
 - `func HTMLToPlain(html string) ([]byte, error)` — **needs review**
 
-**`viewer`** — localhost view server (HTML) + cached PDF open; macOS default Markdown handler (added in v0.6.0; view server in v0.14.0). Cache filename is `sha256(absPath)[:8]+ext` (not mtime). A `.stamp` sidecar records source mtime+size so HTML/PDF re-render in place when Markdown changes (🎯T28).
+**`viewer`** — localhost view server (HTML) + cached PDF open; macOS default Markdown handler (added in v0.6.0; view server in v0.14.0). Cache filename is `sha256(absPath)[:8]+ext` (not mtime). A `.stamp` sidecar records source mtime+size so HTML/PDF re-render in place when Markdown changes (🎯T28). HTML responses inject view chrome at serve time (TOC, figure lightbox, PDF/clipboard/Finder actions under `/_vellum/`); the convert-cache HTML file stays chrome-free (🎯T32).
 
 - `func View(ctx context.Context, inputPath string, opts *ViewOptions) (string, error)` — **needs review** (HTML opens `http://127.0.0.1:18742/…` view-server URL; PDF still opens a cache file)
 - `type ViewOptions struct { Format Format; Style *convert.Style; Backend string; Open func(string) error; CacheDir string; MaxBytes int64; MaxAge time.Duration; Now func() time.Time; ViewBaseURL string; SkipEnsureServer bool }` — **needs review**
 - `type Server struct { Addr string; CacheDir string; Style *convert.Style; Backend string; … }` — **needs review** (added in v0.14.0)
 - `func (*Server) ListenAndServe(ctx context.Context) error` — **needs review** (loopback-only bind)
-- `func (*Server) Handler() http.Handler` — **needs review**
+- `func (*Server) Handler() http.Handler` — **needs review** (Markdown GET injects chrome; `/_vellum/pdf` GET, `/_vellum/clipboard` POST, `/_vellum/reveal` POST)
 - `func ViewURL(origin, absPath string) string` — **needs review**
 - `func EnsureViewServer(origin string) error` — **needs review**
 - `func ProbeViewServer(origin string) error` — **needs review**
@@ -152,7 +153,7 @@ Binary: `vellum`.
 | `--help`         | Print usage to stdout, exit 0                       | stable    |
 | `--help-agent`   | Print usage + embedded agent guide, exit 0          | stable    |
 | `--version`      | Print version string to stdout, exit 0              | stable    |
-| `--mcp`          | Run as stdio MCP server                             | stable    |
+| `--mcp`          | Run as stdio MCP server (fallback; HTTP on the brew-service daemon is preferred) | stable    |
 | `--to-clipboard` | Sugar: file or stdin (`-`) → clipboard rich (macOS) | needs review |
 | `--open`         | Open via localhost view server (alias for `view`). Added in v0.6.0; server URL behaviour in v0.14.0. | needs review |
 | `--pdf`          | With `--open`/`view`: high-fidelity PDF instead of HTML. Added in v0.6.0. | needs review |
@@ -173,7 +174,7 @@ Binary: `vellum`.
 | `vellum import … -o <path>` | Write the Markdown to a file instead of stdout. | needs review |
 | `vellum import … --from <fmt>` | Override pandoc format autodetection. | needs review |
 | `vellum view <file>` | Open via localhost view server (HTML → `http://127.0.0.1:18742/…`) or PDF cache file. Added in v0.6.0; server behaviour in v0.14.0. | needs review |
-| `vellum serve-view` | Run the localhost Markdown view server (loopback only). Added in v0.14.0. | needs review |
+| `vellum serve-view` | Run the localhost daemon: Markdown view + streamable HTTP MCP at `/mcp` (loopback only). Added in v0.14.0; MCP mount in 🎯T31. | needs review |
 | `vellum install-viewer` | Install Vellum Viewer.app as default .md handler (macOS). Added in v0.6.0. | needs review |
 | `vellum uninstall-viewer` | Remove Vellum Viewer.app. Added in v0.6.0. | needs review |
 
@@ -185,8 +186,10 @@ Binary: `vellum`.
 
 - **stdout** (CLI mode, file sinks): one line per written path. Content sinks print the text body. **needs review** (content path added with v0.8.0).
 - **stderr** (CLI mode): error messages prefixed `Error: `; status lines for clipboard sinks. Non-zero exit on failure. **needs review**.
-- **stdout** (MCP mode): JSON-RPC 2.0 messages only, as required by the MCP
+- **stdout** (MCP stdio mode): JSON-RPC 2.0 messages only, as required by the MCP
   stdio transport. **stable**.
+- **HTTP** (MCP streamable HTTP at `/mcp` on `serve-view`): JSON-RPC 2.0 over
+  the MCP streamable HTTP transport. **needs review** (🎯T31).
 - **stderr** (MCP mode): reserved for diagnostics. Currently unused beyond
   errors surfaced by the SDK itself. **stable**.
 - **Exit codes**: `0` on success, `1` on any error. **stable**.
@@ -259,7 +262,8 @@ not listed here is either GFM (via goldmark's GFM extension) or not supported.
 ### Environment variables
 
 - `VELLUM_VIEW_ADDR=<host:port>` — loopback listen address for `vellum serve-view`
-  (default `127.0.0.1:18742`). **needs review** (added in v0.14.0).
+  (default `127.0.0.1:18742`). Also the MCP HTTP origin (`/mcp` on the same
+  listener). **needs review** (added in v0.14.0; MCP mount 🎯T31).
 - `VELLUM_DEBUG_HTML=<path>` — if set, vellum writes the assembled HTML to
   this path before invoking the PDF backend (WeasyPrint default, or Prince).
   Intended for development only. Does not document the KaTeX CSS CDN link
@@ -316,8 +320,8 @@ Items that must land before 1.0 can be cut.
 - **Audit logging.** `docs/audit-log.md` is new; the release skill
   appends to it. Ensure the convention sticks across subsequent releases.
 - **Binding / wrapper libraries.** None exist. If any land (e.g., a
-  Node/Python wrapper that spawns `vellum --mcp`), their public surface
-  must be catalogued here too before 1.0.
+  Node/Python wrapper that speaks streamable HTTP at `/mcp` or spawns
+  `vellum --mcp`), their public surface must be catalogued here too before 1.0.
 - **Concurrent convert.** `convert.Convert` is not explicitly documented
   as safe for concurrent use. In practice each call writes to a distinct
   temp file and a caller-chosen output path, so parallel calls should
@@ -327,9 +331,6 @@ Items that must land before 1.0 can be cut.
 
 Features and changes explicitly deferred past 1.0.
 
-- **HTTP MCP transport.** vellum is stdio-only by design. HTTP adds
-  port management and daemon lifecycle and brings no new capability;
-  punted.
 - **Bundled Chromium.** Distributing a Chromium binary alongside
   vellum would solve the `mmdc` setup pain but adds ~200 MB to the
   release and introduces a security-update treadmill. Stays external.

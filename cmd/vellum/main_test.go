@@ -75,6 +75,9 @@ func TestRun_HelpLong(t *testing.T) {
 	if !strings.Contains(out, "serve-view") {
 		t.Errorf("help output missing serve-view subcommand:\n%s", out)
 	}
+	if !strings.Contains(out, "/mcp") {
+		t.Errorf("help output missing HTTP MCP path /mcp:\n%s", out)
+	}
 }
 
 func TestRun_HelpShort(t *testing.T) {

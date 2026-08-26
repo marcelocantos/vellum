@@ -7,7 +7,7 @@ opt-in) and pandoc for rich-text import.
 ## Architecture
 
 Go binary with two modes:
-- **MCP server** (`vellum --mcp`): single `convert` tool with `from`/`to` media
+- **MCP server** (HTTP on the brew-service daemon at `/mcp`; `vellum --mcp` stdio fallback): single `convert` tool with `from`/`to` media
 - **CLI** (`vellum convert --from … --to …`; sugars for bare `.md`, `--to-clipboard`, `import`)
 
 ### Pipeline
@@ -30,10 +30,10 @@ Markdown → PDF path still: source preprocessors → goldmark → HTML template
 | `adf/` | Markdown → Confluence ADF (library only; not a `convert.Run` sink) |
 | `internal/pandoc/` | HTML → RTF/plain export helper (clipboard fallback; not a public API) |
 | `config/` | User configuration loaded from `~/.config/vellum/config.yaml` |
-| `mcp/` | MCP server (single `convert` tool) |
+| `mcp/` | MCP server (single `convert` tool; streamable HTTP + stdio) |
 | `embed/` | Embedded assets (CSS, HTML templates) |
 | `internal/testdeps/` | Test gate for external converters (`VELLUM_REQUIRE_DEPS`) |
-| `viewer/` | Localhost view server (HTML) + cached PDF open; macOS default .md handler |
+| `viewer/` | Localhost daemon (HTML view + chrome + `/mcp`); cached PDF open; macOS default .md handler |
 
 ### External dependencies
 

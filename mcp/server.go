@@ -2,13 +2,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package mcp exposes vellum's document conversion pipeline as an MCP
-// (Model Context Protocol) server over stdio.
+// (Model Context Protocol) server over streamable HTTP and stdio.
 package mcp
 
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"strings"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -60,8 +62,14 @@ type ConvertOutput struct {
 // name only registered tools — see TestAdvertisedToolNamesResolve.
 const serverInstructions = ""
 
+// idleSessionTimeout closes HTTP MCP sessions that have gone quiet so a
+// long-running brew-service process does not accumulate abandoned sessions.
+const idleSessionTimeout = 30 * time.Minute
+
 // Serve runs a vellum MCP server on stdio until the client disconnects.
 // version is reported in the Implementation info sent to the client.
+// Prefer HTTPHandler on the brew-service listener; this is the fallback
+// for clients that cannot speak streamable HTTP.
 func Serve(ctx context.Context, version string) error {
 	cfg, err := config.Load()
 	if err != nil {
@@ -70,9 +78,21 @@ func Serve(ctx context.Context, version string) error {
 	return newServer(version, cfg.Style, cfg.Backend).Run(ctx, &mcp.StdioTransport{})
 }
 
+// HTTPHandler returns a streamable HTTP handler for the vellum MCP
+// server. Mount it at /mcp on the localhost daemon (same process as
+// the Markdown view server). One shared MCP server instance serves
+// every session; convert is request-scoped.
+func HTTPHandler(version string, baseStyle *convert.Style, baseBackend string) http.Handler {
+	server := newServer(version, baseStyle, baseBackend)
+	return mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server {
+		return server
+	}, &mcp.StreamableHTTPOptions{SessionTimeout: idleSessionTimeout})
+}
+
 // newServer builds the MCP server with every tool vellum exposes, ready
-// to connect over any transport. Serve wires it to stdio; the tool-name
-// consistency check connects it in memory and reads the wire.
+// to connect over any transport. Serve wires it to stdio; HTTPHandler
+// wires it to streamable HTTP; the tool-name consistency check connects
+// it in memory and reads the wire.
 func newServer(version string, baseStyle *convert.Style, baseBackend string) *mcp.Server {
 	server := mcp.NewServer(&mcp.Implementation{
 		Name:    "vellum",
