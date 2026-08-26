@@ -15,6 +15,55 @@
   const content = document.getElementById("vellum-lightbox-content");
   const hint = document.getElementById("vellum-lightbox-hint");
 
+  const THEME_KEY = "vellum-theme";
+  const THEME_ORDER = ["dark", "system", "light"];
+  const THEME_ICON = { dark: "\u263E", system: "\u25D0", light: "\u2600" };
+
+  function nextTheme(mode) {
+    const i = THEME_ORDER.indexOf(mode);
+    return THEME_ORDER[(i + 1) % THEME_ORDER.length];
+  }
+
+  function themeLabel(mode) {
+    return mode.charAt(0).toUpperCase() + mode.slice(1);
+  }
+
+  function updateThemeButton(mode) {
+    const themeBtn = chrome.querySelector('[data-vellum="theme"]');
+    if (!themeBtn) return;
+    const next = nextTheme(mode);
+    themeBtn.textContent = THEME_ICON[mode] || mode;
+    themeBtn.title = "Theme: " + themeLabel(mode) + " (click for " + themeLabel(next) + ")";
+    themeBtn.setAttribute("aria-label", themeBtn.title);
+  }
+
+  function applyTheme(mode) {
+    if (THEME_ORDER.indexOf(mode) < 0) mode = "system";
+    document.documentElement.dataset.vellumTheme = mode;
+    try {
+      localStorage.setItem(THEME_KEY, mode);
+    } catch (e) {}
+    updateThemeButton(mode);
+  }
+
+  function initTheme() {
+    let mode = "system";
+    try {
+      const saved = localStorage.getItem(THEME_KEY);
+      if (THEME_ORDER.indexOf(saved) >= 0) mode = saved;
+    } catch (e) {}
+    applyTheme(mode);
+    try {
+      window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", function () {
+        if (document.documentElement.dataset.vellumTheme === "system") {
+          updateThemeButton("system");
+        }
+      });
+    } catch (e) {}
+  }
+
+  initTheme();
+
   function focusScrollPane() {
     if (scrollPane) scrollPane.focus({ preventScroll: true });
   }
@@ -40,6 +89,10 @@
   chrome.querySelectorAll("[data-vellum]").forEach(function (btn) {
     btn.addEventListener("click", function () {
       const action = btn.getAttribute("data-vellum");
+      if (action === "theme") {
+        applyTheme(nextTheme(document.documentElement.dataset.vellumTheme || "system"));
+        return;
+      }
       if (action === "pdf") {
         window.location.assign(actionURL("pdf"));
         return;

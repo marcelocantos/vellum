@@ -139,7 +139,6 @@ func (m *mermaidPreprocessor) ReplaceAll(ctx context.Context, html string) (stri
 			soft = append(soft, msg)
 			img = `<pre class="mermaid-error">` + htmlEscapeText(d.source) + `</pre>`
 		}
-		// Apply scale via CSS width percentage if not default.
 		style := ""
 		if d.scale != 1.0 {
 			style = fmt.Sprintf(` style="max-width: %.0f%%"`, d.scale*100)

@@ -41,7 +41,7 @@ func injectChrome(htmlDoc, sourcePath string) string {
 	}
 	htmlDoc = addBodyClass(htmlDoc, "vellum-view")
 	if loc := headCloseRe.FindStringIndex(htmlDoc); loc != nil {
-		htmlDoc = htmlDoc[:loc[0]] + chromeStyleTag() + htmlDoc[loc[0]:]
+		htmlDoc = htmlDoc[:loc[0]] + chromeThemeInitScript() + htmlDoc[loc[0]:]
 	}
 	open := bodyOpenRe.FindStringIndex(htmlDoc)
 	close := bodyCloseRe.FindStringIndex(htmlDoc)
@@ -51,6 +51,9 @@ func injectChrome(htmlDoc, sourcePath string) string {
 	inner := htmlDoc[open[1]:close[0]]
 	wrapped := chromeOpen(sourcePath) + inner + chromeClose()
 	htmlDoc = htmlDoc[:open[1]] + wrapped + htmlDoc[close[0]:]
+	if loc := headCloseRe.FindStringIndex(htmlDoc); loc != nil {
+		htmlDoc = htmlDoc[:loc[0]] + chromeStyleTag() + htmlDoc[loc[0]:]
+	}
 	if loc := bodyCloseRe.FindStringIndex(htmlDoc); loc != nil {
 		htmlDoc = htmlDoc[:loc[0]] + chromeScriptTag() + htmlDoc[loc[0]:]
 	}
@@ -58,7 +61,11 @@ func injectChrome(htmlDoc, sourcePath string) string {
 }
 
 func chromeStyleTag() string {
-	return "<style>\n" + chromeCSS + "\n</style>\n"
+	return "<style>\n" + chromeCSS + "\n" + chromaDarkThemeCSS + "</style>\n"
+}
+
+func chromeThemeInitScript() string {
+	return `<script>(function(){try{var k='vellum-theme',t=localStorage.getItem(k),o=['dark','system','light'];document.documentElement.dataset.vellumTheme=o.indexOf(t)>=0?t:'system';}catch(e){document.documentElement.dataset.vellumTheme='system';}})();</script>` + "\n"
 }
 
 func chromeScriptTag() string {
@@ -83,7 +90,10 @@ func chromeOpen(sourcePath string) string {
 		`<button type="button" data-vellum="pdf" title="Download a PDF of this document">Download PDF</button>` +
 		`<button type="button" data-vellum="clipboard" title="Copy the rendered document to the clipboard">Copy</button>` +
 		`<button type="button" data-vellum="reveal" title="Reveal the source file in Finder">Show in Finder</button>` +
+		`<div class="vellum-toolbar-end">` +
 		`<span class="vellum-docname">` + html.EscapeString(name) + `</span>` +
+		`<button type="button" class="vellum-theme-btn" data-vellum="theme" title="Theme: System">◐</button>` +
+		`</div>` +
 		`<span class="vellum-status" id="vellum-status" hidden></span>` +
 		`</header>` +
 		`<div class="vellum-scroll" id="vellum-scroll" tabindex="0" role="region" aria-label="Document">` +

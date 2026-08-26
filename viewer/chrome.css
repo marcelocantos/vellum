@@ -177,13 +177,29 @@ body.vellum-view {
 }
 
 .vellum-docname {
-  margin-left: auto;
   font-size: 12px;
   color: #656d76;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  min-width: 0;
+}
+
+.vellum-toolbar-end {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex-shrink: 0;
   max-width: 40%;
+}
+
+.vellum-theme-btn {
+  min-width: 32px;
+  padding: 4px 10px;
+  font-size: 16px;
+  line-height: 1;
 }
 
 .vellum-status {
@@ -314,5 +330,259 @@ body.vellum-view {
   }
   .vellum-article {
     padding: 0;
+  }
+}
+
+/* --- Theme (after convert CSS in head; beats github.css on specificity) --- */
+
+html[data-vellum-theme="dark"] { color-scheme: dark; }
+html[data-vellum-theme="light"] { color-scheme: light; }
+html[data-vellum-theme="system"] { color-scheme: light dark; }
+
+html[data-vellum-theme="dark"] body.vellum-view,
+html[data-vellum-theme="dark"] .vellum-scroll {
+  background: #0d1117;
+  color: #e6edf3;
+}
+
+html[data-vellum-theme="dark"] .vellum-toolbar {
+  background: #161b22;
+  border-bottom-color: #30363d;
+}
+
+html[data-vellum-theme="dark"] .vellum-toc {
+  background: #161b22;
+  border-right-color: #30363d;
+}
+
+html[data-vellum-theme="dark"] .vellum-toc-title {
+  color: #e6edf3;
+}
+
+html[data-vellum-theme="dark"] .vellum-toc-twist {
+  color: #8b949e;
+}
+
+html[data-vellum-theme="dark"] .vellum-toc-actions button,
+html[data-vellum-theme="dark"] .vellum-toolbar button {
+  background: #21262d;
+  border-color: #30363d;
+  color: #e6edf3;
+}
+
+html[data-vellum-theme="dark"] .vellum-toc-actions button:hover,
+html[data-vellum-theme="dark"] .vellum-toolbar button:hover {
+  background: #30363d;
+}
+
+html[data-vellum-theme="dark"] .vellum-toc-actions button:disabled:hover {
+  background: #21262d;
+}
+
+html[data-vellum-theme="dark"] .vellum-docname {
+  color: #8b949e;
+}
+
+html[data-vellum-theme="dark"] .vellum-toc-nav a {
+  color: #e6edf3;
+}
+
+html[data-vellum-theme="dark"] .vellum-toc-nav a:hover {
+  background: #21262d;
+}
+
+html[data-vellum-theme="dark"] .vellum-toc-nav a.vellum-toc-active {
+  background: #388bfd26;
+  color: #4493f8;
+}
+
+html[data-vellum-theme="dark"] .vellum-article {
+  color: #e6edf3;
+}
+
+html[data-vellum-theme="dark"] .vellum-article h1,
+html[data-vellum-theme="dark"] .vellum-article h2 {
+  border-bottom-color: #30363d;
+}
+
+html[data-vellum-theme="dark"] .vellum-article h6,
+html[data-vellum-theme="dark"] .vellum-article blockquote,
+html[data-vellum-theme="dark"] .vellum-article .footnotes {
+  color: #8b949e;
+}
+
+html[data-vellum-theme="dark"] .vellum-article a {
+  color: #4493f8;
+}
+
+html[data-vellum-theme="dark"] .vellum-article code {
+  background-color: rgba(110, 118, 129, 0.4);
+  color: #e6edf3;
+}
+
+html[data-vellum-theme="dark"] .vellum-article pre {
+  color: #e6edf3;
+  background-color: #161b22;
+}
+
+html[data-vellum-theme="dark"] .vellum-article pre code {
+  background-color: transparent;
+  color: inherit;
+}
+
+html[data-vellum-theme="dark"] .vellum-article blockquote {
+  border-left-color: #30363d;
+}
+
+html[data-vellum-theme="dark"] .vellum-article th,
+html[data-vellum-theme="dark"] .vellum-article td {
+  border-color: #30363d;
+  color: #e6edf3;
+}
+
+html[data-vellum-theme="dark"] .vellum-article th {
+  background-color: #161b22;
+}
+
+html[data-vellum-theme="dark"] .vellum-article tr {
+  background-color: #0d1117;
+}
+
+html[data-vellum-theme="dark"] .vellum-article tr:nth-child(2n) {
+  background-color: #161b22;
+}
+
+html[data-vellum-theme="dark"] .vellum-article hr {
+  background-color: #30363d;
+  border-color: #30363d;
+}
+
+html[data-vellum-theme="dark"] .vellum-article mark {
+  background-color: rgba(187, 128, 9, 0.35);
+  color: #e6edf3;
+}
+
+@media (prefers-color-scheme: dark) {
+  html[data-vellum-theme="system"] body.vellum-view,
+  html[data-vellum-theme="system"] .vellum-scroll {
+    background: #0d1117;
+    color: #e6edf3;
+  }
+
+  html[data-vellum-theme="system"] .vellum-toolbar {
+    background: #161b22;
+    border-bottom-color: #30363d;
+  }
+
+  html[data-vellum-theme="system"] .vellum-toc {
+    background: #161b22;
+    border-right-color: #30363d;
+  }
+
+  html[data-vellum-theme="system"] .vellum-toc-title {
+    color: #e6edf3;
+  }
+
+  html[data-vellum-theme="system"] .vellum-toc-twist {
+    color: #8b949e;
+  }
+
+  html[data-vellum-theme="system"] .vellum-toc-actions button,
+  html[data-vellum-theme="system"] .vellum-toolbar button {
+    background: #21262d;
+    border-color: #30363d;
+    color: #e6edf3;
+  }
+
+  html[data-vellum-theme="system"] .vellum-toc-actions button:hover,
+  html[data-vellum-theme="system"] .vellum-toolbar button:hover {
+    background: #30363d;
+  }
+
+  html[data-vellum-theme="system"] .vellum-toc-actions button:disabled:hover {
+    background: #21262d;
+  }
+
+  html[data-vellum-theme="system"] .vellum-docname {
+    color: #8b949e;
+  }
+
+  html[data-vellum-theme="system"] .vellum-toc-nav a {
+    color: #e6edf3;
+  }
+
+  html[data-vellum-theme="system"] .vellum-toc-nav a:hover {
+    background: #21262d;
+  }
+
+  html[data-vellum-theme="system"] .vellum-toc-nav a.vellum-toc-active {
+    background: #388bfd26;
+    color: #4493f8;
+  }
+
+  html[data-vellum-theme="system"] .vellum-article {
+    color: #e6edf3;
+  }
+
+  html[data-vellum-theme="system"] .vellum-article h1,
+  html[data-vellum-theme="system"] .vellum-article h2 {
+    border-bottom-color: #30363d;
+  }
+
+  html[data-vellum-theme="system"] .vellum-article h6,
+  html[data-vellum-theme="system"] .vellum-article blockquote,
+  html[data-vellum-theme="system"] .vellum-article .footnotes {
+    color: #8b949e;
+  }
+
+  html[data-vellum-theme="system"] .vellum-article a {
+    color: #4493f8;
+  }
+
+  html[data-vellum-theme="system"] .vellum-article code {
+    background-color: rgba(110, 118, 129, 0.4);
+    color: #e6edf3;
+  }
+
+  html[data-vellum-theme="system"] .vellum-article pre {
+    color: #e6edf3;
+    background-color: #161b22;
+  }
+
+  html[data-vellum-theme="system"] .vellum-article pre code {
+    background-color: transparent;
+    color: inherit;
+  }
+
+  html[data-vellum-theme="system"] .vellum-article blockquote {
+    border-left-color: #30363d;
+  }
+
+  html[data-vellum-theme="system"] .vellum-article th,
+  html[data-vellum-theme="system"] .vellum-article td {
+    border-color: #30363d;
+    color: #e6edf3;
+  }
+
+  html[data-vellum-theme="system"] .vellum-article th {
+    background-color: #161b22;
+  }
+
+  html[data-vellum-theme="system"] .vellum-article tr {
+    background-color: #0d1117;
+  }
+
+  html[data-vellum-theme="system"] .vellum-article tr:nth-child(2n) {
+    background-color: #161b22;
+  }
+
+  html[data-vellum-theme="system"] .vellum-article hr {
+    background-color: #30363d;
+    border-color: #30363d;
+  }
+
+  html[data-vellum-theme="system"] .vellum-article mark {
+    background-color: rgba(187, 128, 9, 0.35);
+    color: #e6edf3;
   }
 }

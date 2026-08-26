@@ -48,6 +48,9 @@ func TestInjectChrome_WrapsBodyAndAddsClass(t *testing.T) {
 	if !strings.Contains(out, `data-vellum="pdf"`) || !strings.Contains(out, `data-vellum="clipboard"`) || !strings.Contains(out, `data-vellum="reveal"`) {
 		t.Fatalf("missing toolbar actions:\n%s", out)
 	}
+	if !strings.Contains(out, `data-vellum="theme"`) || !strings.Contains(out, "vellum-theme") {
+		t.Fatalf("missing theme toggle:\n%s", out)
+	}
 	if !strings.Contains(out, `id="vellum-toc"`) || !strings.Contains(out, `data-vellum="toc-expand"`) {
 		t.Fatalf("missing TOC chrome:\n%s", out)
 	}
