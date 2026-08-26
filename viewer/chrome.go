@@ -72,8 +72,8 @@ func chromeOpen(sourcePath string) string {
 		`<div class="vellum-toc-header">` +
 		`<span class="vellum-toc-title">Contents</span>` +
 		`<div class="vellum-toc-actions">` +
-		`<button type="button" data-vellum="toc-expand">Expand all</button>` +
-		`<button type="button" data-vellum="toc-collapse">Collapse all</button>` +
+		`<button type="button" data-vellum="toc-collapse" title="Collapse all" aria-label="Collapse all">↖</button>` +
+		`<button type="button" data-vellum="toc-expand" title="Expand all" aria-label="Expand all">↘</button>` +
 		`</div></div>` +
 		`<nav class="vellum-toc-nav" id="vellum-toc-nav" aria-label="Table of contents"></nav>` +
 		`</aside>` +

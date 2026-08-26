@@ -7,6 +7,8 @@
   const scrollPane = document.getElementById("vellum-scroll");
   const toc = document.getElementById("vellum-toc");
   const tocNav = document.getElementById("vellum-toc-nav");
+  const tocCollapseBtn = chrome.querySelector('[data-vellum="toc-collapse"]');
+  const tocExpandBtn = chrome.querySelector('[data-vellum="toc-expand"]');
   const status = document.getElementById("vellum-status");
   const lightbox = document.getElementById("vellum-lightbox");
   const stage = document.getElementById("vellum-lightbox-stage");
@@ -55,7 +57,7 @@
       }
       if (action === "toc-collapse") {
         cancelTOCFill();
-        setTOCCollapsed(true);
+        collapseToFirstBranch();
         return;
       }
       if (action === "clipboard" || action === "reveal") {
@@ -184,13 +186,77 @@
     li.classList.toggle("is-collapsed", collapsed);
     const twist = li.querySelector(":scope > .vellum-toc-row > .vellum-toc-twist");
     if (twist) twist.textContent = collapsed ? "▸" : "▾";
+    updateTOCActionButtons();
+  }
+
+  function tocItemsIn(ol) {
+    return Array.prototype.filter.call(ol.children, function (li) {
+      return li.classList && li.classList.contains("vellum-toc-item");
+    });
+  }
+
+  function findBranchOl() {
+    let ol = tocNav.querySelector(":scope > ol");
+    while (ol) {
+      const items = tocItemsIn(ol);
+      if (items.length > 1) return ol;
+      if (items.length === 1) {
+        ol = items[0].querySelector(":scope > .vellum-toc-kids");
+      } else {
+        return null;
+      }
+    }
+    return null;
+  }
+
+  function collapseToFirstBranch() {
+    if (!tocNav) return;
+    const branchOl = findBranchOl();
+    if (!branchOl) {
+      setTOCCollapsed(true);
+      return;
+    }
+    tocNav.querySelectorAll(".vellum-toc-item").forEach(function (li) {
+      const kids = li.querySelector(":scope > .vellum-toc-kids");
+      if (!kids) return;
+      if (kids.contains(branchOl) || kids === branchOl) {
+        setItemCollapsed(li, false);
+      } else if (branchOl.contains(li)) {
+        setItemCollapsed(li, true);
+      } else {
+        setItemCollapsed(li, true);
+      }
+    });
+    updateTOCActionButtons();
+  }
+
+  function tocFullyExpanded() {
+    if (!tocNav) return true;
+    let expandable = false;
+    const items = tocNav.querySelectorAll(".vellum-toc-item");
+    for (let i = 0; i < items.length; i++) {
+      const li = items[i];
+      if (!li.querySelector(":scope > .vellum-toc-kids")) continue;
+      expandable = true;
+      if (li.classList.contains("is-collapsed")) return false;
+    }
+    return expandable;
+  }
+
+  function updateTOCActionButtons() {
+    if (tocExpandBtn) tocExpandBtn.disabled = tocFullyExpanded();
   }
 
   function setTOCCollapsed(collapsed) {
     if (!tocNav) return;
     tocNav.querySelectorAll(".vellum-toc-item").forEach(function (li) {
-      setItemCollapsed(li, collapsed);
+      const kids = li.querySelector(":scope > .vellum-toc-kids");
+      if (!kids) return;
+      li.classList.toggle("is-collapsed", collapsed);
+      const twist = li.querySelector(":scope > .vellum-toc-row > .vellum-toc-twist");
+      if (twist) twist.textContent = collapsed ? "▸" : "▾";
     });
+    updateTOCActionButtons();
   }
 
   // Expandable nodes in BFS order: one tree-depth at a time, top to bottom.
@@ -234,10 +300,14 @@
 
     function step(i) {
       if (gen !== tocFillGen) return;
-      if (i >= items.length) return;
+      if (i >= items.length) {
+        updateTOCActionButtons();
+        return;
+      }
       setItemCollapsed(items[i], false);
       if (tocOverflows()) {
         setItemCollapsed(items[i], true);
+        updateTOCActionButtons();
         return;
       }
       window.setTimeout(function () {

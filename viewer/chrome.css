@@ -73,6 +73,15 @@ body.vellum-view {
   background: #f3f4f6;
 }
 
+.vellum-toc-actions button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.vellum-toc-actions button:disabled:hover {
+  background: #fff;
+}
+
 .vellum-toc-nav {
   --toc-gutter: 1.4rem;
 }
