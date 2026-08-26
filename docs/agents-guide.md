@@ -358,8 +358,9 @@ already work with files and `convert`.
   (no link-graph crawl). Relative `.md` links are rewritten to
   same-origin URLs so clicks stay in the browser; reload re-converts
   when the source mtime/size changes. Served HTML is wrapped with view
-  chrome (TOC sidebar, PDF / clipboard / Finder toolbar, figure
-  lightbox). Chrome is injected per response; the convert-cache file
+  chrome (TOC sidebar with expand/collapse and « / » toggle, PDF /
+  clipboard / Finder toolbar, dark / system / light theme with
+  dark-mode syntax highlighting, figure lightbox). Chrome is injected per response; the convert-cache file
   stays chrome-free. Actions live under `/_vellum/` (`GET …/pdf`,
   `POST …/clipboard`, `POST …/reveal`).
 - `vellum view <file.md>` / `vellum --open <file.md>` — open the file

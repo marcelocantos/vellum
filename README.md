@@ -142,8 +142,10 @@ brew services start vellum
 Each GET converts **one** Markdown path (no link-graph crawl). Relative
 `.md`/`.markdown` links are rewritten to same-origin URLs. The served page
 adds view chrome (not written into the convert cache): a heading table of
-contents with expand/collapse, a toolbar to download PDF, copy the
-rendered document to the clipboard, or reveal the source in Finder, and
+contents with expand/collapse and a « / » sidebar toggle, a toolbar to
+download PDF, copy the rendered document to the clipboard, or reveal the
+source in Finder, a theme control (dark / system / light, persisted in
+the browser), dark-mode article styling with syntax highlighting, and
 a full-viewport zoom/pan viewer for images and SVG (including Mermaid).
 The same process hosts streamable HTTP MCP at `/mcp`. The server binds
 loopback only (override with `--addr` / `VELLUM_VIEW_ADDR`). Cache health:
