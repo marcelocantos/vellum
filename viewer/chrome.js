@@ -33,12 +33,28 @@
   const hint = document.getElementById("vellum-lightbox-hint");
 
   const THEME_KEY = "vellum-theme";
-  const THEME_ORDER = ["dark", "system", "light"];
+  const THEME_MODES = ["dark", "system", "light"];
   const THEME_ICON = { dark: "\u263E", system: "\u25D0", light: "\u2600" };
 
+  function systemPrefersDark() {
+    try {
+      return window.matchMedia("(prefers-color-scheme: dark)").matches;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function themeOrder() {
+    return systemPrefersDark()
+      ? ["system", "light", "dark"]
+      : ["system", "dark", "light"];
+  }
+
   function nextTheme(mode) {
-    const i = THEME_ORDER.indexOf(mode);
-    return THEME_ORDER[(i + 1) % THEME_ORDER.length];
+    const order = themeOrder();
+    const i = order.indexOf(mode);
+    if (i < 0) return order[0];
+    return order[(i + 1) % order.length];
   }
 
   function themeLabel(mode) {
@@ -55,7 +71,7 @@
   }
 
   function applyTheme(mode) {
-    if (THEME_ORDER.indexOf(mode) < 0) mode = "system";
+    if (THEME_MODES.indexOf(mode) < 0) mode = "system";
     document.documentElement.dataset.vellumTheme = mode;
     try {
       localStorage.setItem(THEME_KEY, mode);
@@ -67,14 +83,12 @@
     let mode = "system";
     try {
       const saved = localStorage.getItem(THEME_KEY);
-      if (THEME_ORDER.indexOf(saved) >= 0) mode = saved;
+      if (THEME_MODES.indexOf(saved) >= 0) mode = saved;
     } catch (e) {}
     applyTheme(mode);
     try {
       window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", function () {
-        if (document.documentElement.dataset.vellumTheme === "system") {
-          updateThemeButton("system");
-        }
+        updateThemeButton(document.documentElement.dataset.vellumTheme || "system");
       });
     } catch (e) {}
   }
