@@ -68,6 +68,28 @@ body.vellum-view {
   cursor: pointer;
 }
 
+.vellum-toolbar button .vellum-icon {
+  vertical-align: -2px;
+  margin-left: 4px;
+}
+
+.vellum-icon-btn {
+  line-height: 0;
+}
+
+.vellum-icon-btn .vellum-icon {
+  margin-left: 0;
+  vertical-align: middle;
+  display: block;
+}
+
+.vellum-toolbar .vellum-toc-toggle-btn {
+  margin-right: 20px;
+  min-width: auto;
+  font-size: 14px;
+  line-height: 1;
+}
+
 .vellum-toc-actions button:hover,
 .vellum-toolbar button:hover {
   background: #f3f4f6;
@@ -161,7 +183,7 @@ body.vellum-view {
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  padding: 8px 16px;
+  padding: 8px 16px 8px 0;
   background: #fff;
   border-bottom: 1px solid #d1d9e0;
 }

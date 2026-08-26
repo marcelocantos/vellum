@@ -9,6 +9,23 @@
   const tocNav = document.getElementById("vellum-toc-nav");
   const tocCollapseBtn = chrome.querySelector('[data-vellum="toc-collapse"]');
   const tocExpandBtn = chrome.querySelector('[data-vellum="toc-expand"]');
+  const tocToggleBtn = chrome.querySelector('[data-vellum="toc-toggle"]');
+
+  function toggleTocSidebar() {
+    if (!toc) return;
+    let mobile = false;
+    try {
+      mobile = window.matchMedia("(max-width: 880px)").matches;
+    } catch (e) {}
+    if (mobile) {
+      toc.classList.toggle("is-open");
+      toc.classList.remove("is-collapsed");
+    } else {
+      toc.classList.toggle("is-collapsed");
+      toc.classList.remove("is-open");
+    }
+    updateTocToggleButton();
+  }
   const status = document.getElementById("vellum-status");
   const lightbox = document.getElementById("vellum-lightbox");
   const stage = document.getElementById("vellum-lightbox-stage");
@@ -64,6 +81,31 @@
 
   initTheme();
 
+  function tocSidebarVisible() {
+    if (!toc) return false;
+    if (toc.classList.contains("is-collapsed")) return false;
+    try {
+      if (window.matchMedia("(max-width: 880px)").matches) {
+        return toc.classList.contains("is-open");
+      }
+    } catch (e) {}
+    return true;
+  }
+
+  function updateTocToggleButton() {
+    if (!tocToggleBtn) return;
+    const visible = tocSidebarVisible();
+    tocToggleBtn.textContent = visible ? "\u00AB" : "\u00BB";
+    const label = visible ? "Hide table of contents" : "Show table of contents";
+    tocToggleBtn.title = label;
+    tocToggleBtn.setAttribute("aria-label", label);
+  }
+
+  updateTocToggleButton();
+  try {
+    window.matchMedia("(max-width: 880px)").addEventListener("change", updateTocToggleButton);
+  } catch (e) {}
+
   function focusScrollPane() {
     if (scrollPane) scrollPane.focus({ preventScroll: true });
   }
@@ -98,9 +140,7 @@
         return;
       }
       if (action === "toc-toggle") {
-        if (!toc) return;
-        toc.classList.toggle("is-collapsed");
-        toc.classList.toggle("is-open");
+        toggleTocSidebar();
         return;
       }
       if (action === "toc-expand") {

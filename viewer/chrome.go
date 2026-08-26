@@ -72,6 +72,10 @@ func chromeScriptTag() string {
 	return "<script>\n" + chromeJS + "\n</script>\n"
 }
 
+func downloadIconSVG() string {
+	return `<svg class="vellum-icon" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>`
+}
+
 func chromeOpen(sourcePath string) string {
 	name := filepath.Base(sourcePath)
 	return `<div class="vellum-chrome" data-source="` + html.EscapeString(sourcePath) + `">` +
@@ -86,8 +90,8 @@ func chromeOpen(sourcePath string) string {
 		`</aside>` +
 		`<div class="vellum-main">` +
 		`<header class="vellum-toolbar">` +
-		`<button type="button" data-vellum="toc-toggle" title="Show or hide the table of contents">Contents</button>` +
-		`<button type="button" data-vellum="pdf" title="Download a PDF of this document">Download PDF</button>` +
+		`<button type="button" class="vellum-toc-toggle-btn" data-vellum="toc-toggle" title="Hide table of contents" aria-label="Hide table of contents">«</button>` +
+		`<button type="button" data-vellum="pdf" title="Download a PDF of this document" aria-label="Download PDF">PDF` + downloadIconSVG() + `</button>` +
 		`<button type="button" data-vellum="clipboard" title="Copy the rendered document to the clipboard">Copy</button>` +
 		`<button type="button" data-vellum="reveal" title="Reveal the source file in Finder">Show in Finder</button>` +
 		`<div class="vellum-toolbar-end">` +

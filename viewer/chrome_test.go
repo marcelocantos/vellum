@@ -51,8 +51,8 @@ func TestInjectChrome_WrapsBodyAndAddsClass(t *testing.T) {
 	if !strings.Contains(out, `data-vellum="theme"`) || !strings.Contains(out, "vellum-theme") {
 		t.Fatalf("missing theme toggle:\n%s", out)
 	}
-	if !strings.Contains(out, `id="vellum-toc"`) || !strings.Contains(out, `data-vellum="toc-expand"`) {
-		t.Fatalf("missing TOC chrome:\n%s", out)
+	if !strings.Contains(out, `data-vellum="toc-toggle"`) || !strings.Contains(out, `«`) {
+		t.Fatalf("missing TOC toggle chrome:\n%s", out)
 	}
 	if !strings.Contains(out, `id="vellum-lightbox"`) {
 		t.Fatalf("missing lightbox:\n%s", out)
