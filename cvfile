@@ -91,5 +91,23 @@ else \
   echo ""; \
 fi\'
 
+# --- release (local; gate is the preflight oracle) --------------------
+#
+#   cv release-dist   — build dist/vellum-<ver>-{darwin-arm64,linux-*}.tar.gz
+#   cv release-tap    — update marcelocantos/homebrew-tap (release must exist)
+#   cv release        — gate + dist + gh release create + tap + brew upgrade
+#
+# Tap update: tapper push (see tapper.yaml). GitHub upload uses gh auth.
+
+!release-dist:
+    $runner ./scripts/release-package.sh
+
+!release-tap:
+    $runner ./scripts/release-tap.sh
+
+!release: gate release-dist
+    $runner ./scripts/release-publish.sh
+
 !clean:
     rm -f $binary
+    rm -rf dist

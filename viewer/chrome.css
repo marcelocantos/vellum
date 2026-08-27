@@ -16,11 +16,12 @@ body.vellum-view {
   display: flex;
   align-items: stretch;
   height: 100%;
+  --vellum-toc-width: 16.5rem;
 }
 
 .vellum-toc {
-  flex: 0 0 16.5rem;
-  width: 16.5rem;
+  flex: 0 0 var(--vellum-toc-width);
+  width: var(--vellum-toc-width);
   height: 100%;
   overflow: auto;
   padding: 12px 12px 24px;
@@ -33,6 +34,38 @@ body.vellum-view {
 
 .vellum-toc[hidden],
 .vellum-toc.is-collapsed {
+  display: none;
+}
+
+.vellum-toc-splitter {
+  flex: 0 0 5px;
+  width: 5px;
+  margin: 0 -2px;
+  cursor: col-resize;
+  touch-action: none;
+  background: transparent;
+  position: relative;
+  z-index: 2;
+}
+
+.vellum-toc-splitter::after {
+  content: "";
+  position: absolute;
+  inset: 0 -3px;
+}
+
+.vellum-toc-splitter:hover,
+.vellum-toc-splitter.is-dragging {
+  background: rgba(9, 105, 218, 0.25);
+}
+
+.vellum-toc-splitter:focus-visible {
+  outline: 2px solid #0969da;
+  outline-offset: -1px;
+}
+
+.vellum-toc[hidden] + .vellum-toc-splitter,
+.vellum-toc.is-collapsed + .vellum-toc-splitter {
   display: none;
 }
 
@@ -325,10 +358,14 @@ body.vellum-view {
   .vellum-toc:not(.is-open) {
     display: none;
   }
+  .vellum-toc-splitter {
+    display: none;
+  }
 }
 
 @media print {
   .vellum-toc,
+  .vellum-toc-splitter,
   .vellum-toolbar,
   .vellum-lightbox {
     display: none !important;
@@ -375,6 +412,11 @@ html[data-vellum-theme="dark"] .vellum-toolbar {
 html[data-vellum-theme="dark"] .vellum-toc {
   background: #161b22;
   border-right-color: #30363d;
+}
+
+html[data-vellum-theme="dark"] .vellum-toc-splitter:hover,
+html[data-vellum-theme="dark"] .vellum-toc-splitter.is-dragging {
+  background: rgba(88, 166, 255, 0.35);
 }
 
 html[data-vellum-theme="dark"] .vellum-toc-title {
@@ -499,6 +541,11 @@ html[data-vellum-theme="dark"] .vellum-article mark {
   html[data-vellum-theme="system"] .vellum-toc {
     background: #161b22;
     border-right-color: #30363d;
+  }
+
+  html[data-vellum-theme="system"] .vellum-toc-splitter:hover,
+  html[data-vellum-theme="system"] .vellum-toc-splitter.is-dragging {
+    background: rgba(88, 166, 255, 0.35);
   }
 
   html[data-vellum-theme="system"] .vellum-toc-title {

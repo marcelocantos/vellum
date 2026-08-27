@@ -1,0 +1,16 @@
+repo: marcelocantos/vellum
+tap:
+  owner: marcelocantos
+  name: homebrew-tap
+push:
+  darwin_arm64: true
+  linux_amd64: true
+  linux_arm64: true
+  skip_checksum: true
+  update_readme_table: true
+test: 'system bin/"vellum", "--version"'
+install_file: tapper/install.rb
+formula_includes_file: tapper/formula_includes.rb
+token:
+  env: HOMEBREW_TAP_TOKEN
+  op: op://Personal/GitHub Homebrew Tap PAT/token

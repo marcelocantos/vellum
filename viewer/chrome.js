@@ -10,6 +10,54 @@
   const tocCollapseBtn = chrome.querySelector('[data-vellum="toc-collapse"]');
   const tocExpandBtn = chrome.querySelector('[data-vellum="toc-expand"]');
   const tocToggleBtn = chrome.querySelector('[data-vellum="toc-toggle"]');
+  const tocSplitter = document.getElementById("vellum-toc-splitter");
+
+  const TOC_WIDTH_KEY = "vellum-toc-width";
+  const TOC_WIDTH_DEFAULT = 264;
+  const TOC_WIDTH_MIN = 160;
+  const TOC_WIDTH_MAX = 560;
+  const TOC_WIDTH_STEP = 16;
+
+  function clampTocWidth(px) {
+    return Math.min(TOC_WIDTH_MAX, Math.max(TOC_WIDTH_MIN, px));
+  }
+
+  function applyTocWidth(px) {
+    chrome.style.setProperty("--vellum-toc-width", clampTocWidth(px) + "px");
+  }
+
+  function saveTocWidth(px) {
+    try {
+      localStorage.setItem(TOC_WIDTH_KEY, String(clampTocWidth(px)));
+    } catch (e) {}
+  }
+
+  function loadTocWidth() {
+    try {
+      const v = parseInt(localStorage.getItem(TOC_WIDTH_KEY), 10);
+      if (v >= TOC_WIDTH_MIN && v <= TOC_WIDTH_MAX) return v;
+    } catch (e) {}
+    return TOC_WIDTH_DEFAULT;
+  }
+
+  function tocSplitterEnabled() {
+    if (!toc || toc.hidden) return false;
+    if (toc.classList.contains("is-collapsed")) return false;
+    try {
+      if (window.matchMedia("(max-width: 880px)").matches) return false;
+    } catch (e) {}
+    return true;
+  }
+
+  function updateTocSplitter() {
+    if (!tocSplitter) return;
+    const on = tocSplitterEnabled();
+    tocSplitter.hidden = !on;
+    tocSplitter.setAttribute("aria-hidden", on ? "false" : "true");
+  }
+
+  applyTocWidth(loadTocWidth());
+  updateTocSplitter();
 
   function toggleTocSidebar() {
     if (!toc) return;
@@ -25,6 +73,7 @@
       toc.classList.remove("is-open");
     }
     updateTocToggleButton();
+    updateTocSplitter();
   }
   const status = document.getElementById("vellum-status");
   const lightbox = document.getElementById("vellum-lightbox");
@@ -117,8 +166,57 @@
 
   updateTocToggleButton();
   try {
-    window.matchMedia("(max-width: 880px)").addEventListener("change", updateTocToggleButton);
+    window.matchMedia("(max-width: 880px)").addEventListener("change", function () {
+      updateTocToggleButton();
+      updateTocSplitter();
+    });
   } catch (e) {}
+
+  if (tocSplitter) {
+    let splitterDrag = false;
+
+    tocSplitter.addEventListener("pointerdown", function (ev) {
+      if (!tocSplitterEnabled() || ev.button !== 0) return;
+      splitterDrag = true;
+      tocSplitter.classList.add("is-dragging");
+      tocSplitter.setPointerCapture(ev.pointerId);
+      ev.preventDefault();
+      applyTocWidth(ev.clientX - chrome.getBoundingClientRect().left);
+    });
+
+    tocSplitter.addEventListener("pointermove", function (ev) {
+      if (!splitterDrag) return;
+      applyTocWidth(ev.clientX - chrome.getBoundingClientRect().left);
+    });
+
+    function endSplitterDrag(ev) {
+      if (!splitterDrag) return;
+      splitterDrag = false;
+      tocSplitter.classList.remove("is-dragging");
+      const w = ev.clientX - chrome.getBoundingClientRect().left;
+      applyTocWidth(w);
+      saveTocWidth(w);
+      try {
+        tocSplitter.releasePointerCapture(ev.pointerId);
+      } catch (e) {}
+    }
+
+    tocSplitter.addEventListener("pointerup", endSplitterDrag);
+    tocSplitter.addEventListener("pointercancel", endSplitterDrag);
+
+    tocSplitter.addEventListener("keydown", function (ev) {
+      if (!tocSplitterEnabled()) return;
+      let w = loadTocWidth();
+      if (ev.key === "ArrowLeft") w -= TOC_WIDTH_STEP;
+      else if (ev.key === "ArrowRight") w += TOC_WIDTH_STEP;
+      else if (ev.key === "Home") w = TOC_WIDTH_MIN;
+      else if (ev.key === "End") w = TOC_WIDTH_MAX;
+      else return;
+      ev.preventDefault();
+      applyTocWidth(w);
+      saveTocWidth(w);
+    });
+  }
 
   function focusScrollPane() {
     if (scrollPane) scrollPane.focus({ preventScroll: true });
@@ -237,6 +335,7 @@
     );
     if (!headings.length) {
       toc.hidden = true;
+      updateTocSplitter();
       return;
     }
     toc.hidden = false;
@@ -296,6 +395,7 @@
     });
 
     tocNav.replaceChildren(root);
+    updateTocSplitter();
   }
 
   let tocFillGen = 0;
@@ -367,8 +467,42 @@
     return expandable;
   }
 
+  // Collapse-all is useful only when the tree is still more open than the
+  // Lmin state: every ancestor of the first multi-item level is expanded,
+  // and at least one expandable Lmin item is expanded. If any ancestor is
+  // already collapsed (manually), or every Lmin item is collapsed, the
+  // button would not collapse further.
+  function tocCanCollapseFurther() {
+    if (!tocNav) return false;
+    const branchOl = findBranchOl();
+    if (!branchOl) {
+      const items = tocNav.querySelectorAll(".vellum-toc-item");
+      for (let i = 0; i < items.length; i++) {
+        const li = items[i];
+        if (!li.querySelector(":scope > .vellum-toc-kids")) continue;
+        if (!li.classList.contains("is-collapsed")) return true;
+      }
+      return false;
+    }
+    let node = branchOl.parentElement;
+    while (node && tocNav.contains(node)) {
+      if (node.classList && node.classList.contains("vellum-toc-item")) {
+        if (node.classList.contains("is-collapsed")) return false;
+      }
+      node = node.parentElement;
+    }
+    const lminItems = tocItemsIn(branchOl);
+    for (let i = 0; i < lminItems.length; i++) {
+      const li = lminItems[i];
+      if (!li.querySelector(":scope > .vellum-toc-kids")) continue;
+      if (!li.classList.contains("is-collapsed")) return true;
+    }
+    return false;
+  }
+
   function updateTOCActionButtons() {
     if (tocExpandBtn) tocExpandBtn.disabled = tocFullyExpanded();
+    if (tocCollapseBtn) tocCollapseBtn.disabled = !tocCanCollapseFurther();
   }
 
   function setTOCCollapsed(collapsed) {

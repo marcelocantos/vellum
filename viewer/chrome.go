@@ -88,6 +88,7 @@ func chromeOpen(sourcePath string) string {
 		`</div></div>` +
 		`<nav class="vellum-toc-nav" id="vellum-toc-nav" aria-label="Table of contents"></nav>` +
 		`</aside>` +
+		`<div class="vellum-toc-splitter" id="vellum-toc-splitter" role="separator" aria-orientation="vertical" aria-label="Resize table of contents" tabindex="0"></div>` +
 		`<div class="vellum-main">` +
 		`<header class="vellum-toolbar">` +
 		`<button type="button" class="vellum-toc-toggle-btn" data-vellum="toc-toggle" title="Hide table of contents" aria-label="Hide table of contents">«</button>` +
