@@ -349,4 +349,4 @@ An agent-facing reference lives at [`docs/agents-guide.md`](docs/agents-guide.md
 
 ## License
 
-Apache 2.0 — see [LICENSE](LICENSE). Third-party dependencies are attributed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+Apache 2.0 — see [LICENSE](LICENSE). Third-party dependencies are attributed in [NOTICE](NOTICE).
