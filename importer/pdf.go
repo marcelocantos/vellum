@@ -6,11 +6,15 @@ package importer
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
+	"strconv"
 	"strings"
+	"sync"
 )
 
 // Poppler tools used for PDF → page images + text (agent-slurp path).
@@ -66,19 +70,9 @@ func ImportPDF(ctx context.Context, pdfPath, mediaDir string) (Result, error) {
 		return Result{}, err
 	}
 
-	// pdftoppm -png -r 120 absPDF absMedia/page  → page-1.png, …
-	prefix := filepath.Join(absMedia, "page")
-	cmd := exec.CommandContext(ctx, PDFToPPMDep.Name, "-png", "-r", "120", absPDF, prefix)
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		msg := strings.TrimSpace(stderr.String())
-		if msg != "" {
-			return Result{}, fmt.Errorf("pdftoppm: %w: %s", err, msg)
-		}
-		return Result{}, fmt.Errorf("pdftoppm: %w", err)
-	}
-
+	// Text first: it is cheap (20 ms for 40 pages, measured 2026-09-06)
+	// and its output tells us the page count, which lets the expensive
+	// rasterisation fan out across CPUs.
 	textCmd := exec.CommandContext(ctx, PDFToTextDep.Name, "-layout", absPDF, "-")
 	var textOut, textErr bytes.Buffer
 	textCmd.Stdout = &textOut
@@ -89,6 +83,11 @@ func ImportPDF(ctx context.Context, pdfPath, mediaDir string) (Result, error) {
 			return Result{}, fmt.Errorf("pdftotext: %w: %s", err, msg)
 		}
 		return Result{}, fmt.Errorf("pdftotext: %w", err)
+	}
+
+	prefix := filepath.Join(absMedia, "page")
+	if err := renderPages(ctx, absPDF, prefix, pageCount(textOut.String())); err != nil {
+		return Result{}, err
 	}
 
 	pages, err := filepath.Glob(prefix + "-*.png")
@@ -133,6 +132,72 @@ func ImportPDF(ctx context.Context, pdfPath, mediaDir string) (Result, error) {
 		assets = pages
 	}
 	return Result{Markdown: md, MediaDir: absMedia, Assets: assets}, nil
+}
+
+// pdftoppm ends every page with a form feed, so the count of form feeds
+// in pdftotext output is the page count. Zero means the count is
+// unknown and the whole document is rendered in one process.
+func pageCount(text string) int { return strings.Count(text, "\f") }
+
+// pageRenderDPI is the pdftoppm resolution for page images: enough for
+// an agent to read the page, small enough to keep the cache bounded.
+const pageRenderDPI = "120"
+
+// renderPages rasterises every page of absPDF to prefix-N.png.
+//
+// pdftoppm renders pages serially in one process, and that process
+// was the entire cost of a PDF import (1.07 s of 1.09 s for the
+// 40-page benchmark fixture, measured 2026-09-06). Pages are
+// independent, so the document is split into contiguous ranges and
+// one pdftoppm runs per range, bounded by CPU count. pdftoppm pads
+// page numbers from the document's total page count regardless of
+// the range, so the file names are identical to a single run.
+func renderPages(ctx context.Context, absPDF, prefix string, pages int) error {
+	workers := runtime.NumCPU()
+	if pages < workers {
+		workers = pages
+	}
+	if workers <= 1 {
+		return runPDFToPPM(ctx, absPDF, prefix, 0, 0)
+	}
+	perWorker := (pages + workers - 1) / workers
+	errs := make([]error, workers)
+	var wg sync.WaitGroup
+	for w := 0; w < workers; w++ {
+		first := w*perWorker + 1
+		last := min(first+perWorker-1, pages)
+		if first > last {
+			break
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			errs[w] = runPDFToPPM(ctx, absPDF, prefix, first, last)
+		}()
+	}
+	wg.Wait()
+	return errors.Join(errs...)
+}
+
+// runPDFToPPM renders pages first..last (1-based, inclusive); zero
+// bounds render the whole document.
+func runPDFToPPM(ctx context.Context, absPDF, prefix string, first, last int) error {
+	args := []string{"-png", "-r", pageRenderDPI}
+	if first > 0 {
+		args = append(args, "-f", strconv.Itoa(first), "-l", strconv.Itoa(last))
+	}
+	args = append(args, absPDF, prefix)
+	cmd := exec.CommandContext(ctx, PDFToPPMDep.Name, args...)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		msg := strings.TrimSpace(stderr.String())
+		if msg != "" {
+			return fmt.Errorf("pdftoppm: %w: %s", err, msg)
+		}
+		return fmt.Errorf("pdftoppm: %w", err)
+	}
+	return nil
 }
 
 func sortPagePaths(paths []string) {
