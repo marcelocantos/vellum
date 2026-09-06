@@ -42,21 +42,21 @@ items:
   # ============================== CORRECTNESS =============================
   - id: correctness.tests
     dim: correctness
-    desc: cv gate (fmt, vet, VELLUM_REQUIRE_DEPS=1 -race, skip-census, CLI) on every push/PR
+    desc: cv gate (fmt, vet, VELLUM_REQUIRE_DEPS=1 -race, skip-census, CLI) is the definition of green
     state: enforced
     cadence: continuous
     enforce: blocking
     tier: 1
-    evidence: {ci_step: {workflow: ci.yml, name: Gate}}
+    evidence: {file: {path: cvfile, matches: 'VELLUM_REQUIRE_DEPS=1'}}
 
   - id: correctness.macos-gate
     dim: correctness
-    desc: Product gate runs on macos-latest (clipboard, file refs, and viewer are darwin-only)
+    desc: Product gate runs on darwin (clipboard, file refs, and viewer are darwin-only)
     state: enforced
     cadence: continuous
     enforce: blocking
     tier: 2
-    evidence: {ci_job: ci.yml#gate}
+    evidence: {command: 'test "$(uname)" = Darwin'}
 
   - id: correctness.race
     dim: correctness
@@ -92,7 +92,7 @@ items:
     cadence: per-release
     enforce: warning
     tier: 2
-    evidence: {ci_job: release.yml#build}
+    evidence: {file: {path: scripts/release-package.sh, matches: 'build_one linux arm64'}}
 
   - id: correctness.windows
     dim: correctness
@@ -183,12 +183,15 @@ items:
   - id: security.actions-perms
     dim: security
     desc: GitHub Actions default token permissions scoped to least privilege
-    state: planned
+    state: skipped
     cadence: once-must-hold
     enforce: warning
     tier: 3
-    reason: ci.yml has no top-level permissions block; inherits the repo default.
-    evidence: {absent: {file: {path: .github/workflows/ci.yml, matches: '(?m)^permissions:'}}}
+    reason: >-
+      No GitHub Actions at all since e090840 — gate and publish both run on the
+      dev Mac, so there is no Actions token to scope. Revisit if a workflow is
+      ever reintroduced.
+    evidence: {absent: {file: {path: .github/workflows}}}
 
   - id: security.signed-releases
     dim: security
@@ -197,8 +200,8 @@ items:
     cadence: per-release
     enforce: informational
     tier: 3
-    reason: release.yml uploads tarballs via gh release; no signing/attestation step.
-    evidence: {absent: {ci_step: {workflow: release.yml, name: Sign}}}
+    reason: scripts/release-publish.sh uploads tarballs via gh release; no signing/attestation step.
+    evidence: {absent: {file: {path: scripts/release-publish.sh, matches: 'cosign|sigstore|attest'}}}
 
   # ============================== CODE QUALITY ============================
   - id: quality.fmt
@@ -285,23 +288,23 @@ items:
         test "$(sed -n 's/^const version = "\([0-9][0-9.]*\)"/\1/p' cmd/vellum/main.go)"
         = "$(git describe --tags --abbrev=0 | tr -d v)"
 
-  - id: release.ci-built
+  - id: release.dist-built
     dim: release
-    desc: Release binaries are built by CI across target triples, never locally
+    desc: Release tarballs for every target triple come from one tracked script, never an ad-hoc build
     state: present
     cadence: per-release
     enforce: warning
     tier: 2
-    evidence: {ci_job: release.yml#build}
+    evidence: {file: {path: scripts/release-package.sh, matches: 'tar -czf'}}
 
   - id: release.homebrew
     dim: release
-    desc: Published to the Homebrew tap on release (homebrew-releaser job)
+    desc: Published to the Homebrew tap on release (tapper push, from the dev Mac)
     state: present
     cadence: per-release
     enforce: informational
     tier: 2
-    evidence: {ci_job: release.yml#homebrew}
+    evidence: {file: {path: tapper.yaml, matches: 'name: homebrew-tap'}}
 
   - id: release.changelog
     dim: release
@@ -316,15 +319,11 @@ items:
   - id: release.gate-on-publish
     dim: release
     desc: Published releases re-run the macOS cv gate (not a Linux subset)
-    state: planned
+    state: enforced
     cadence: per-release
     enforce: warning
     tier: 3
-    reason: >-
-      release.yml test job is ubuntu-latest `go test ./...` without converters;
-      the step name still says pipeline tests skip without Prince (ENT-002).
-      CI gate is macOS `cv gate`.
-    evidence: {absent: {ci_step: {workflow: release.yml, name: Gate}}}
+    evidence: {file: {path: cvfile, matches: '(?m)^!release: gate'}}
 
   # ============================ GOVERNANCE / META ========================
   - id: governance.license
@@ -393,14 +392,14 @@ items:
     evidence: {absent: {file: {path: .github/CODEOWNERS}}}
 
   # ================================= BUILD ===============================
-  - id: build.ci
+  - id: build.gate
     dim: build
-    desc: CI installs converters + cv and runs the local gate
+    desc: The gate is defined in cvfile, reproducible on any dev machine
     state: enforced
     cadence: continuous
     enforce: blocking
     tier: 1
-    evidence: {ci_job: ci.yml#gate}
+    evidence: {file: {path: cvfile, matches: '(?m)^!gate:'}}
 
   - id: build.go-version
     dim: build
