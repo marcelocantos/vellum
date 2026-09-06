@@ -12,8 +12,9 @@
 # Honest snapshot: cv gate on macos-latest is the definition of green
 # (gofmt, vet, VELLUM_REQUIRE_DEPS=1 -race, skip-census, CLI contract).
 # Gaps (gitleaks, govulncheck, CodeQL, Dependabot, CHANGELOG, SECURITY.md,
-# signing, fuzz, benches, committed hooks, AGENTS.md, Makefile==cv) sit
-# above each floor.
+# signing, fuzz, benches, pre-commit hook, AGENTS.md) sit above each
+# floor. There is no CI: the workflows were deleted on 2026-08-27 and
+# scripts/hooks/pre-push is the whole gate.
 
 schema_version: 1
 
@@ -29,7 +30,7 @@ floors:            # per-dimension held-tier ratchet; below floor => DRIFT
   build: 2
   docs: 2
   perf: 0          # no benchmark suite
-  vcs: 0           # no committed git hooks
+  vcs: 0           # pre-push gate committed; no pre-commit hook
   agent: 2
 
 tiers:
@@ -42,12 +43,16 @@ items:
   # ============================== CORRECTNESS =============================
   - id: correctness.tests
     dim: correctness
-    desc: cv gate (fmt, vet, VELLUM_REQUIRE_DEPS=1 -race, skip-census, CLI) on every push/PR
+    desc: >-
+      cv gate (fmt, vet, VELLUM_REQUIRE_DEPS=1 -race, skip-census, CLI) runs
+      on every push, enforced by scripts/hooks/pre-push. There is no CI to
+      catch it afterwards, and the validator cannot see whether a given clone
+      has run `make hooks` — that wiring is the one unchecked link.
     state: enforced
     cadence: continuous
     enforce: blocking
     tier: 1
-    evidence: {ci_step: {workflow: ci.yml, name: Gate}}
+    evidence: {file: {path: scripts/hooks/pre-push, matches: 'make gate'}}
 
   - id: correctness.macos-gate
     dim: correctness
@@ -231,16 +236,12 @@ items:
 
   - id: quality.makefile-gate
     dim: quality
-    desc: Makefile bullseye is the same oracle as cv bullseye
-    state: planned
+    desc: make gate delegates to cv gate, so Makefile and cv cannot disagree
+    state: enforced
     cadence: continuous
-    enforce: warning
+    enforce: blocking
     tier: 3
-    reason: >-
-      Makefile bullseye is gofmt/vet/build/test without -race,
-      VELLUM_REQUIRE_DEPS, skip-census, or the CLI contract (ENT-001).
-      cv gate is the definition of green.
-    evidence: {absent: {file: {path: Makefile, matches: 'cv bullseye'}}}
+    evidence: {file: {path: Makefile, matches: 'cv gate'}}
 
   # =========================== DEPENDENCY HEALTH ==========================
   - id: deps.lock
@@ -396,11 +397,16 @@ items:
   - id: build.ci
     dim: build
     desc: CI installs converters + cv and runs the local gate
-    state: enforced
+    state: skipped
     cadence: continuous
-    enforce: blocking
+    enforce: informational
     tier: 1
-    evidence: {ci_job: ci.yml#gate}
+    reason: >-
+      No GitHub Actions by design — the workflows were deleted on 2026-08-27
+      because the gate is macOS-only and a Linux runner would exercise a
+      strict subset. scripts/hooks/pre-push runs the same cv gate before
+      every push (correctness.tests).
+    evidence: {absent: {file: {path: .github/workflows/ci.yml}}}
 
   - id: build.go-version
     dim: build
@@ -473,6 +479,15 @@ items:
     evidence: {absent: {make_target: bench}}
 
   # ============================== VCS / HISTORY =========================
+  - id: vcs.pre-push-gate
+    dim: vcs
+    desc: Committed scripts/hooks/pre-push runs make gate and refuses a red push
+    state: enforced
+    cadence: continuous
+    enforce: blocking
+    tier: 3
+    evidence: {file: {path: scripts/hooks/pre-push, matches: 'make gate'}}
+
   - id: vcs.pre-commit-hook
     dim: vcs
     desc: Committed git hooks (scripts/hooks) gate locally before commit
@@ -480,7 +495,7 @@ items:
     cadence: once-must-hold
     enforce: informational
     tier: 3
-    reason: No scripts/hooks; core.hooksPath is the default .git/hooks.
+    reason: scripts/hooks holds pre-push only; nothing gates at commit time.
     evidence: {absent: {file: {path: scripts/hooks/pre-commit}}}
 
   # =================== AGENT-READINESS / ONBOARDING ====================
