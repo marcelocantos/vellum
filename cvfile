@@ -63,6 +63,14 @@ $binary: $gosrc go.mod go.sum
         [ "$$all" -eq "$$pb" ] || { echo "ERROR: $$((all - pb)) non-pasteboard skip(s) with VELLUM_REQUIRE_DEPS=1"; \
             echo "$$out" | grep -B1 -- "--- SKIP" | grep -v pasteboard; exit 1; }'
 
+# Benchmarks for the conversion hot paths (procedural fixtures, see
+# internal/perffixture). Wall time is reported, not gated: the
+# allocation ratchet in the suite (internal/perfbase against
+# docs/perf/baseline.yaml) is the gate. Record numbers in
+# docs/perf/baseline.md when a change moves them.
+!bench:
+    $runner $go test -run '^$$' -bench . -benchmem -benchtime=5x ./convert ./importer
+
 !cli-contract: $binary
     $runner sh -c './$binary --version && ./$binary --help >/dev/null && ./$binary --help-agent | head -5 >/dev/null'
 

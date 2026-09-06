@@ -1,0 +1,52 @@
+# Allocation baseline for the pure-Go conversion paths, locked in both
+# directions by the perf ratchet tests (internal/perfbase). Numbers are
+# per operation on the internal/perffixture inputs, per build mode.
+#
+# Do not hand-edit. Re-record deliberately, in the commit that changes
+# the measured code, once per build mode:
+#
+#   VELLUM_PERF_RECORD=1 go test -p 1 -race -run Ratchet ./convert ./importer
+#   VELLUM_PERF_RECORD=1 go test -p 1 -run Ratchet ./convert ./importer
+#
+# Wall-clock numbers live in docs/perf/baseline.md.
+
+tolerance_percent: 15
+metrics:
+  norace:
+    absolutize_media:
+      allocs: 48206
+      bytes: 11417388
+    bundle_dir_steady_state:
+      allocs: 9
+      bytes: 1280
+    render_code:
+      allocs: 584411
+      bytes: 31394044
+    render_math_substitution:
+      allocs: 20658
+      bytes: 7706876
+    render_mermaid_stub:
+      allocs: 5043
+      bytes: 14916460
+    render_prose:
+      allocs: 102829
+      bytes: 22971344
+  race:
+    absolutize_media:
+      allocs: 73341
+      bytes: 56236692
+    bundle_dir_steady_state:
+      allocs: 9
+      bytes: 1280
+    render_code:
+      allocs: 700526
+      bytes: 41693324
+    render_math_substitution:
+      allocs: 37642
+      bytes: 42634624
+    render_mermaid_stub:
+      allocs: 8188
+      bytes: 23997716
+    render_prose:
+      allocs: 119023
+      bytes: 30165412

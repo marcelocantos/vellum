@@ -52,6 +52,12 @@ contract. CI installs converters and calls `cv gate`; it holds no gate
 logic of its own, so a red build reproduces locally with one command.
 `cv bullseye` adds a clean-tree check for convergence.
 
+Performance is part of green: `TestRatchet_*` in `convert` and
+`importer` lock allocation counts for the pure-Go paths against
+`docs/perf/baseline.yaml` in both directions (see `internal/perfbase`).
+`cv bench` reports wall time for the same fixtures; numbers and the
+mechanism behind each change are recorded in `docs/perf/baseline.md`.
+
 macOS only. The clipboard, Finder file references, and the viewer are
 darwin-only, so a Linux runner would exercise a strict subset while
 implying a platform vellum does not support.
