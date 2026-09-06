@@ -21,6 +21,16 @@ const (
 	CacheMaxAge         = 7 * 24 * time.Hour
 )
 
+// Pruning walks every file in the cache to total its size, so it
+// scaled every import by the cache's file count (15 ms per import
+// against 4,000 cached files, measured 2026-09-06). The cap is a
+// health policy, not a hard bound, so the walk runs at most once per
+// pruneInterval; the stamp file's mtime records the last run.
+const (
+	pruneInterval  = 10 * time.Minute
+	pruneStampName = ".last-prune"
+)
+
 // CacheRoot returns the directory that holds import media bundles.
 // Override with VELLUM_IMPORT_CACHE for tests.
 func CacheRoot() (string, error) {
@@ -62,8 +72,25 @@ func BundleDir(key string) (string, error) {
 	// Touch so LRU by mtime prefers active bundles.
 	now := time.Now()
 	_ = os.Chtimes(dir, now, now)
-	_ = pruneImportCache(root, dir, CacheMaxBytes, CacheMaxAge, now)
+	if pruneDue(root, now) {
+		_ = pruneImportCache(root, dir, CacheMaxBytes, CacheMaxAge, now)
+	}
 	return dir, nil
+}
+
+// pruneDue reports whether a prune should run now and, when it should,
+// records now as the last run. A missing or unreadable stamp counts as
+// due, so a fresh cache is pruned on first use.
+func pruneDue(root string, now time.Time) bool {
+	stamp := filepath.Join(root, pruneStampName)
+	if st, err := os.Stat(stamp); err == nil && now.Sub(st.ModTime()) < pruneInterval {
+		return false
+	}
+	if err := os.WriteFile(stamp, nil, 0o644); err != nil {
+		return true
+	}
+	_ = os.Chtimes(stamp, now, now)
+	return true
 }
 
 // HashBytes returns a hex SHA-256 of data for cache keys.
