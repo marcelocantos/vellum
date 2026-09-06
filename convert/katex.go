@@ -44,6 +44,13 @@ process.stdin.on("end", () => {
 });
 `
 
+// Placeholder tags for the HTML comments the preprocessors leave in
+// the source for goldmark to pass through.
+const (
+	mathPlaceholderTag = "MATH"
+	codePlaceholderTag = "CODE"
+)
+
 type mathExpr struct {
 	Expr        string `json:"expr"`
 	DisplayMode bool   `json:"displayMode"`
@@ -77,7 +84,7 @@ func (m *mathPreprocessor) placeholder(expr string, display bool) string {
 	idx := len(m.exprs)
 	m.exprs = append(m.exprs, mathExpr{Expr: expr, DisplayMode: display})
 	// Use a format that goldmark will treat as raw HTML and pass through.
-	p := fmt.Sprintf("<!--MATH:%d-->", idx)
+	p := fmt.Sprintf("<!--%s:%d-->", mathPlaceholderTag, idx)
 	m.placeholders = append(m.placeholders, p)
 	return p
 }
@@ -86,18 +93,26 @@ func (m *mathPreprocessor) placeholder(expr string, display bool) string {
 // them with HTML comment placeholders that goldmark will ignore.
 // Code blocks and inline code are protected from math extraction.
 func (m *mathPreprocessor) Extract(src string) string {
+	// The fenced-code regex scans the whole document with an unanchored
+	// lazy body, which costs more than goldmark itself on a large file
+	// (measured 2026-09-06: 29% of Render CPU on the 1 MiB prose
+	// fixture). A document with no dollar sign has no math to protect
+	// code from, so skip the whole pass.
+	if !strings.Contains(src, "$") {
+		return src
+	}
 	// Temporarily replace code blocks and inline code with placeholders
 	// so the math regexes don't match $ inside code.
 	var codeBlocks []string
 	src = fencedCodeRe.ReplaceAllStringFunc(src, func(match string) string {
 		idx := len(codeBlocks)
 		codeBlocks = append(codeBlocks, match)
-		return fmt.Sprintf("<!--CODE:%d-->", idx)
+		return fmt.Sprintf("<!--%s:%d-->", codePlaceholderTag, idx)
 	})
 	src = inlineCodeRe.ReplaceAllStringFunc(src, func(match string) string {
 		idx := len(codeBlocks)
 		codeBlocks = append(codeBlocks, match)
-		return fmt.Sprintf("<!--CODE:%d-->", idx)
+		return fmt.Sprintf("<!--%s:%d-->", codePlaceholderTag, idx)
 	})
 
 	// Block math first ($$...$$ on own lines).
@@ -118,12 +133,7 @@ func (m *mathPreprocessor) Extract(src string) string {
 		return m.placeholder(strings.TrimSpace(inner[1]), false)
 	})
 
-	// Restore code blocks.
-	for i, code := range codeBlocks {
-		src = strings.Replace(src, fmt.Sprintf("<!--CODE:%d-->", i), code, 1)
-	}
-
-	return src
+	return substitutePlaceholders(src, codePlaceholderTag, codeBlocks)
 }
 
 // ReplaceAll batch-renders all collected math expressions via KaTeX
@@ -138,17 +148,12 @@ func (m *mathPreprocessor) ReplaceAll(ctx context.Context, html string) (string,
 		return "", err
 	}
 
-	for i, p := range m.placeholders {
-		var wrapped string
+	for i := range rendered {
 		if m.exprs[i].DisplayMode {
-			wrapped = `<div class="katex-display">` + rendered[i] + `</div>`
-		} else {
-			wrapped = rendered[i]
+			rendered[i] = `<div class="katex-display">` + rendered[i] + `</div>`
 		}
-		html = strings.Replace(html, p, wrapped, 1)
 	}
-
-	return html, nil
+	return substitutePlaceholders(html, mathPlaceholderTag, rendered), nil
 }
 
 func batchKaTeX(ctx context.Context, exprs []mathExpr) ([]string, error) {

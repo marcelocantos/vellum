@@ -27,6 +27,8 @@ const (
 	MermaidPNG = "png"
 )
 
+const mermaidPlaceholderTag = "MERMAID"
+
 var mermaidBlockRe = regexp.MustCompile("(?m)(?:^<!--\\s*vellum:scale\\s+([0-9.]+)\\s*-->\\s*\n)?^```mermaid\\s*\n([\\s\\S]+?)^```\\s*$")
 
 type mermaidDiagram struct {
@@ -59,6 +61,14 @@ func resolveMermaidFormat(format string) string {
 // Extract finds all mermaid code blocks (with optional <!-- vellum:scale N -->
 // hints) and replaces them with placeholders.
 func (m *mermaidPreprocessor) Extract(src string) string {
+	// The optional scale-hint prefix makes this regex expensive to run
+	// over a whole document (measured 2026-09-06: 17% of Render CPU on
+	// the 1 MiB prose fixture, which has no diagrams). The literal
+	// fence is a necessary part of every match, so its absence is a
+	// safe early exit.
+	if !strings.Contains(src, "```mermaid") {
+		return src
+	}
 	return mermaidBlockRe.ReplaceAllStringFunc(src, func(match string) string {
 		inner := mermaidBlockRe.FindStringSubmatch(match)
 		if len(inner) < 3 {
@@ -75,7 +85,7 @@ func (m *mermaidPreprocessor) Extract(src string) string {
 			source: strings.TrimSpace(inner[2]),
 			scale:  scale,
 		})
-		p := fmt.Sprintf("<!--MERMAID:%d-->", idx)
+		p := fmt.Sprintf("<!--%s:%d-->", mermaidPlaceholderTag, idx)
 		m.placeholders = append(m.placeholders, p)
 		return p
 	})
@@ -130,6 +140,7 @@ func (m *mermaidPreprocessor) ReplaceAll(ctx context.Context, html string) (stri
 	// placeholder replacement and the 1-based indices in soft-error
 	// messages are deterministic regardless of completion order.
 	var soft []string
+	wrapped := make([]string, len(m.diagrams))
 	for i, d := range m.diagrams {
 		img := results[i].img
 		if err := results[i].err; err != nil {
@@ -143,11 +154,10 @@ func (m *mermaidPreprocessor) ReplaceAll(ctx context.Context, html string) (stri
 		if d.scale != 1.0 {
 			style = fmt.Sprintf(` style="max-width: %.0f%%"`, d.scale*100)
 		}
-		wrapped := fmt.Sprintf(`<div class="mermaid-svg"%s>%s</div>`, style, img)
-		html = strings.Replace(html, m.placeholders[i], wrapped, 1)
+		wrapped[i] = fmt.Sprintf(`<div class="mermaid-svg"%s>%s</div>`, style, img)
 	}
 
-	return html, soft
+	return substitutePlaceholders(html, mermaidPlaceholderTag, wrapped), soft
 }
 
 // renderMermaidFn is the diagram renderer. Tests override it to inject
