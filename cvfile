@@ -63,12 +63,24 @@ $binary: $gosrc go.mod go.sum
         [ "$$all" -eq "$$pb" ] || { echo "ERROR: $$((all - pb)) non-pasteboard skip(s) with VELLUM_REQUIRE_DEPS=1"; \
             echo "$$out" | grep -B1 -- "--- SKIP" | grep -v pasteboard; exit 1; }'
 
+# The Makefile must not hold a second definition of green. bullseye
+# convergence probes for a `bullseye` Make target before anything else,
+# so a Makefile that regrows its own recipes silently demotes the gate:
+# no -race, no VELLUM_REQUIRE_DEPS, no skip census, no CLI contract.
+!make-delegates:
+    $runner sh -c 'out=$$(make -n bullseye) || exit 1; \
+        echo "$$out" | grep -q "cv bullseye" || { echo "ERROR: make bullseye does not delegate to cv"; echo "$$out"; exit 1; }; \
+        if echo "$$out" | grep -qE "gofmt|go (vet|build|test)"; then \
+            echo "ERROR: make bullseye holds gate recipes of its own"; echo "$$out"; exit 1; \
+        fi; \
+        echo "make bullseye delegates to cv"'
+
 !cli-contract: $binary
     $runner sh -c './$binary --version && ./$binary --help >/dev/null && ./$binary --help-agent | head -5 >/dev/null'
 
 # --- aggregate --------------------------------------------------------
 
-!gate: fmt vet test skip-census cli-contract
+!gate: fmt vet test skip-census cli-contract make-delegates
     @echo "gate green"
 
 # Standing-invariants hook for bullseye convergence. Dirty tree warns

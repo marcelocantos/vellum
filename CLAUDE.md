@@ -47,10 +47,12 @@ Markdown → PDF path still: source preprocessors → goldmark → HTML template
 
 `cv gate` is the definition of green — gofmt, vet, the suite with
 `VELLUM_REQUIRE_DEPS=1`, a skip census locked at 0 non-pasteboard
-skips (pasteboard skips must name “pasteboard”), and the CLI
-contract. CI installs converters and calls `cv gate`; it holds no gate
-logic of its own, so a red build reproduces locally with one command.
-`cv bullseye` adds a clean-tree check for convergence.
+skips (pasteboard skips must name “pasteboard”), the CLI
+contract, and a check that the Makefile still delegates rather than
+holding a second, weaker definition of green.
+`cv bullseye` adds a clean-tree check for convergence. `make bullseye`
+is a one-line delegate to `cv bullseye`, kept only because bullseye
+convergence probes for a Make target.
 
 macOS only. The clipboard, Finder file references, and the viewer are
 darwin-only, so a Linux runner would exercise a strict subset while
