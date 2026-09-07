@@ -332,7 +332,9 @@
     if (!article || !tocNav || !toc) return;
     const headings = Array.prototype.slice.call(
       article.querySelectorAll("h1, h2, h3, h4, h5, h6")
-    );
+    ).filter(function (h) {
+      return !h.closest(".vellum-contents");
+    });
     if (!headings.length) {
       toc.hidden = true;
       updateTocSplitter();

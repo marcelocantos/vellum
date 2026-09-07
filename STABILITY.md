@@ -12,7 +12,7 @@ changes to any of the following require a major version bump:
 - The public Go API of packages that consumers import
 - The CLI flags, subcommands, and stdout/stderr contract
 - The MCP server info and the `convert` tool schema
-- The Markdown extension syntax vellum recognises (math, Mermaid, `vellum:scale`)
+- The Markdown extension syntax vellum recognises (math, Mermaid, `vellum:scale`, `vellum:toc`)
 - The set of recognised environment variables
 - The runtime dependency expectations (tool names, minimum versions)
 
@@ -37,7 +37,7 @@ Package paths are under `github.com/marcelocantos/vellum/…`.
 - `type SoftError struct { Messages []string }` — **needs review** (added in v0.9.0; `Convert` / `Run` wrap `soft` into this after still producing output; CLI non-zero exit / MCP `errors`)
 - `type Options struct { CSS string; HeadExtra string; Style *Style; Backend string; MermaidFormat string }` — **needs review** (`MermaidFormat` is `MermaidSVG` default or `MermaidPNG`; PDF sinks force PNG)
 - `const MermaidSVG, MermaidPNG` — **needs review**
-- `type Style struct { ... }` — **needs review** (13-field customisation surface added in v0.4.0; field set likely to grow before 1.0)
+- `type Style struct { ... }` — **needs review** (14-field customisation surface; `toc` added in 🎯T38; field set likely to grow before 1.0)
 - `type Backend interface` — **needs review** (added in v0.4.0; the surface is small but extension shape may evolve)
 - `func ResolveBackend(name string) (Backend, error)` — **needs review** (same)
 - `const BackendWeasyPrint, BackendPrince, DefaultBackend` — **needs review** (default name may change pre-1.0)
@@ -258,6 +258,7 @@ not listed here is either GFM (via goldmark's GFM extension) or not supported.
 - **Code-block protection** — `$…$` inside fenced code blocks and inline code is not extracted as math. **stable**.
 - **Mermaid** — ```` ```mermaid ```` fenced blocks via `mmdc`. HTML/view embed **SVG** (vector). PDF keeps **PNG** at 2× scale because Mermaid SVG `foreignObject` labels do not paint in Prince. **stable** (dual path, 🎯T17).
 - **`<!-- vellum:scale N -->`** hint — applies a CSS `max-width: N * 100%` to the *next* Mermaid block. `N > 0`. **stable** (the comment syntax is stable; future hints may be added under the same `vellum:` prefix).
+- **`<!-- vellum:toc -->`** hint — replaced with a static Contents list (nested heading links, depth h1–h3). Same effect as `style.toc: true` except placement follows the hint. **needs review** (🎯T38).
 
 ### Environment variables
 

@@ -414,6 +414,7 @@ Fields:
 | `page_numbers`          | `true`        | Page number at bottom-centre (default off) |
 | `running_head`          | `true`        | Current H1 text at top-centre (default off) |
 | `bookmarks`             | `false`       | PDF outline from H1..H6 (default **on**); set false to suppress |
+| `toc`                   | `true`        | Static in-document Contents list (default off); `<!-- vellum:toc -->` also requests one and wins for placement |
 | `hyphenate`             | `true`        | Auto-hyphenate body text (default off; plug-and-play on WeasyPrint, needs dictionary on Prince) |
 | `lang`                  | `en-GB`       | BCP-47 language tag; required for hyphenation |
 | `pdfa`                  | `PDF/A-3b`    | Emit PDF/A-compliant archival PDF (default off) |
@@ -463,6 +464,32 @@ before the fenced code block:
 The scale is a CSS scale factor (1.0 = default). Values below 1.0
 shrink the diagram; values above 1.0 enlarge it. Only use this when a
 diagram does not fit; most diagrams render correctly at 1.0.
+
+## Table of contents
+
+Convert can emit a static Contents list (nested `ul`/`li`/`a` to heading
+IDs, depth h1–h3). No JavaScript. The same block appears in PDF, HTML
+file, clipboard/email, and the viewer article.
+
+Two ways to request it:
+
+- `style.toc: true` (config.yaml, MCP `style`, or a per-call overlay)
+  injects the list at the front of the body.
+- A `<!-- vellum:toc -->` HTML comment in the Markdown, on its own
+  line, is replaced in place. If both are set, the hint wins for
+  placement and only one list is emitted.
+
+PDF adds dotted leaders and page numbers via paged-media CSS
+(`leader` + `target-counter`). HTML and email keep the nested links;
+those CSS functions are ignored there. Documents with no headings get
+no Contents block. The generated “Contents” heading is not listed in
+the list. PDF reader bookmarks (`style.bookmarks`) stay independent.
+
+    # Report
+
+    <!-- vellum:toc -->
+
+    ## Background
 
 ## Security notes
 

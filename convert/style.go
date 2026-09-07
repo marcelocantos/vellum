@@ -28,6 +28,7 @@ type Style struct {
 	RunningHead *bool `yaml:"running_head,omitempty" json:"running_head,omitempty" jsonschema:"emit current H1 text as a running head at @top-center (default off)"`
 	Bookmarks   *bool `yaml:"bookmarks,omitempty" json:"bookmarks,omitempty" jsonschema:"emit PDF outline bookmarks from H1..H6 (default on)"`
 	Hyphenate   *bool `yaml:"hyphenate,omitempty" json:"hyphenate,omitempty" jsonschema:"enable automatic hyphenation (default off; works out-of-the-box on WeasyPrint, needs dictionary setup on Prince)"`
+	TOC         *bool `yaml:"toc,omitempty" json:"toc,omitempty" jsonschema:"emit a static in-document table of contents (default off); a <!-- vellum:toc --> hint in the Markdown also requests one and wins for placement"`
 
 	// Lang is the document language as a BCP-47 tag (e.g. en, en-GB, de).
 	// When set, it lands on <html lang=...>. Required for hyphenation to
@@ -61,6 +62,11 @@ func (s *Style) BookmarksOn() bool {
 // HyphenateOn returns the effective value (default false).
 func (s *Style) HyphenateOn() bool {
 	return s != nil && s.Hyphenate != nil && *s.Hyphenate
+}
+
+// TOCOn returns the effective value (default false).
+func (s *Style) TOCOn() bool {
+	return s != nil && s.TOC != nil && *s.TOC
 }
 
 // EffectiveLang returns Lang, defaulting to "en" when Hyphenate is on but no
@@ -121,6 +127,9 @@ func (s *Style) OverlayOn(base *Style) *Style {
 	}
 	if s.Hyphenate != nil {
 		out.Hyphenate = s.Hyphenate
+	}
+	if s.TOC != nil {
+		out.TOC = s.TOC
 	}
 	if s.Lang != "" {
 		out.Lang = s.Lang

@@ -74,6 +74,30 @@ func TestInjectChrome_WrapsBodyAndAddsClass(t *testing.T) {
 	}
 }
 
+func TestInjectChrome_KeepsInDocumentContents(t *testing.T) {
+	in := `<!DOCTYPE html><html><head><title>T</title></head><body>
+<div class="vellum-contents">
+<h2>Contents</h2>
+<ul><li><a href="#hello">Hello</a></li></ul>
+</div>
+<h1 id="hello">Hello</h1>
+</body></html>`
+	out := injectChrome(in, "/docs/note.md")
+	if !strings.Contains(out, `class="vellum-contents"`) {
+		t.Fatalf("in-document Contents stripped by chrome:\n%s", out)
+	}
+	if !strings.Contains(out, `<a href="#hello">Hello</a>`) {
+		t.Fatalf("in-document Contents links lost:\n%s", out)
+	}
+	if !strings.Contains(out, `class="vellum-article"`) {
+		t.Fatalf("missing article wrap:\n%s", out)
+	}
+	article := out[strings.Index(out, `class="vellum-article"`):]
+	if !strings.Contains(article, `class="vellum-contents"`) {
+		t.Fatalf("in-document Contents should live in the article:\n%s", out)
+	}
+}
+
 func TestInjectChrome_PreservesExistingBodyClass(t *testing.T) {
 	in := `<html><head></head><body class="x" data-q="1"><p>hi</p></body></html>`
 	out := injectChrome(in, "/a.md")

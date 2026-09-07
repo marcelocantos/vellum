@@ -223,6 +223,7 @@ style:
   page_numbers: true
   running_head: true
   bookmarks: true
+  toc: true
   hyphenate: true
   lang: en
   pdfa: PDF/A-3b
@@ -240,6 +241,7 @@ style:
 | `page_numbers`          | `false`          | When `true`, prints the page number at the bottom-centre of every page |
 | `running_head`          | `false`          | When `true`, prints the most-recent `<h1>` text at the top-centre of every page |
 | `bookmarks`             | `true`           | When `true`, emits a PDF outline (sidebar in PDF readers) from `<h1>`–`<h6>`. Set to `false` to suppress |
+| `toc`                   | `false`          | When `true`, injects a static Contents list (nested heading links, depth h1–h3) at the front of the document. PDF adds dotted leaders and page numbers via paged-media CSS. A `<!-- vellum:toc -->` hint in the Markdown also requests a Contents block and wins for placement. No JavaScript. |
 | `hyphenate`             | `false`          | Enable automatic word hyphenation. Works out-of-the-box on WeasyPrint (Pyphen is bundled); on Prince it requires installing a hyphenation dictionary separately |
 | `lang`                  | `""`             | Document language as a BCP-47 tag (e.g. `en`, `en-GB`, `de`). Lands on `<html lang="…">`. Required for hyphenation; defaults to `en` when `hyphenate: true` and `lang` is empty |
 | `pdfa`                  | `""`             | PDF/A archival profile (e.g. `PDF/A-1b`, `PDF/A-3b`). Empty produces standard PDF. WeasyPrint also accepts PDF/X and PDF/UA variants here |
@@ -327,6 +329,7 @@ This is **not yet released**; the table above reflects what ships today.
 - Inline (`$...$`) and block (`$$...$$`) LaTeX math via KaTeX, including multi-line matrices.
 - Mermaid diagrams: flowchart, sequence, class, state, Gantt, ER, pie. HTML/view/content paths embed **SVG** (vector); PDF conversion keeps **PNG at 2×** because Mermaid SVG `foreignObject` labels do not paint in Prince.
 - Per-diagram scale hint — place `<!-- vellum:scale 0.6 -->` immediately before a ```` ```mermaid ```` block to apply a `max-width` to the rendered diagram. Useful for keeping a diagram on the same page as its heading.
+- Optional table of contents — `style.toc: true` or a `<!-- vellum:toc -->` hint injects a static Contents list (nested heading links, no JavaScript). PDF adds dotted leaders and page numbers.
 - YAML front-matter `title` extraction.
 - Blockquotes, horizontal rules, images (including base64 data URIs).
 

@@ -33,6 +33,7 @@ func TestLoad_File(t *testing.T) {
 	yaml := `style:
   font_size: 13px
   page_margin: 1.2cm
+  toc: true
 `
 	if err := os.WriteFile(filepath.Join(vellumDir, "config.yaml"), []byte(yaml), 0o644); err != nil {
 		t.Fatal(err)
@@ -50,6 +51,9 @@ func TestLoad_File(t *testing.T) {
 	}
 	if cfg.Style.PageMargin != "1.2cm" {
 		t.Errorf("PageMargin: want 1.2cm, got %q", cfg.Style.PageMargin)
+	}
+	if !cfg.Style.TOCOn() {
+		t.Errorf("TOC: want on from config")
 	}
 }
 

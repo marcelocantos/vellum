@@ -169,6 +169,13 @@ func Render(ctx context.Context, src []byte, opts *Options) (html string, soft [
 	}
 	htmlContent, soft = mermaid.ReplaceAll(ctx, htmlContent)
 
+	var style *Style
+	if opts != nil {
+		style = opts.Style
+	}
+	var tocInjected bool
+	htmlContent, tocInjected = applyTOC(htmlContent, style)
+
 	css := embed.GitHubCSS
 	headExtra := katexCSSLink
 	if opts != nil {
@@ -193,6 +200,9 @@ func Render(ctx context.Context, src []byte, opts *Options) (html string, soft [
 		if override := opts.Style.CSS(); override != "" {
 			css += "\n" + override
 		}
+	}
+	if tocInjected {
+		css += "\n" + tocCSS
 	}
 
 	var lang string

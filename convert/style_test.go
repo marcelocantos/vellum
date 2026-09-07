@@ -24,6 +24,9 @@ func TestStyleCSS_NilAndEmpty(t *testing.T) {
 	if s.RunningHeadOn() {
 		t.Errorf("nil Style: RunningHeadOn() should default false")
 	}
+	if s.TOCOn() {
+		t.Errorf("nil Style: TOCOn() should default false")
+	}
 
 	// Explicitly-empty Style: same defaults as nil.
 	empty := &Style{}
@@ -147,5 +150,23 @@ func TestStyleOverlayOn_Nils(t *testing.T) {
 	s := &Style{FontSize: "12px"}
 	if got := s.OverlayOn(nil); got.FontSize != "12px" {
 		t.Errorf("s.OverlayOn(nil): want FontSize 12px, got %q", got.FontSize)
+	}
+}
+
+func TestStyleOverlayOn_TOC(t *testing.T) {
+	on := true
+	base := &Style{FontSize: "14px"}
+	override := &Style{TOC: &on}
+	merged := override.OverlayOn(base)
+	if !merged.TOCOn() {
+		t.Errorf("TOC overlay: want on, got off")
+	}
+	if merged.FontSize != "14px" {
+		t.Errorf("FontSize: want 14px from base, got %q", merged.FontSize)
+	}
+	off := false
+	cleared := (&Style{TOC: &off}).OverlayOn(merged)
+	if cleared.TOCOn() {
+		t.Errorf("TOC explicit off should overlay on")
 	}
 }
