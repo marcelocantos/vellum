@@ -395,10 +395,10 @@ already work with files and `convert`.
 ## Style overrides
 
 `convert` accepts an optional `style` object.
-Each field is a CSS-valued string; empty fields fall through to the
-user's config file (`~/.config/vellum/config.yaml` or
-`$XDG_CONFIG_HOME/vellum/config.yaml`), which in turn falls through to
-vellum's built-in defaults.
+CSS-valued fields take any valid CSS for their property; booleans take
+true/false. Empty fields fall through to the user's config file
+(`~/.config/vellum/config.yaml` or `$XDG_CONFIG_HOME/vellum/config.yaml`),
+which in turn falls through to vellum's built-in defaults.
 
 Fields:
 

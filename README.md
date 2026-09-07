@@ -72,6 +72,18 @@ brew services start vellum
 4. **Register HTTP MCP** at `http://127.0.0.1:18742/mcp` and **restart the
    agent session**. `vellum --mcp` is a stdio fallback only.
 
+   Grok Build:
+
+   ```sh
+   grok mcp add --transport http vellum http://localhost:18742/mcp
+   ```
+
+   Claude Code:
+
+   ```sh
+   claude mcp add --scope user --transport http vellum http://127.0.0.1:18742/mcp
+   ```
+
 ### Quick start for agentic coding tools
 
 If you use an AI coding agent (Claude Code, Cursor, etc.), paste this prompt to install vellum end-to-end:
@@ -352,4 +364,4 @@ An agent-facing reference lives at [`docs/agents-guide.md`](docs/agents-guide.md
 
 ## License
 
-Apache 2.0 — see [LICENSE](LICENSE). Third-party dependencies are attributed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+Apache 2.0 — see [LICENSE](LICENSE). Third-party dependencies are attributed in [NOTICE](NOTICE).

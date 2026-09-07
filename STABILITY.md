@@ -21,7 +21,7 @@ change between minor releases — though in practice we aim to minimise churn.
 
 ## Interaction surface catalogue
 
-Snapshot as of **v0.15.0** (`const version` in `cmd/vellum`). Annotations:
+Snapshot as of **v0.18.0** (`const version` in `cmd/vellum`). Annotations:
 **stable** (unlikely to change), **needs review** (functional but may be
 refined), **fluid** (actively evolving).
 

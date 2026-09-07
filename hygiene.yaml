@@ -365,12 +365,12 @@ items:
 
   - id: governance.notices
     dim: governance
-    desc: THIRD_PARTY_NOTICES.md attributes compiled-in Go module licenses
+    desc: NOTICE attributes compiled-in Go module licenses
     state: present
     cadence: once-must-hold
     enforce: warning
     tier: 2
-    evidence: {file: {path: THIRD_PARTY_NOTICES.md, matches: 'Third-Party Notices'}}
+    evidence: {file: {path: NOTICE, matches: 'Third-Party Notices'}}
 
   - id: governance.security-md
     dim: governance

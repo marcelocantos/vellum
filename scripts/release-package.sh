@@ -19,7 +19,7 @@ build_one() {
 
 	CGO_ENABLED="$cgo" GOOS="$goos" GOARCH="$goarch" \
 		go build -trimpath -ldflags="-s -w" -o "$out" ./cmd/vellum
-	tar -czf "$DIST/$asset" -C "$BUILD" vellum -C "$ROOT" LICENSE README.md
+	tar -czf "$DIST/$asset" -C "$BUILD" vellum -C "$ROOT" LICENSE README.md NOTICE
 	rm -f "$out"
 	echo "wrote dist/$asset"
 }
