@@ -157,3 +157,31 @@ func TestConvert_RelativeImagePath(t *testing.T) {
 		})
 	}
 }
+
+func TestRender_StripsRawHTMLByDefault(t *testing.T) {
+	src := "# Hello\n\n<script>fetch('/etc/passwd')</script>\n\nAfter.\n"
+	html, _, err := Render(context.Background(), []byte(src), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(strings.ToLower(html), "<script") {
+		t.Fatalf("default Render must not emit a script tag:\n%s", html)
+	}
+	if strings.Contains(html, "fetch('/etc/passwd')") {
+		t.Fatalf("document script body leaked into HTML:\n%s", html)
+	}
+	if !strings.Contains(html, "Hello") || !strings.Contains(html, "After") {
+		t.Fatalf("surrounding markdown missing:\n%s", html)
+	}
+}
+
+func TestRender_AllowHTMLKeepsAuthorMarkup(t *testing.T) {
+	src := "# Hello\n\n<div class=\"note\">Author</div>\n"
+	html, _, err := Render(context.Background(), []byte(src), &Options{AllowHTML: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(html, `<div class="note">Author</div>`) {
+		t.Fatalf("AllowHTML must pass author markup:\n%s", html)
+	}
+}

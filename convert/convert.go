@@ -11,6 +11,7 @@ import (
 	"html/template"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	chromahtml "github.com/alecthomas/chroma/v2/formatters/html"
@@ -42,32 +43,87 @@ type Options struct {
 	// MermaidFormat selects mmdc output: MermaidSVG (default) or MermaidPNG.
 	// PDF sinks force PNG (Prince-safe labels); HTML/view keep SVG.
 	MermaidFormat string
+	// AllowHTML passes raw HTML in Markdown through goldmark (html.WithUnsafe).
+	// The zero value is false: author tags including <script> are dropped.
+	AllowHTML bool
 }
 
 var htmlTmpl = template.Must(template.New("page").Parse(embed.HTMLTemplate))
 
-var md = goldmark.New(
-	goldmark.WithExtensions(
-		extension.GFM,
-		extension.Footnote,
-		extension.DefinitionList,
-		extension.Typographer,
-		meta.Meta,
-		highlighting.NewHighlighting(
-			highlighting.WithStyle("github"),
-			highlighting.WithFormatOptions(
-				chromahtml.WithClasses(true),
-				chromahtml.WithAllClasses(true),
+func newMarkdown(allowHTML bool) goldmark.Markdown {
+	opts := []goldmark.Option{
+		goldmark.WithExtensions(
+			extension.GFM,
+			extension.Footnote,
+			extension.DefinitionList,
+			extension.Typographer,
+			meta.Meta,
+			highlighting.NewHighlighting(
+				highlighting.WithStyle("github"),
+				highlighting.WithFormatOptions(
+					chromahtml.WithClasses(true),
+					chromahtml.WithAllClasses(true),
+				),
 			),
 		),
-	),
-	goldmark.WithParserOptions(
-		parser.WithAutoHeadingID(),
-	),
-	goldmark.WithRendererOptions(
-		html.WithUnsafe(),
-	),
+		goldmark.WithParserOptions(
+			parser.WithAutoHeadingID(),
+		),
+	}
+	if allowHTML {
+		opts = append(opts, goldmark.WithRendererOptions(html.WithUnsafe()))
+	}
+	return goldmark.New(opts...)
+}
+
+var (
+	mdSafe   = newMarkdown(false)
+	mdUnsafe = newMarkdown(true)
 )
+
+// vellumCommentRe matches pipeline comments goldmark would drop without
+// WithUnsafe: math/mermaid placeholders and the TOC hint.
+var vellumCommentRe = regexp.MustCompile(`<!--\s*(MATH:\d+|MERMAID:\d+|vellum:toc)\s*-->`)
+
+var vellumSentinelRe = regexp.MustCompile(`\x{00a7}VELLUM:(MATH:\d+|MERMAID:\d+|vellum:toc)\x{00a7}`)
+
+func protectVellumComments(src string) string {
+	var fences []string
+	src = fencedCodeRe.ReplaceAllStringFunc(src, func(match string) string {
+		idx := len(fences)
+		fences = append(fences, match)
+		return fmt.Sprintf("<!--FENCE:%d-->", idx)
+	})
+	src = inlineCodeRe.ReplaceAllStringFunc(src, func(match string) string {
+		idx := len(fences)
+		fences = append(fences, match)
+		return fmt.Sprintf("<!--FENCE:%d-->", idx)
+	})
+	src = vellumCommentRe.ReplaceAllStringFunc(src, func(match string) string {
+		inner := vellumCommentRe.FindStringSubmatch(match)
+		if len(inner) != 2 {
+			return match
+		}
+		return "\u00a7VELLUM:" + inner[1] + "\u00a7"
+	})
+	for i, block := range fences {
+		src = strings.Replace(src, fmt.Sprintf("<!--FENCE:%d-->", i), block, 1)
+	}
+	return src
+}
+
+func restoreVellumComments(s string) string {
+	return vellumSentinelRe.ReplaceAllStringFunc(s, func(match string) string {
+		inner := vellumSentinelRe.FindStringSubmatch(match)
+		if len(inner) != 2 {
+			return match
+		}
+		if inner[1] == "vellum:toc" {
+			return "<!-- vellum:toc -->"
+		}
+		return "<!--" + inner[1] + "-->"
+	})
+}
 
 // SoftError reports non-fatal conversion diagnostics (e.g. Mermaid mmdc
 // failures) after the primary output was still produced. Callers should
@@ -158,7 +214,8 @@ func Render(ctx context.Context, src []byte, opts *Options) (html string, soft [
 	processed := math.Extract(string(src))
 	processed = mermaid.Extract(processed)
 
-	htmlContent, title, err := renderMarkdown([]byte(processed))
+	allowHTML := opts != nil && opts.AllowHTML
+	htmlContent, title, err := renderMarkdown([]byte(processed), allowHTML)
 	if err != nil {
 		return "", nil, fmt.Errorf("rendering markdown: %w", err)
 	}
@@ -221,10 +278,16 @@ func Render(ctx context.Context, src []byte, opts *Options) (html string, soft [
 	return fullHTML, soft, nil
 }
 
-func renderMarkdown(src []byte) (htmlContent string, title string, err error) {
+func renderMarkdown(src []byte, allowHTML bool) (htmlContent string, title string, err error) {
+	engine := mdSafe
+	if allowHTML {
+		engine = mdUnsafe
+	} else {
+		src = []byte(protectVellumComments(string(src)))
+	}
 	pctx := parser.NewContext()
 	var buf bytes.Buffer
-	if err := md.Convert(src, &buf, parser.WithContext(pctx)); err != nil {
+	if err := engine.Convert(src, &buf, parser.WithContext(pctx)); err != nil {
 		return "", "", err
 	}
 
@@ -236,7 +299,11 @@ func renderMarkdown(src []byte) (htmlContent string, title string, err error) {
 		}
 	}
 
-	return buf.String(), title, nil
+	htmlContent = buf.String()
+	if !allowHTML {
+		htmlContent = restoreVellumComments(htmlContent)
+	}
+	return htmlContent, title, nil
 }
 
 // withMermaidFormat returns a shallow copy of opts with MermaidFormat set.

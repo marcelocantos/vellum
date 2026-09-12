@@ -242,6 +242,39 @@ func TestServer_StaticGETConfinedToViewedMarkdown(t *testing.T) {
 	}
 }
 
+func TestServer_ViewDoesNotEmitDocumentScript(t *testing.T) {
+	dir := t.TempDir()
+	md := filepath.Join(dir, "evil.md")
+	src := "# Notes\n\n<script>fetch('/etc/passwd')</script>\n\nSafe.\n"
+	if err := os.WriteFile(md, []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s := &Server{CacheDir: filepath.Join(dir, "cache")}
+	ts := startTestServer(t, s)
+	resp, err := http.Get(ViewURL(ts.URL, md))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status %d: %s", resp.StatusCode, body)
+	}
+	html := string(body)
+	if strings.Contains(html, "fetch('/etc/passwd')") {
+		t.Fatalf("document script reached the view origin:\n%s", html)
+	}
+	if strings.Contains(html, "<script>fetch") {
+		t.Fatalf("raw document script tag in view HTML:\n%s", html)
+	}
+	if !strings.Contains(html, "Notes") || !strings.Contains(html, "Safe") {
+		t.Fatalf("viewed markdown missing body:\n%s", html)
+	}
+	if !strings.Contains(html, "buildTOC()") {
+		t.Fatalf("chrome script should still be present:\n%s", html)
+	}
+}
+
 func TestServer_MCPPathReserved(t *testing.T) {
 	hit := false
 	s := &Server{
