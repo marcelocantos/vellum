@@ -242,6 +242,117 @@ func TestServer_StaticGETConfinedToViewedMarkdown(t *testing.T) {
 	}
 }
 
+func TestServer_StaticGETRejectsHiddenRelativeComponents(t *testing.T) {
+	home := t.TempDir()
+	md := filepath.Join(home, "readme.md")
+	if err := os.WriteFile(md, []byte("# Home\n\n![img](image.png)\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	img := filepath.Join(home, "image.png")
+	if err := os.WriteFile(img, []byte("PNG-BYTES"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	nestedDir := filepath.Join(home, "docs")
+	if err := os.MkdirAll(nestedDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	nested := filepath.Join(nestedDir, "photo.png")
+	if err := os.WriteFile(nested, []byte("NESTED-PNG"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	sshDir := filepath.Join(home, ".ssh")
+	if err := os.MkdirAll(sshDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	key := filepath.Join(sshDir, "id_rsa")
+	if err := os.WriteFile(key, []byte("SSH-PRIVATE-KEY"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	gnupgDir := filepath.Join(home, ".gnupg")
+	if err := os.MkdirAll(gnupgDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	secring := filepath.Join(gnupgDir, "secring.gpg")
+	if err := os.WriteFile(secring, []byte("GPG-SECRING"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	dotenv := filepath.Join(home, ".env")
+	if err := os.WriteFile(dotenv, []byte("SECRET=1"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	s := &Server{CacheDir: filepath.Join(home, "cache")}
+	ts := startTestServer(t, s)
+	get := func(path string) (int, string) {
+		t.Helper()
+		resp, err := http.Get(ViewURL(ts.URL, path))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		body, _ := io.ReadAll(resp.Body)
+		return resp.StatusCode, string(body)
+	}
+
+	code, body := get(md)
+	if code != http.StatusOK {
+		t.Fatalf("GET viewed Markdown in home: status %d body %q", code, body)
+	}
+
+	code, body = get(img)
+	if code != http.StatusOK {
+		t.Fatalf("GET non-hidden sibling after viewing home Markdown: status %d body %q, want 200", code, body)
+	}
+	if body != "PNG-BYTES" {
+		t.Fatalf("sibling image body %q, want PNG-BYTES", body)
+	}
+
+	code, body = get(nested)
+	if code != http.StatusOK {
+		t.Fatalf("GET non-hidden nested file after viewing home Markdown: status %d body %q, want 200", code, body)
+	}
+	if body != "NESTED-PNG" {
+		t.Fatalf("nested image body %q, want NESTED-PNG", body)
+	}
+
+	code, body = get(key)
+	if code != http.StatusNotFound {
+		t.Fatalf("GET .ssh/id_rsa after viewing home Markdown: status %d body %q, want 404", code, body)
+	}
+	if strings.Contains(body, "SSH-PRIVATE-KEY") {
+		t.Fatalf(".ssh key leaked after viewing home Markdown: %q", body)
+	}
+
+	code, body = get(secring)
+	if code != http.StatusNotFound {
+		t.Fatalf("GET .gnupg/secring.gpg after viewing home Markdown: status %d body %q, want 404", code, body)
+	}
+	if strings.Contains(body, "GPG-SECRING") {
+		t.Fatalf(".gnupg secring leaked after viewing home Markdown: %q", body)
+	}
+
+	code, body = get(dotenv)
+	if code != http.StatusNotFound {
+		t.Fatalf("GET .env after viewing home Markdown: status %d body %q, want 404", code, body)
+	}
+	if strings.Contains(body, "SECRET=1") {
+		t.Fatalf(".env leaked after viewing home Markdown: %q", body)
+	}
+
+	alias := filepath.Join(home, "looks-safe.png")
+	if err := os.Symlink(key, alias); err != nil {
+		t.Fatal(err)
+	}
+	code, body = get(alias)
+	if code != http.StatusNotFound {
+		t.Fatalf("GET symlink into .ssh after viewing home Markdown: status %d body %q, want 404", code, body)
+	}
+	if strings.Contains(body, "SSH-PRIVATE-KEY") {
+		t.Fatalf("symlink into .ssh leaked key: %q", body)
+	}
+}
+
 func TestServer_ViewDoesNotEmitDocumentScript(t *testing.T) {
 	dir := t.TempDir()
 	md := filepath.Join(dir, "evil.md")

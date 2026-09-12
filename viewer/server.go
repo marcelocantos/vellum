@@ -38,7 +38,9 @@ var errIsDirectory = errors.New("is a directory")
 // are served as static files so relative images resolve without file://,
 // but only under the directory of a Markdown path that has already been
 // viewed — the listener is a document surface, not a home-directory file
-// server. When MCP is set, streamable HTTP MCP is mounted at MCPPath on
+// server. Hidden relative components (`.ssh`, `.gnupg`, `.env`, …) under
+// that directory are not served, so viewing ~/readme.md cannot open ~/.ssh.
+// When MCP is set, streamable HTTP MCP is mounted at MCPPath on
 // this listener.
 type Server struct {
 	// Addr is the listen address (host:port). Empty means DefaultViewAddr.
@@ -415,11 +417,40 @@ func (s *Server) staticPathAllowed(absPath string) bool {
 	if s == nil {
 		return false
 	}
+	requested := filepath.Clean(absPath)
 	path := canonicalPath(absPath)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, root := range s.viewRoots {
-		if pathUnderRoot(path, root) {
+		if !pathUnderRoot(path, root) {
+			continue
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil || pathHasHiddenComponent(rel) {
+			continue
+		}
+		if pathUnderRoot(requested, root) {
+			reqRel, err := filepath.Rel(root, requested)
+			if err != nil || pathHasHiddenComponent(reqRel) {
+				continue
+			}
+		}
+		return true
+	}
+	return false
+}
+
+// pathHasHiddenComponent reports whether rel (from filepath.Rel) contains a
+// dotfile or hidden-directory segment such as `.ssh` or `.env`.
+func pathHasHiddenComponent(rel string) bool {
+	if rel == "." {
+		return false
+	}
+	for _, part := range strings.Split(rel, string(filepath.Separator)) {
+		if part == "" || part == "." || part == ".." {
+			continue
+		}
+		if strings.HasPrefix(part, ".") {
 			return true
 		}
 	}
