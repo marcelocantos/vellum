@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -34,8 +35,11 @@ var errIsDirectory = errors.New("is a directory")
 
 // Server serves one Markdown→HTML conversion per GET. Relative .md links are
 // rewritten to same-origin URLs. Non-Markdown paths under the same listener
-// are served as static files so relative images resolve without file://.
-// When MCP is set, streamable HTTP MCP is mounted at MCPPath on this listener.
+// are served as static files so relative images resolve without file://,
+// but only under the directory of a Markdown path that has already been
+// viewed — the listener is a document surface, not a home-directory file
+// server. When MCP is set, streamable HTTP MCP is mounted at MCPPath on
+// this listener.
 type Server struct {
 	// Addr is the listen address (host:port). Empty means DefaultViewAddr.
 	// Host must be loopback; Serve rejects non-loopback binds.
@@ -66,6 +70,9 @@ type Server struct {
 	Reveal func(path string) error
 	// ConvertPDF, when non-nil, replaces convert.Convert for PDF download (tests).
 	ConvertPDF func(ctx context.Context, input, output string) error
+
+	mu        sync.Mutex
+	viewRoots []string
 }
 
 // Origin returns the http://host:port origin for Addr (no trailing slash).
@@ -213,6 +220,10 @@ func (s *Server) handlePath(w http.ResponseWriter, r *http.Request) {
 		s.serveMarkdown(w, r, fsPath)
 		return
 	}
+	if !s.staticPathAllowed(fsPath) {
+		http.NotFound(w, r)
+		return
+	}
 	s.serveFile(w, r, fsPath)
 }
 
@@ -249,6 +260,7 @@ func (s *Server) serveMarkdown(w http.ResponseWriter, r *http.Request, absPath s
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	s.rememberViewRoot(absPath)
 	origin := requestOrigin(r)
 	html := rewriteMarkdownHrefs(string(body), absPath, origin)
 	// Ensure <base> matches this request's origin (cache may predate a port change).
@@ -350,6 +362,59 @@ func (s *Server) renderMarkdown(ctx context.Context, absInput, cachePath string)
 		return &convert.SoftError{Messages: soft}
 	}
 	return nil
+}
+
+func (s *Server) rememberViewRoot(absPath string) {
+	if s == nil {
+		return
+	}
+	root := canonicalPath(filepath.Dir(absPath))
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, existing := range s.viewRoots {
+		if existing == root {
+			return
+		}
+	}
+	s.viewRoots = append(s.viewRoots, root)
+}
+
+func (s *Server) staticPathAllowed(absPath string) bool {
+	if s == nil {
+		return false
+	}
+	path := canonicalPath(absPath)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, root := range s.viewRoots {
+		if pathUnderRoot(path, root) {
+			return true
+		}
+	}
+	return false
+}
+
+func canonicalPath(p string) string {
+	p = filepath.Clean(p)
+	if real, err := filepath.EvalSymlinks(p); err == nil {
+		return real
+	}
+	dir, base := filepath.Dir(p), filepath.Base(p)
+	if realDir, err := filepath.EvalSymlinks(dir); err == nil {
+		return filepath.Join(realDir, base)
+	}
+	return p
+}
+
+func pathUnderRoot(path, root string) bool {
+	rel, err := filepath.Rel(root, path)
+	if err != nil {
+		return false
+	}
+	if rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return false
+	}
+	return true
 }
 
 func (s *Server) serveFile(w http.ResponseWriter, r *http.Request, absPath string) {

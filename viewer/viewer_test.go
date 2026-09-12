@@ -146,6 +146,102 @@ func TestServer_Healthz(t *testing.T) {
 	}
 }
 
+func TestServer_StaticGETConfinedToViewedMarkdown(t *testing.T) {
+	root := t.TempDir()
+	docDir := filepath.Join(root, "notes")
+	secretDir := filepath.Join(root, "secret")
+	if err := os.MkdirAll(docDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(secretDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	md := filepath.Join(docDir, "readme.md")
+	if err := os.WriteFile(md, []byte("# Notes\n\n![img](image.png)\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	img := filepath.Join(docDir, "image.png")
+	if err := os.WriteFile(img, []byte("PNG-BYTES"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	secret := filepath.Join(secretDir, "id_rsa")
+	if err := os.WriteFile(secret, []byte("SECRET-KEY"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	outside := filepath.Join(root, "outside.png")
+	if err := os.WriteFile(outside, []byte("OUTSIDE"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	s := &Server{CacheDir: filepath.Join(root, "cache")}
+	ts := startTestServer(t, s)
+	get := func(path string) (int, string) {
+		t.Helper()
+		resp, err := http.Get(ViewURL(ts.URL, path))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		body, _ := io.ReadAll(resp.Body)
+		return resp.StatusCode, string(body)
+	}
+
+	code, body := get(secret)
+	if code != http.StatusNotFound {
+		t.Fatalf("GET secret before any Markdown view: status %d body %q, want 404", code, body)
+	}
+	if strings.Contains(body, "SECRET-KEY") {
+		t.Fatalf("secret body leaked before view: %q", body)
+	}
+
+	code, body = get(md)
+	if code != http.StatusOK {
+		t.Fatalf("GET viewed Markdown: status %d body %q", code, body)
+	}
+	if !strings.Contains(body, "Notes") {
+		t.Fatalf("viewed Markdown missing body:\n%s", body)
+	}
+
+	code, body = get(img)
+	if code != http.StatusOK {
+		t.Fatalf("GET sibling image after view: status %d body %q, want 200", code, body)
+	}
+	if body != "PNG-BYTES" {
+		t.Fatalf("sibling image body %q, want PNG-BYTES", body)
+	}
+
+	code, body = get(secret)
+	if code != http.StatusNotFound {
+		t.Fatalf("GET secret after viewing sibling-tree Markdown: status %d body %q, want 404", code, body)
+	}
+	if strings.Contains(body, "SECRET-KEY") {
+		t.Fatalf("secret body leaked after view: %q", body)
+	}
+
+	code, body = get(outside)
+	if code != http.StatusNotFound {
+		t.Fatalf("GET parent-dir file after view: status %d body %q, want 404", code, body)
+	}
+
+	escaped := filepath.Join(docDir, "..", "secret", "id_rsa")
+	code, body = get(escaped)
+	if code != http.StatusNotFound {
+		t.Fatalf("GET via .. after Clean: status %d body %q, want 404", code, body)
+	}
+
+	link := filepath.Join(docDir, "escape.png")
+	if err := os.Symlink(secret, link); err != nil {
+		t.Fatal(err)
+	}
+	code, body = get(link)
+	if code != http.StatusNotFound {
+		t.Fatalf("GET sibling symlink escaping the view root: status %d body %q, want 404", code, body)
+	}
+	if strings.Contains(body, "SECRET-KEY") {
+		t.Fatalf("symlink escape leaked secret: %q", body)
+	}
+}
+
 func TestServer_MCPPathReserved(t *testing.T) {
 	hit := false
 	s := &Server{
