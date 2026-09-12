@@ -21,6 +21,23 @@ import (
 	"github.com/marcelocantos/vellum/convert"
 )
 
+func (s *Server) chromeOriginAllowed(w http.ResponseWriter, r *http.Request) bool {
+	origin := strings.TrimSpace(r.Header.Get("Origin"))
+	if origin == "" {
+		http.Error(w, "missing origin", http.StatusForbidden)
+		return false
+	}
+	if site := strings.TrimSpace(r.Header.Get("Sec-Fetch-Site")); site != "" && site != "same-origin" {
+		http.Error(w, "cross-origin", http.StatusForbidden)
+		return false
+	}
+	if origin != requestOrigin(r) && (s == nil || origin != s.Origin()) {
+		http.Error(w, "origin mismatch", http.StatusForbidden)
+		return false
+	}
+	return true
+}
+
 func queryAbsPath(r *http.Request) (string, error) {
 	p := strings.TrimSpace(r.URL.Query().Get("path"))
 	if p == "" {
@@ -44,6 +61,10 @@ func (s *Server) handlePDF(w http.ResponseWriter, r *http.Request) {
 	absPath, err := queryAbsPath(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if !s.chromePathAllowed(absPath) {
+		http.NotFound(w, r)
 		return
 	}
 	info, err := os.Stat(absPath)
@@ -120,9 +141,16 @@ func (s *Server) handleClipboard(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	if !s.chromeOriginAllowed(w, r) {
+		return
+	}
 	absPath, err := queryAbsPath(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if !s.chromePathAllowed(absPath) {
+		http.NotFound(w, r)
 		return
 	}
 	html, err := s.cachedHTML(r.Context(), absPath)
@@ -159,9 +187,16 @@ func (s *Server) handleReveal(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	if !s.chromeOriginAllowed(w, r) {
+		return
+	}
 	absPath, err := queryAbsPath(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if !s.chromePathAllowed(absPath) {
+		http.NotFound(w, r)
 		return
 	}
 	if _, err := os.Stat(absPath); err != nil {

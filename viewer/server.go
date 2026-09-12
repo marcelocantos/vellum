@@ -71,8 +71,9 @@ type Server struct {
 	// ConvertPDF, when non-nil, replaces convert.Convert for PDF download (tests).
 	ConvertPDF func(ctx context.Context, input, output string) error
 
-	mu        sync.Mutex
-	viewRoots []string
+	mu          sync.Mutex
+	viewRoots   []string
+	viewedFiles []string
 }
 
 // Origin returns the http://host:port origin for Addr (no trailing slash).
@@ -261,6 +262,7 @@ func (s *Server) serveMarkdown(w http.ResponseWriter, r *http.Request, absPath s
 		return
 	}
 	s.rememberViewRoot(absPath)
+	s.rememberViewedFile(absPath)
 	origin := requestOrigin(r)
 	html := rewriteMarkdownHrefs(string(body), absPath, origin)
 	// Ensure <base> matches this request's origin (cache may predate a port change).
@@ -362,6 +364,36 @@ func (s *Server) renderMarkdown(ctx context.Context, absInput, cachePath string)
 		return &convert.SoftError{Messages: soft}
 	}
 	return nil
+}
+
+func (s *Server) rememberViewedFile(absPath string) {
+	if s == nil {
+		return
+	}
+	path := canonicalPath(absPath)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, existing := range s.viewedFiles {
+		if existing == path {
+			return
+		}
+	}
+	s.viewedFiles = append(s.viewedFiles, path)
+}
+
+func (s *Server) chromePathAllowed(absPath string) bool {
+	if s == nil {
+		return false
+	}
+	path := canonicalPath(absPath)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, viewed := range s.viewedFiles {
+		if viewed == path {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Server) rememberViewRoot(absPath string) {
