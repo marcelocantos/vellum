@@ -13,10 +13,12 @@ import (
 
 // Chrome action paths on the view server (not filesystem paths).
 const (
-	ChromePrefix        = "/_vellum/"
-	ChromePDFPath       = "/_vellum/pdf"
-	ChromeClipboardPath = "/_vellum/clipboard"
-	ChromeRevealPath    = "/_vellum/reveal"
+	ChromePrefix         = "/_vellum/"
+	ChromePDFPath        = "/_vellum/pdf"
+	ChromeClipboardPath  = "/_vellum/clipboard"
+	ChromeRevealPath     = "/_vellum/reveal"
+	ChromeWatchPath      = "/_vellum/watch"
+	ChromeTaskTogglePath = "/_vellum/task-toggle"
 )
 
 //go:embed chrome.css
@@ -48,7 +50,7 @@ func injectChrome(htmlDoc, sourcePath string) string {
 	if open == nil || close == nil || close[0] < open[1] {
 		return htmlDoc
 	}
-	inner := htmlDoc[open[1]:close[0]]
+	inner := annotateTaskCheckboxes(htmlDoc[open[1]:close[0]])
 	wrapped := chromeOpen(sourcePath) + inner + chromeClose()
 	htmlDoc = htmlDoc[:open[1]] + wrapped + htmlDoc[close[0]:]
 	if loc := headCloseRe.FindStringIndex(htmlDoc); loc != nil {
@@ -101,6 +103,13 @@ func chromeOpen(sourcePath string) string {
 		`</div>` +
 		`<span class="vellum-status" id="vellum-status" hidden></span>` +
 		`</header>` +
+		`<div class="vellum-consent" id="vellum-consent" hidden>` +
+		`<p>Toggling a checkbox edits the Markdown file on disk.</p>` +
+		`<div class="vellum-consent-actions">` +
+		`<button type="button" data-vellum="consent-session">This session</button>` +
+		`<button type="button" data-vellum="consent-always">Always allow</button>` +
+		`<button type="button" data-vellum="consent-cancel">Cancel</button>` +
+		`</div></div>` +
 		`<div class="vellum-scroll" id="vellum-scroll" tabindex="0" role="region" aria-label="Document">` +
 		`<article class="vellum-article">`
 }

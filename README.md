@@ -140,9 +140,10 @@ vellum install-viewer                  # double-click .md → rendered view
 
 `vellum view` / `vellum --open` open Markdown as an **`http://127.0.0.1:18742/…`
 URL** on the localhost view server (not `file://`), so in-page `.md` links
-stay in the browser and reloads pick up edits. HTML is the default (fast, no
-WeasyPrint needed for a casual read); pass `--pdf` for full typography in
-Preview via a cache file.
+stay in the browser and the open tab updates when the source file changes
+(WebSocket watch with a 5-minute heartbeat; scroll is restored best-effort
+to the same heading). HTML is the default (fast, no WeasyPrint needed for a
+casual read); pass `--pdf` for full typography in Preview via a cache file.
 
 Start the daemon with Homebrew (preferred) or in the foreground:
 
@@ -158,11 +159,13 @@ contents with expand/collapse and a « / » sidebar toggle, a toolbar to
 download PDF, copy the rendered document to the clipboard, or reveal the
 source in Finder, a theme control (dark / system / light, persisted in
 the browser), dark-mode article styling with syntax highlighting, and
-a full-viewport zoom/pan viewer for images and SVG (including Mermaid).
-The same process hosts streamable HTTP MCP at `/mcp`. The server binds
-loopback only (override with `--addr` / `VELLUM_VIEW_ADDR`). Cache health:
-entries older than 7 days are dropped, then oldest entries are evicted
-until total size is under 50 MB.
+a full-viewport zoom/pan viewer for images and SVG (including Mermaid),
+and clickable GFM task-list checkboxes that edit the source file after
+consent (once per session or permanently). The same process hosts
+streamable HTTP MCP at `/mcp`. The server binds loopback only (override
+with `--addr` / `VELLUM_VIEW_ADDR`). Cache health: entries older than 7
+days are dropped, then oldest entries are evicted until total size is
+under 50 MB.
 
 `vellum install-viewer` generates `~/Applications/Vellum Viewer.app`,
 registers it with Launch Services, and (with [`duti`](https://github.com/moretension/duti) on `PATH`) sets it as the default handler for Markdown. The app executable is a small Cocoa binary (compiled with clang at install time) that receives Launch Services open-document Apple Events and runs `vellum --open` — a shell-script launcher cannot receive those events. Requires Xcode Command Line Tools. Uninstall with `vellum uninstall-viewer`. Debug log: `~/Library/Logs/vellum-viewer.log`.

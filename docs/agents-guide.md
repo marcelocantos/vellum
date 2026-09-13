@@ -356,13 +356,17 @@ already work with files and `convert`.
   `/mcp`. Prefer a persistent daemon: `brew services start vellum`.
   Each GET of a `.md`/`.markdown` path converts that one file to HTML
   (no link-graph crawl). Relative `.md` links are rewritten to
-  same-origin URLs so clicks stay in the browser; reload re-converts
-  when the source mtime/size changes. Served HTML is wrapped with view
+  same-origin URLs so clicks stay in the browser; an open tab watches
+  the source over `GET …/watch` (WebSocket) and reloads when
+  mtime/size changes (5-minute protocol heartbeat; heading-anchor
+  scroll restore). Served HTML is wrapped with view
   chrome (TOC sidebar with expand/collapse and « / » toggle, PDF /
   clipboard / Finder toolbar, dark / system / light theme with
-  dark-mode syntax highlighting, figure lightbox). Chrome is injected per response; the convert-cache file
+  dark-mode syntax highlighting, figure lightbox, editable GFM task
+  lists). Chrome is injected per response; the convert-cache file
   stays chrome-free. Actions live under `/_vellum/` (`GET …/pdf`,
-  `POST …/clipboard`, `POST …/reveal`).
+  `POST …/clipboard`, `POST …/reveal`, `GET …/watch`,
+  `POST …/task-toggle`).
 - `vellum view <file.md>` / `vellum --open <file.md>` — open the file
   as an `http://127.0.0.1:18742/…` URL on the view server (**not**
   `file://`). HTML default (browser, fast); pass `--pdf` for

@@ -66,6 +66,18 @@ type Server struct {
 	Reveal func(path string) error
 	// ConvertPDF, when non-nil, replaces convert.Convert for PDF download (tests).
 	ConvertPDF func(ctx context.Context, input, output string) error
+
+	// WatchInterval is how often a watch connection stats the source.
+	// Zero means DefaultWatchInterval. Tests inject a shorter tick.
+	WatchInterval time.Duration
+	// WatchHeartbeat is the WebSocket ping interval.
+	// Zero means DefaultWatchHeartbeat. Tests inject a shorter tick.
+	WatchHeartbeat time.Duration
+	// WatchPingCount increments once per successful protocol ping (tests).
+	WatchPingCount atomic.Int64
+
+	// WriteFile, when non-nil, replaces atomic Markdown writes (task-toggle tests).
+	WriteFile func(path string, data []byte) error
 }
 
 // Origin returns the http://host:port origin for Addr (no trailing slash).
@@ -109,6 +121,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc(ChromePDFPath, s.handlePDF)
 	mux.HandleFunc(ChromeClipboardPath, s.handleClipboard)
 	mux.HandleFunc(ChromeRevealPath, s.handleReveal)
+	mux.HandleFunc(ChromeWatchPath, s.handleWatch)
+	mux.HandleFunc(ChromeTaskTogglePath, s.handleTaskToggle)
 	mux.HandleFunc("/", s.handlePath)
 	return mux
 }

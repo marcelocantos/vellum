@@ -119,13 +119,13 @@ Package paths are under `github.com/marcelocantos/vellum/…`.
 - `func HTMLToRTF(html, resourcePath string) ([]byte, error)` — **needs review** (`--standalone`; CSS is ignored)
 - `func HTMLToPlain(html string) ([]byte, error)` — **needs review**
 
-**`viewer`** — localhost view server (HTML) + cached PDF open; macOS default Markdown handler (added in v0.6.0; view server in v0.14.0). Cache filename is `sha256(absPath)[:8]+ext` (not mtime). A `.stamp` sidecar records source mtime+size so HTML/PDF re-render in place when Markdown changes (🎯T28). HTML responses inject view chrome at serve time (TOC, figure lightbox, PDF/clipboard/Finder actions under `/_vellum/`); the convert-cache HTML file stays chrome-free (🎯T32).
+**`viewer`** — localhost view server (HTML) + cached PDF open; macOS default Markdown handler (added in v0.6.0; view server in v0.14.0). Cache filename is `sha256(absPath)[:8]+ext` (not mtime). A `.stamp` sidecar records source mtime+size so HTML/PDF re-render in place when Markdown changes (🎯T28). HTML responses inject view chrome at serve time (TOC, figure lightbox, PDF/clipboard/Finder actions under `/_vellum/`); the convert-cache HTML file stays chrome-free (🎯T32). An open view tab watches the source over `/_vellum/watch` (WebSocket, 5-minute heartbeat) and reloads on stamp change (🎯T43). GFM task-list checkboxes can toggle the source via `POST /_vellum/task-toggle` after consent (🎯T34).
 
 - `func View(ctx context.Context, inputPath string, opts *ViewOptions) (string, error)` — **needs review** (HTML opens `http://127.0.0.1:18742/…` view-server URL; PDF still opens a cache file)
 - `type ViewOptions struct { Format Format; Style *convert.Style; Backend string; Open func(string) error; CacheDir string; MaxBytes int64; MaxAge time.Duration; Now func() time.Time; ViewBaseURL string; SkipEnsureServer bool }` — **needs review**
 - `type Server struct { Addr string; CacheDir string; Style *convert.Style; Backend string; … }` — **needs review** (added in v0.14.0)
 - `func (*Server) ListenAndServe(ctx context.Context) error` — **needs review** (loopback-only bind)
-- `func (*Server) Handler() http.Handler` — **needs review** (Markdown GET injects chrome; `/_vellum/pdf` GET, `/_vellum/clipboard` POST, `/_vellum/reveal` POST)
+- `func (*Server) Handler() http.Handler` — **needs review** (Markdown GET injects chrome; `/_vellum/pdf` GET, `/_vellum/clipboard` POST, `/_vellum/reveal` POST, `/_vellum/watch` GET/WebSocket, `/_vellum/task-toggle` POST)
 - `func ViewURL(origin, absPath string) string` — **needs review**
 - `func EnsureViewServer(origin string) error` — **needs review**
 - `func ProbeViewServer(origin string) error` — **needs review**

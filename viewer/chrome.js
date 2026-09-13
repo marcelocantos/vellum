@@ -257,6 +257,197 @@
     return "/_vellum/" + name + "?path=" + encodeURIComponent(source);
   }
 
+  const SCROLL_KEY = "vellum-scroll:" + source;
+  const TASK_CONSENT_PERM = "vellum-task-edit";
+  const TASK_CONSENT_SESS = "vellum-task-edit";
+  const consentEl = document.getElementById("vellum-consent");
+  let pendingTask = null;
+
+  function articleHeadings() {
+    if (!article) return [];
+    return Array.prototype.slice.call(article.querySelectorAll("h1, h2, h3, h4, h5, h6")).filter(function (h) {
+      return !h.closest(".vellum-contents");
+    });
+  }
+
+  function captureScroll() {
+    if (!scrollPane) return null;
+    const paneTop = scrollPane.getBoundingClientRect().top;
+    const headings = articleHeadings();
+    let id = "";
+    let offset = 0;
+    for (let i = 0; i < headings.length; i++) {
+      const top = headings[i].getBoundingClientRect().top;
+      if (top <= paneTop + 1) {
+        id = headings[i].id || "";
+        offset = paneTop - top;
+      } else {
+        break;
+      }
+    }
+    return { id: id, offset: offset, y: scrollPane.scrollTop };
+  }
+
+  function persistScroll() {
+    try {
+      const pos = captureScroll();
+      if (pos) sessionStorage.setItem(SCROLL_KEY, JSON.stringify(pos));
+    } catch (e) {}
+  }
+
+  function restoreScroll() {
+    if (!scrollPane) return;
+    let raw;
+    try {
+      raw = sessionStorage.getItem(SCROLL_KEY);
+    } catch (e) {
+      return;
+    }
+    if (!raw) return;
+    let pos;
+    try {
+      pos = JSON.parse(raw);
+    } catch (e) {
+      return;
+    }
+    try {
+      sessionStorage.removeItem(SCROLL_KEY);
+    } catch (e) {}
+    function apply() {
+      const max = Math.max(0, scrollPane.scrollHeight - scrollPane.clientHeight);
+      if (pos.id && article) {
+        const el = document.getElementById(pos.id);
+        if (el && article.contains(el)) {
+          const paneTop = scrollPane.getBoundingClientRect().top;
+          const headingTop = el.getBoundingClientRect().top;
+          const delta = headingTop - paneTop;
+          const next = scrollPane.scrollTop + delta + (pos.offset || 0);
+          scrollPane.scrollTop = Math.max(0, Math.min(max, next));
+          return;
+        }
+      }
+      if (typeof pos.y === "number") {
+        scrollPane.scrollTop = Math.max(0, Math.min(max, pos.y));
+      }
+    }
+    requestAnimationFrame(function () {
+      requestAnimationFrame(apply);
+    });
+  }
+
+  function reloadView() {
+    persistScroll();
+    location.reload();
+  }
+
+  function taskConsent() {
+    try {
+      if (localStorage.getItem(TASK_CONSENT_PERM) === "1") return "always";
+      if (sessionStorage.getItem(TASK_CONSENT_SESS) === "1") return "session";
+    } catch (e) {}
+    return "";
+  }
+
+  function rememberConsent(kind) {
+    try {
+      if (kind === "always") localStorage.setItem(TASK_CONSENT_PERM, "1");
+      else sessionStorage.setItem(TASK_CONSENT_SESS, "1");
+    } catch (e) {}
+  }
+
+  function hideConsent() {
+    if (consentEl) consentEl.hidden = true;
+  }
+
+  function showConsent() {
+    if (consentEl) consentEl.hidden = false;
+  }
+
+  function postTaskToggle(index) {
+    const u = "/_vellum/task-toggle?path=" + encodeURIComponent(source) + "&index=" + encodeURIComponent(String(index));
+    return fetch(u, { method: "POST" }).then(function (resp) {
+      return resp.text().then(function (text) {
+        if (!resp.ok) {
+          throw new Error(text.trim() || resp.statusText);
+        }
+        return text;
+      });
+    });
+  }
+
+  function applyTaskToggle(input, index) {
+    input.disabled = true;
+    postTaskToggle(index)
+      .then(function () {
+        reloadView();
+      })
+      .catch(function (err) {
+        input.disabled = false;
+        input.checked = !input.checked;
+        setStatus(err.message || String(err), false);
+      });
+  }
+
+  function watchURL() {
+    const proto = location.protocol === "https:" ? "wss:" : "ws:";
+    return proto + "//" + location.host + "/_vellum/watch?path=" + encodeURIComponent(source);
+  }
+
+  function startWatch() {
+    if (!source || !window.WebSocket) return;
+    let loadStamp = null;
+    let delay = 1000;
+    let closed = false;
+
+    function connect() {
+      if (closed) return;
+      let ws;
+      try {
+        ws = new WebSocket(watchURL());
+      } catch (e) {
+        scheduleReconnect();
+        return;
+      }
+      ws.onopen = function () {
+        delay = 1000;
+      };
+      ws.onmessage = function (ev) {
+        const text = String(ev.data || "").replace(/\s+$/, "");
+        if (text.indexOf("error ") === 0) {
+          setStatus(text.slice(6) || "source unreadable", false);
+          return;
+        }
+        if (text.indexOf("stamp ") !== 0) return;
+        const stamp = text.slice(6);
+        if (loadStamp === null) {
+          loadStamp = stamp;
+          return;
+        }
+        if (stamp !== loadStamp) {
+          reloadView();
+        }
+      };
+      ws.onclose = function () {
+        scheduleReconnect();
+      };
+      ws.onerror = function () {
+        try {
+          ws.close();
+        } catch (e) {}
+      };
+    }
+
+    function scheduleReconnect() {
+      if (closed) return;
+      window.setTimeout(connect, delay);
+      if (delay === 1000) delay = 2000;
+      else if (delay === 2000) delay = 5000;
+      else delay = 15000;
+    }
+
+    connect();
+  }
+
   chrome.querySelectorAll("[data-vellum]").forEach(function (btn) {
     btn.addEventListener("click", function () {
       const action = btn.getAttribute("data-vellum");
@@ -280,6 +471,22 @@
       if (action === "toc-collapse") {
         cancelTOCFill();
         collapseToFirstBranch();
+        return;
+      }
+      if (action === "consent-session" || action === "consent-always") {
+        rememberConsent(action === "consent-always" ? "always" : "session");
+        hideConsent();
+        if (pendingTask) {
+          const pending = pendingTask;
+          pendingTask = null;
+          pending.input.checked = pending.checked;
+          applyTaskToggle(pending.input, pending.index);
+        }
+        return;
+      }
+      if (action === "consent-cancel") {
+        hideConsent();
+        pendingTask = null;
         return;
       }
       if (action === "clipboard" || action === "reveal") {
@@ -588,7 +795,27 @@
 
   buildTOC();
   fillTOC();
+  restoreScroll();
   focusScrollPane();
+  startWatch();
+
+  if (article) {
+    article.addEventListener("change", function (ev) {
+      const t = ev.target;
+      if (!(t instanceof HTMLInputElement) || t.type !== "checkbox") return;
+      const item = t.closest("[data-task-index]");
+      if (!item || !article.contains(item)) return;
+      const index = parseInt(item.getAttribute("data-task-index"), 10);
+      if (isNaN(index)) return;
+      if (!taskConsent()) {
+        t.checked = !t.checked;
+        pendingTask = { input: t, index: index, checked: !t.checked };
+        showConsent();
+        return;
+      }
+      applyTaskToggle(t, index);
+    });
+  }
 
   const lb = {
     scale: 1,

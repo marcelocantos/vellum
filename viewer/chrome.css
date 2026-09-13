@@ -266,6 +266,35 @@ body.vellum-view {
   color: #cf222e;
 }
 
+.vellum-consent {
+  margin: 0 12px 8px;
+  padding: 10px 12px;
+  border: 1px solid #d1d9e0;
+  border-radius: 6px;
+  background: #fff8c5;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.vellum-consent p {
+  margin: 0 0 8px;
+}
+
+.vellum-consent-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.vellum-consent-actions button {
+  font: inherit;
+  cursor: pointer;
+}
+
+.vellum-article .task-list-item input[type="checkbox"] {
+  cursor: pointer;
+}
+
 .vellum-article {
   max-width: 980px;
   margin: 0 auto;
