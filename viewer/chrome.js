@@ -486,6 +486,9 @@
       }
       if (action === "consent-cancel") {
         hideConsent();
+        if (pendingTask) {
+          pendingTask.input.checked = !pendingTask.checked;
+        }
         pendingTask = null;
         return;
       }
@@ -800,6 +803,17 @@
   startWatch();
 
   if (article) {
+    article.addEventListener("click", function (ev) {
+      const t = ev.target;
+      if (!(t instanceof Element)) return;
+      if (t.closest("input[type=checkbox]")) return;
+      const item = t.closest("[data-task-index]");
+      if (!item || !article.contains(item)) return;
+      const input = item.querySelector("input[type=checkbox]");
+      if (!input || input.disabled) return;
+      ev.preventDefault();
+      input.click();
+    });
     article.addEventListener("change", function (ev) {
       const t = ev.target;
       if (!(t instanceof HTMLInputElement) || t.type !== "checkbox") return;
@@ -808,8 +822,7 @@
       const index = parseInt(item.getAttribute("data-task-index"), 10);
       if (isNaN(index)) return;
       if (!taskConsent()) {
-        t.checked = !t.checked;
-        pendingTask = { input: t, index: index, checked: !t.checked };
+        pendingTask = { input: t, index: index, checked: t.checked };
         showConsent();
         return;
       }
@@ -1048,7 +1061,27 @@
     stage.addEventListener("pointercancel", endPan);
   }
 
+  if (consentEl) {
+    consentEl.addEventListener("click", function (ev) {
+      if (ev.target === consentEl) {
+        hideConsent();
+        if (pendingTask) {
+          pendingTask.input.checked = !pendingTask.checked;
+        }
+        pendingTask = null;
+      }
+    });
+  }
+
   document.addEventListener("keydown", function (ev) {
+    if (consentEl && !consentEl.hidden && ev.key === "Escape") {
+      hideConsent();
+      if (pendingTask) {
+        pendingTask.input.checked = !pendingTask.checked;
+      }
+      pendingTask = null;
+      return;
+    }
     if (lightbox && !lightbox.hidden) {
       if (ev.key === "Escape") closeLightbox();
       if (ev.key === "+" || ev.key === "=") {

@@ -210,8 +210,8 @@ func TestInjectChrome_TaskIndexesOnServe(t *testing.T) {
 	if !strings.Contains(out, `data-task-index="0"`) {
 		t.Fatalf("missing task index:\n%s", out)
 	}
-	if !strings.Contains(out, `id="vellum-consent"`) {
-		t.Fatalf("missing consent chrome:\n%s", out)
+	if !strings.Contains(out, `id="vellum-consent"`) || !strings.Contains(out, `role="dialog"`) {
+		t.Fatalf("missing consent dialog:\n%s", out)
 	}
 	if !strings.Contains(out, "task-toggle") {
 		t.Fatalf("missing task-toggle script:\n%s", out)

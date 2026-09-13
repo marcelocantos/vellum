@@ -103,19 +103,20 @@ func chromeOpen(sourcePath string) string {
 		`</div>` +
 		`<span class="vellum-status" id="vellum-status" hidden></span>` +
 		`</header>` +
-		`<div class="vellum-consent" id="vellum-consent" hidden>` +
-		`<p>Toggling a checkbox edits the Markdown file on disk.</p>` +
-		`<div class="vellum-consent-actions">` +
-		`<button type="button" data-vellum="consent-session">This session</button>` +
-		`<button type="button" data-vellum="consent-always">Always allow</button>` +
-		`<button type="button" data-vellum="consent-cancel">Cancel</button>` +
-		`</div></div>` +
 		`<div class="vellum-scroll" id="vellum-scroll" tabindex="0" role="region" aria-label="Document">` +
 		`<article class="vellum-article">`
 }
 
 func chromeClose() string {
-	return `</article></div></div></div>` +
+	return `</article></div></div>` +
+		`<div class="vellum-consent" id="vellum-consent" hidden role="dialog" aria-modal="true" aria-labelledby="vellum-consent-title">` +
+		`<div class="vellum-consent-card">` +
+		`<p id="vellum-consent-title">Toggling a checkbox edits the Markdown file on disk.</p>` +
+		`<div class="vellum-consent-actions">` +
+		`<button type="button" data-vellum="consent-session">This session</button>` +
+		`<button type="button" data-vellum="consent-always">Always allow</button>` +
+		`<button type="button" data-vellum="consent-cancel">Cancel</button>` +
+		`</div></div></div></div>` +
 		`<div class="vellum-lightbox" id="vellum-lightbox" hidden role="dialog" aria-modal="true" aria-label="Figure viewer">` +
 		`<div class="vellum-lightbox-bar">` +
 		`<div>` +

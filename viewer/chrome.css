@@ -267,17 +267,34 @@ body.vellum-view {
 }
 
 .vellum-consent {
-  margin: 0 12px 8px;
-  padding: 10px 12px;
-  border: 1px solid #d1d9e0;
-  border-radius: 6px;
-  background: #fff8c5;
-  font-size: 13px;
-  line-height: 1.4;
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(27, 31, 36, 0.45);
 }
 
-.vellum-consent p {
-  margin: 0 0 8px;
+.vellum-consent[hidden] {
+  display: none;
+}
+
+.vellum-consent-card {
+  margin: 16px;
+  padding: 16px 20px;
+  max-width: 28rem;
+  border: 1px solid #d1d9e0;
+  border-radius: 8px;
+  background: #fff8c5;
+  color: #1f2328;
+  font-size: 14px;
+  line-height: 1.45;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+}
+
+.vellum-consent-card p {
+  margin: 0 0 12px;
 }
 
 .vellum-consent-actions {
