@@ -54,6 +54,11 @@ dependencies.
 - **github.com/yuin/goldmark-meta** v1.1.0 —
   https://github.com/yuin/goldmark-meta/blob/v1.1.0/LICENSE
 
+## ISC License
+
+- **github.com/coder/websocket** v1.8.14 —
+  https://github.com/coder/websocket/blob/v1.8.14/LICENSE
+
 ## BSD 3-Clause License
 
 - **github.com/yosida95/uritemplate/v3** v3.0.2 —
@@ -69,7 +74,10 @@ Vellum invokes the following tools via `exec.LookPath` at runtime.
 They are distributed separately, not bundled into the vellum binary,
 and their licenses apply to their own distributions, not to vellum.
 
-- **Prince** — https://www.princexml.com/ (proprietary; free for non-commercial use)
+- **WeasyPrint** — https://weasyprint.org/ (BSD-3; default HTML→PDF backend)
+- **Prince** — https://www.princexml.com/ (proprietary; free for non-commercial use; opt-in)
+- **pandoc** — https://pandoc.org/ (GPL-2.0-or-later; rich-text import and HTML→RTF fallback)
+- **poppler** — https://poppler.freedesktop.org/ (`pdftoppm`, `pdftotext`; PDF import)
 - **Node.js** — https://nodejs.org/ (MIT)
 - **KaTeX** — https://katex.org/ (MIT)
 - **mermaid-cli** — https://github.com/mermaid-js/mermaid-cli (MIT)
