@@ -72,6 +72,9 @@ func TestInjectChrome_WrapsBodyAndAddsClass(t *testing.T) {
 	if !strings.Contains(out, "fillTOC()") {
 		t.Fatalf("missing TOC fill")
 	}
+	if !strings.Contains(out, `rel="icon"`) || !strings.Contains(out, ChromeFaviconPath) {
+		t.Fatalf("missing favicon link:\n%s", out)
+	}
 }
 
 func TestInjectChrome_KeepsInDocumentContents(t *testing.T) {

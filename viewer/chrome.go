@@ -19,6 +19,8 @@ const (
 	ChromeRevealPath     = "/_vellum/reveal"
 	ChromeWatchPath      = "/_vellum/watch"
 	ChromeTaskTogglePath = "/_vellum/task-toggle"
+	ChromeFaviconPath    = "/_vellum/favicon.svg"
+	FaviconICOPath       = "/favicon.ico"
 )
 
 //go:embed chrome.css
@@ -26,6 +28,9 @@ var chromeCSS string
 
 //go:embed chrome.js
 var chromeJS string
+
+//go:embed favicon.svg
+var faviconSVG string
 
 var (
 	headCloseRe = regexp.MustCompile(`(?i)</head>`)
@@ -43,7 +48,7 @@ func injectChrome(htmlDoc, sourcePath string) string {
 	}
 	htmlDoc = addBodyClass(htmlDoc, "vellum-view")
 	if loc := headCloseRe.FindStringIndex(htmlDoc); loc != nil {
-		htmlDoc = htmlDoc[:loc[0]] + chromeThemeInitScript() + htmlDoc[loc[0]:]
+		htmlDoc = htmlDoc[:loc[0]] + chromeFaviconLink() + chromeThemeInitScript() + htmlDoc[loc[0]:]
 	}
 	open := bodyOpenRe.FindStringIndex(htmlDoc)
 	close := bodyCloseRe.FindStringIndex(htmlDoc)
@@ -64,6 +69,10 @@ func injectChrome(htmlDoc, sourcePath string) string {
 
 func chromeStyleTag() string {
 	return "<style>\n" + chromeCSS + "\n" + chromaDarkThemeCSS + "</style>\n"
+}
+
+func chromeFaviconLink() string {
+	return `<link rel="icon" href="` + ChromeFaviconPath + `" type="image/svg+xml">` + "\n"
 }
 
 func chromeThemeInitScript() string {

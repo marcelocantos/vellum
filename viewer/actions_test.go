@@ -169,6 +169,28 @@ func TestAction_MissingPath(t *testing.T) {
 	}
 }
 
+func TestAction_Favicon(t *testing.T) {
+	s := &Server{CacheDir: t.TempDir()}
+	ts := startTestServer(t, s)
+	for _, path := range []string{ChromeFaviconPath, FaviconICOPath} {
+		resp, err := http.Get(ts.URL + path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("%s status %d", path, resp.StatusCode)
+		}
+		if got := resp.Header.Get("Content-Type"); !strings.Contains(got, "image/svg+xml") {
+			t.Fatalf("%s Content-Type %q", path, got)
+		}
+		if !strings.Contains(string(body), `viewBox="0 0 32 32"`) || !strings.Contains(string(body), "#f3e6c8") {
+			t.Fatalf("%s missing mark:\n%s", path, body)
+		}
+	}
+}
+
 func TestAction_ReservedPrefixNotFilesystem(t *testing.T) {
 	s := &Server{CacheDir: t.TempDir()}
 	ts := startTestServer(t, s)

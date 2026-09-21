@@ -123,6 +123,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc(ChromeRevealPath, s.handleReveal)
 	mux.HandleFunc(ChromeWatchPath, s.handleWatch)
 	mux.HandleFunc(ChromeTaskTogglePath, s.handleTaskToggle)
+	mux.HandleFunc(ChromeFaviconPath, s.handleFavicon)
+	mux.HandleFunc(FaviconICOPath, s.handleFavicon)
 	mux.HandleFunc("/", s.handlePath)
 	return mux
 }
@@ -202,6 +204,20 @@ func requireLoopbackAddr(addr string) error {
 		}
 	}
 	return nil
+}
+
+func (s *Server) handleFavicon(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	w.Header().Set("Content-Type", "image/svg+xml; charset=utf-8")
+	w.Header().Set("Cache-Control", "public, max-age=86400")
+	if r.Method == http.MethodHead {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	_, _ = io.WriteString(w, faviconSVG)
 }
 
 func (s *Server) handlePath(w http.ResponseWriter, r *http.Request) {
