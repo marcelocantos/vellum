@@ -803,17 +803,8 @@
   startWatch();
 
   if (article) {
-    article.addEventListener("click", function (ev) {
-      const t = ev.target;
-      if (!(t instanceof Element)) return;
-      if (t.closest("input[type=checkbox]")) return;
-      const item = t.closest("[data-task-index]");
-      if (!item || !article.contains(item)) return;
-      const input = item.querySelector("input[type=checkbox]");
-      if (!input || input.disabled) return;
-      ev.preventDefault();
-      input.click();
-    });
+    // Only the checkbox itself toggles. Label text stays selectable and
+    // does not synthesize a click onto the input.
     article.addEventListener("change", function (ev) {
       const t = ev.target;
       if (!(t instanceof HTMLInputElement) || t.type !== "checkbox") return;

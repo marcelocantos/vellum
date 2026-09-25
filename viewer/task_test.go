@@ -200,6 +200,15 @@ func TestAction_TaskToggleWriteError(t *testing.T) {
 	}
 }
 
+func TestChromeJS_TaskToggleIsCheckboxOnly(t *testing.T) {
+	if !strings.Contains(chromeJS, `t.type !== "checkbox"`) {
+		t.Fatal("chrome.js missing checkbox change guard")
+	}
+	if strings.Contains(chromeJS, "input.click()") {
+		t.Fatal("chrome.js forwards list-item clicks onto the task checkbox")
+	}
+}
+
 func TestInjectChrome_TaskIndexesOnServe(t *testing.T) {
 	in := `<!DOCTYPE html><html><head></head><body>
 <ul>
