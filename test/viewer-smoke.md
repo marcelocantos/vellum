@@ -3,7 +3,7 @@
 Use this file to check live reload and editable task lists.
 
 1. Leave this tab open.
-2. Toggle a checkbox below by clicking the box (not the text). First click asks for consent (this session or always). The source on disk should flip `[ ]` ↔ `[x]` and the page should reload in place. Clicking the label text must not toggle.
+2. Toggle a checkbox below by clicking the box or tabbing to it and pressing Space (not the text). First click asks for consent (this session or always). The source on disk should flip `[ ]` ↔ `[x]` without reloading; keyboard focus must stay on the box. Clicking the label text must not toggle.
 3. Scroll to **Deep section**, then edit this file in an editor (change the line below) and save. The tab should update and stay near that heading.
 
 Edit me for live reload: `unchanged`.

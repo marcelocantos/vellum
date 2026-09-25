@@ -262,6 +262,18 @@
   const TASK_CONSENT_SESS = "vellum-task-edit";
   const consentEl = document.getElementById("vellum-consent");
   let pendingTask = null;
+  let loadStamp = null;
+  let toggleInFlight = 0;
+
+  function adoptStamp(stamp) {
+    if (stamp) loadStamp = stamp;
+  }
+
+  function parseStampLine(text) {
+    const line = String(text || "").replace(/\s+$/, "");
+    if (line.indexOf("stamp ") === 0) return line.slice(6);
+    return "";
+  }
 
   function articleHeadings() {
     if (!article) return [];
@@ -376,15 +388,19 @@
   }
 
   function applyTaskToggle(input, index) {
-    input.disabled = true;
+    // Keep the input enabled and focused. Disabling it or reloading the
+    // document drops keyboard position after Space on a tabbed-to checkbox.
+    toggleInFlight++;
     postTaskToggle(index)
-      .then(function () {
-        reloadView();
+      .then(function (text) {
+        adoptStamp(parseStampLine(text));
       })
       .catch(function (err) {
-        input.disabled = false;
         input.checked = !input.checked;
         setStatus(err.message || String(err), false);
+      })
+      .then(function () {
+        toggleInFlight--;
       });
   }
 
@@ -395,7 +411,6 @@
 
   function startWatch() {
     if (!source || !window.WebSocket) return;
-    let loadStamp = null;
     let delay = 1000;
     let closed = false;
 
@@ -423,9 +438,12 @@
           loadStamp = stamp;
           return;
         }
-        if (stamp !== loadStamp) {
-          reloadView();
+        if (stamp === loadStamp) return;
+        if (toggleInFlight > 0) {
+          adoptStamp(stamp);
+          return;
         }
+        reloadView();
       };
       ws.onclose = function () {
         scheduleReconnect();

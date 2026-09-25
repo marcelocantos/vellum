@@ -177,13 +177,20 @@ func Render(ctx context.Context, src []byte, opts *Options) (html string, soft [
 	htmlContent, tocInjected = applyTOC(htmlContent, style)
 
 	css := embed.GitHubCSS
-	headExtra := katexCSSLink
+	headExtra := ""
+	if len(math.exprs) > 0 {
+		headExtra = katexCSSLink
+	}
 	if opts != nil {
 		if opts.CSS != "" {
 			css = opts.CSS
 		}
 		if opts.HeadExtra != "" {
-			headExtra += "\n" + opts.HeadExtra
+			if headExtra != "" {
+				headExtra += "\n" + opts.HeadExtra
+			} else {
+				headExtra = opts.HeadExtra
+			}
 		}
 	}
 

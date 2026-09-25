@@ -257,6 +257,16 @@ func TestRender_NoTOCByDefault(t *testing.T) {
 	}
 }
 
+func TestRender_NoMathOmitsKaTeXCDN(t *testing.T) {
+	html, _, err := Render(context.Background(), []byte("# Tasks\n\n- [ ] one\n"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(html, "cdn.jsdelivr.net") {
+		t.Fatalf("no-math HTML still fetches KaTeX CSS:\n%s", html)
+	}
+}
+
 func TestConvert_TOCAppearsInPDF(t *testing.T) {
 	testdeps.Need(t, "pdftotext")
 	on := true

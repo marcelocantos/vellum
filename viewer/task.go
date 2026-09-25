@@ -155,7 +155,12 @@ func (s *Server) handleTaskToggle(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	info, err := os.Stat(absPath)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
-	_, _ = w.Write([]byte("ok\n"))
+	_, _ = w.Write([]byte("stamp " + sourceStamp(info) + "\n"))
 }

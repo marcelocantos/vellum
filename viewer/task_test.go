@@ -114,6 +114,9 @@ func TestAction_TaskTogglePOST(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status %d: %s", resp.StatusCode, body)
 	}
+	if !strings.HasPrefix(string(body), "stamp ") {
+		t.Fatalf("body %q, want stamp line", body)
+	}
 	if !strings.Contains(string(wrote), "- [x] one") {
 		t.Fatalf("write body:\n%s", wrote)
 	}
@@ -206,6 +209,28 @@ func TestChromeJS_TaskToggleIsCheckboxOnly(t *testing.T) {
 	}
 	if strings.Contains(chromeJS, "input.click()") {
 		t.Fatal("chrome.js forwards list-item clicks onto the task checkbox")
+	}
+}
+
+func TestChromeJS_TaskToggleDoesNotReload(t *testing.T) {
+	start := strings.Index(chromeJS, "function applyTaskToggle")
+	if start < 0 {
+		t.Fatal("missing applyTaskToggle")
+	}
+	rest := chromeJS[start+1:]
+	endRel := strings.Index(rest, "\n  function ")
+	if endRel < 0 {
+		t.Fatal("applyTaskToggle bounds")
+	}
+	body := chromeJS[start : start+1+endRel]
+	if strings.Contains(body, "reloadView(") || strings.Contains(body, "location.reload(") {
+		t.Fatal("applyTaskToggle still reloads the page")
+	}
+	if strings.Contains(body, "input.disabled") {
+		t.Fatal("applyTaskToggle disables the checkbox and drops keyboard focus")
+	}
+	if !strings.Contains(body, "adoptStamp") {
+		t.Fatal("applyTaskToggle does not adopt the source stamp")
 	}
 }
 

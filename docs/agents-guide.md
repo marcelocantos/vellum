@@ -363,7 +363,9 @@ already work with files and `convert`.
   chrome (TOC sidebar with expand/collapse and « / » toggle, PDF /
   clipboard / Finder toolbar, dark / system / light theme with
   dark-mode syntax highlighting, figure lightbox, editable GFM task
-  lists). Chrome is injected per response; the convert-cache file
+  lists). Task-list boxes toggle the source on the box itself (click or
+  Space), not the label text; the view adopts the new source stamp and
+  does not reload. Chrome is injected per response; the convert-cache file
   stays chrome-free. Actions live under `/_vellum/` (`GET …/pdf`,
   `POST …/clipboard`, `POST …/reveal`, `GET …/watch`,
   `POST …/task-toggle`).
