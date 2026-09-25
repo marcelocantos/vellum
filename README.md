@@ -160,8 +160,8 @@ download PDF, copy the rendered document to the clipboard, or reveal the
 source in Finder, a theme control (dark / system / light, persisted in
 the browser), dark-mode article styling with syntax highlighting, and
 a full-viewport zoom/pan viewer for images and SVG (including Mermaid),
-and clickable GFM task-list checkboxes that edit the source file after
-consent (once per session or permanently). The same process hosts
+and GFM task-list checkboxes that edit the source file after consent
+(once per session or permanently) when you click the box, not the label text. The same process hosts
 streamable HTTP MCP at `/mcp`. The server binds loopback only (override
 with `--addr` / `VELLUM_VIEW_ADDR`). Cache health: entries older than 7
 days are dropped, then oldest entries are evicted until total size is
