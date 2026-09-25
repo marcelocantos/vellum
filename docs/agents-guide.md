@@ -364,8 +364,10 @@ already work with files and `convert`.
   clipboard / Finder toolbar, dark / system / light theme with
   dark-mode syntax highlighting, figure lightbox, editable GFM task
   lists). Task-list boxes toggle the source on the box itself (click or
-  Space), not the label text. A watch reload after that write restores
-  scroll and the focused checkbox. Chrome is injected per response; the convert-cache file
+  Space), not the label text. The toggle POST returns a source stamp
+  that chrome adopts without a full reload, so keyboard focus stays on
+  the box. An external file-change still reloads the view and restores
+  scroll plus the focused checkbox. Chrome is injected per response; the convert-cache file
   stays chrome-free. Actions live under `/_vellum/` (`GET …/pdf`,
   `POST …/clipboard`, `POST …/reveal`, `GET …/watch`,
   `POST …/task-toggle`).
@@ -503,9 +505,10 @@ the list. PDF reader bookmarks (`style.bookmarks`) stay independent.
   default, optionally `prince`), `node` (KaTeX math HTML), `mmdc`
   (Mermaid diagrams), and lazily `pandoc` (rich-text import /
   clipboard fallback) and `pdftoppm`/`pdftotext` (PDF import). Math
-  and Mermaid rendering run locally. Assembled HTML still links KaTeX
-  CSS from jsDelivr (`cdn.jsdelivr.net`); WeasyPrint or a browser may
-  fetch that stylesheet.
+  and Mermaid rendering run locally. Assembled HTML links KaTeX CSS from
+  jsDelivr (`cdn.jsdelivr.net`) only when the document contains math;
+  no-math documents omit the link. WeasyPrint or a browser may fetch
+  that stylesheet when it is present.
 - Neither renderer executes JavaScript from the input HTML during
   typesetting (Prince's JS engine is off by default; WeasyPrint has none).
 - KaTeX runs in `throwOnError: false` mode, so malformed math

@@ -142,8 +142,9 @@ vellum install-viewer                  # double-click .md → rendered view
 URL** on the localhost view server (not `file://`), so in-page `.md` links
 stay in the browser and the open tab updates when the source file changes
 (WebSocket watch with a 5-minute heartbeat; scroll is restored best-effort
-to the same heading). HTML is the default (fast, no WeasyPrint needed for a
-casual read); pass `--pdf` for full typography in Preview via a cache file.
+to the same heading, and a focused task checkbox is restored after reload).
+HTML is the default (fast, no WeasyPrint needed for a casual read); pass
+`--pdf` for full typography in Preview via a cache file.
 
 Start the daemon with Homebrew (preferred) or in the foreground:
 
@@ -162,7 +163,8 @@ the browser), dark-mode article styling with syntax highlighting, and
 a full-viewport zoom/pan viewer for images and SVG (including Mermaid),
 and GFM task-list checkboxes that edit the source file after consent
 (once per session or permanently) when you click or Space the box, not
-the label text. A file-change reload keeps keyboard focus on that box. The same process hosts
+the label text. The toggle adopts the new source stamp without reloading;
+an external file-change reload keeps keyboard focus on that box. The same process hosts
 streamable HTTP MCP at `/mcp`. The server binds loopback only (override
 with `--addr` / `VELLUM_VIEW_ADDR`). Cache health: entries older than 7
 days are dropped, then oldest entries are evicted until total size is
@@ -342,7 +344,7 @@ This is **not yet released**; the table above reflects what ships today.
 - Syntax highlighting via [chroma](https://github.com/alecthomas/chroma) using the GitHub style, across many languages.
 - Long-line code wrapping in rendered code blocks.
 - Footnotes in the PHP Markdown Extra style.
-- Inline (`$...$`) and block (`$$...$$`) LaTeX math via KaTeX, including multi-line matrices.
+- Inline (`$...$`) and block (`$$...$$`) LaTeX math via KaTeX, including multi-line matrices. HTML that contains no math omits the KaTeX jsDelivr stylesheet.
 - Mermaid diagrams: flowchart, sequence, class, state, Gantt, ER, pie. HTML/view/content paths embed **SVG** (vector); PDF conversion keeps **PNG at 2×** because Mermaid SVG `foreignObject` labels do not paint in Prince.
 - Per-diagram scale hint — place `<!-- vellum:scale 0.6 -->` immediately before a ```` ```mermaid ```` block to apply a `max-width` to the rendered diagram. Useful for keeping a diagram on the same page as its heading.
 - Optional table of contents — `style.toc: true` or a `<!-- vellum:toc -->` hint injects a static Contents list (nested heading links, no JavaScript). PDF adds dotted leaders and page numbers.

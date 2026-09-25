@@ -21,7 +21,7 @@ change between minor releases — though in practice we aim to minimise churn.
 
 ## Interaction surface catalogue
 
-Snapshot as of **v0.21.0** (`const version` in `cmd/vellum`). Annotations:
+Snapshot as of **v0.22.0** (`const version` in `cmd/vellum`). Annotations:
 **stable** (unlikely to change), **needs review** (functional but may be
 refined), **fluid** (actively evolving).
 
@@ -119,7 +119,7 @@ Package paths are under `github.com/marcelocantos/vellum/…`.
 - `func HTMLToRTF(html, resourcePath string) ([]byte, error)` — **needs review** (`--standalone`; CSS is ignored)
 - `func HTMLToPlain(html string) ([]byte, error)` — **needs review**
 
-**`viewer`** — localhost view server (HTML) + cached PDF open; macOS default Markdown handler (added in v0.6.0; view server in v0.14.0). Cache filename is `sha256(absPath)[:8]+ext` (not mtime). A `.stamp` sidecar records source mtime+size so HTML/PDF re-render in place when Markdown changes (🎯T28). HTML responses inject view chrome at serve time (TOC, figure lightbox, PDF/clipboard/Finder actions under `/_vellum/`); the convert-cache HTML file stays chrome-free (🎯T32). An open view tab watches the source over `/_vellum/watch` (WebSocket, 5-minute heartbeat) and reloads on stamp change (🎯T43). GFM task-list checkboxes can toggle the source via `POST /_vellum/task-toggle` after consent (🎯T34); the response is a source stamp that chrome adopts without `location.reload()` (🎯T44).
+**`viewer`** — localhost view server (HTML) + cached PDF open; macOS default Markdown handler (added in v0.6.0; view server in v0.14.0). Cache filename is `sha256(absPath)[:8]+ext` (not mtime). A `.stamp` sidecar records source mtime+size so HTML/PDF re-render in place when Markdown changes (🎯T28). HTML responses inject view chrome at serve time (TOC, figure lightbox, PDF/clipboard/Finder actions under `/_vellum/`); the convert-cache HTML file stays chrome-free (🎯T32). An open view tab watches the source over `/_vellum/watch` (WebSocket, 5-minute heartbeat) and reloads on stamp change (🎯T43). GFM task-list checkboxes can toggle the source via `POST /_vellum/task-toggle` after consent (🎯T34); the response is a source stamp that chrome adopts without `location.reload()` (🎯T44). Watch-triggered reloads restore heading-anchor or Y scroll and the focused task checkbox (or element id) from sessionStorage.
 
 - `func View(ctx context.Context, inputPath string, opts *ViewOptions) (string, error)` — **needs review** (HTML opens `http://127.0.0.1:18742/…` view-server URL; PDF still opens a cache file)
 - `type ViewOptions struct { Format Format; Style *convert.Style; Backend string; Open func(string) error; CacheDir string; MaxBytes int64; MaxAge time.Duration; Now func() time.Time; ViewBaseURL string; SkipEnsureServer bool }` — **needs review**
@@ -267,9 +267,9 @@ not listed here is either GFM (via goldmark's GFM extension) or not supported.
   listener). **needs review** (added in v0.14.0; MCP mount 🎯T31).
 - `VELLUM_DEBUG_HTML=<path>` — if set, vellum writes the assembled HTML to
   this path before invoking the PDF backend (WeasyPrint default, or Prince).
-  Intended for development only. Does not document the KaTeX CSS CDN link
-  injected into that HTML. **needs review** (may be renamed with a
-  `VELLUM_DEBUG_*` namespace if more debug hooks are added).
+  Intended for development only. Documents that omit math do not inject the
+  KaTeX CSS CDN link; math documents still do. **needs review** (may be
+  renamed with a `VELLUM_DEBUG_*` namespace if more debug hooks are added).
 
 ### Embedded assets
 
