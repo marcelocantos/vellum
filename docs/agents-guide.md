@@ -364,8 +364,8 @@ already work with files and `convert`.
   clipboard / Finder toolbar, dark / system / light theme with
   dark-mode syntax highlighting, figure lightbox, editable GFM task
   lists). Task-list boxes toggle the source on the box itself (click or
-  Space), not the label text; the view adopts the new source stamp and
-  does not reload. Chrome is injected per response; the convert-cache file
+  Space), not the label text. A watch reload after that write restores
+  scroll and the focused checkbox. Chrome is injected per response; the convert-cache file
   stays chrome-free. Actions live under `/_vellum/` (`GET …/pdf`,
   `POST …/clipboard`, `POST …/reveal`, `GET …/watch`,
   `POST …/task-toggle`).

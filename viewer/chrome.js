@@ -300,11 +300,39 @@
     return { id: id, offset: offset, y: scrollPane.scrollTop };
   }
 
+  function captureFocus() {
+    const el = document.activeElement;
+    if (!(el instanceof Element) || !article || !article.contains(el)) return null;
+    if (el instanceof HTMLInputElement && el.type === "checkbox") {
+      const idx = el.getAttribute("data-task-index");
+      if (idx !== null && idx !== "") return { taskIndex: idx };
+    }
+    if (el.id) return { id: el.id };
+    return null;
+  }
+
   function persistScroll() {
     try {
-      const pos = captureScroll();
-      if (pos) sessionStorage.setItem(SCROLL_KEY, JSON.stringify(pos));
+      const pos = captureScroll() || {};
+      const focus = captureFocus();
+      if (focus) pos.focus = focus;
+      if (pos.focus || pos.id || typeof pos.y === "number") {
+        sessionStorage.setItem(SCROLL_KEY, JSON.stringify(pos));
+      }
     } catch (e) {}
+  }
+
+  function restoreFocus(focus) {
+    if (!focus || !article) return;
+    let el = null;
+    if (focus.taskIndex != null && focus.taskIndex !== "") {
+      el = article.querySelector(
+        'input[type=checkbox][data-task-index="' + CSS.escape(String(focus.taskIndex)) + '"]'
+      );
+    } else if (focus.id) {
+      el = document.getElementById(focus.id);
+    }
+    if (el && article.contains(el) && typeof el.focus === "function") el.focus();
   }
 
   function restoreScroll() {
@@ -335,12 +363,14 @@
           const delta = headingTop - paneTop;
           const next = scrollPane.scrollTop + delta + (pos.offset || 0);
           scrollPane.scrollTop = Math.max(0, Math.min(max, next));
+          restoreFocus(pos.focus);
           return;
         }
       }
       if (typeof pos.y === "number") {
         scrollPane.scrollTop = Math.max(0, Math.min(max, pos.y));
       }
+      restoreFocus(pos.focus);
     }
     requestAnimationFrame(function () {
       requestAnimationFrame(apply);
@@ -388,8 +418,9 @@
   }
 
   function applyTaskToggle(input, index) {
-    // Keep the input enabled and focused. Disabling it or reloading the
-    // document drops keyboard position after Space on a tabbed-to checkbox.
+    // Record focus before the write. Watch will reload on the new stamp;
+    // restoreScroll puts the same checkbox back under the keyboard.
+    persistScroll();
     toggleInFlight++;
     postTaskToggle(index)
       .then(function (text) {

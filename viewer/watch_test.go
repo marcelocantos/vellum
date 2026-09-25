@@ -260,6 +260,9 @@ func TestInjectChrome_IncludesWatchScript(t *testing.T) {
 	if !strings.Contains(out, "restoreScroll()") {
 		t.Fatalf("missing restoreScroll:\n%s", out)
 	}
+	if !strings.Contains(out, "restoreFocus(") {
+		t.Fatalf("missing restoreFocus:\n%s", out)
+	}
 	if !strings.Contains(out, "vellum-scroll:") {
 		t.Fatalf("missing scroll key:\n%s", out)
 	}

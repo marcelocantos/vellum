@@ -212,6 +212,18 @@ func TestChromeJS_TaskToggleIsCheckboxOnly(t *testing.T) {
 	}
 }
 
+func TestChromeJS_RestoresTaskFocusOnReload(t *testing.T) {
+	if !strings.Contains(chromeJS, "function captureFocus") || !strings.Contains(chromeJS, "function restoreFocus") {
+		t.Fatal("chrome.js missing focus persist/restore")
+	}
+	if !strings.Contains(chromeJS, "pos.focus") {
+		t.Fatal("chrome.js does not store focus with scroll position")
+	}
+	if !strings.Contains(chromeJS, `data-task-index="`) {
+		t.Fatal("chrome.js does not restore the focused task checkbox")
+	}
+}
+
 func TestChromeJS_TaskToggleDoesNotReload(t *testing.T) {
 	start := strings.Index(chromeJS, "function applyTaskToggle")
 	if start < 0 {
