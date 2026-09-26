@@ -261,6 +261,8 @@
   const TASK_CONSENT_PERM = "vellum-task-edit";
   const TASK_CONSENT_SESS = "vellum-task-edit";
   const consentEl = document.getElementById("vellum-consent");
+  const goneEl = document.getElementById("vellum-gone");
+  const waiting = chrome.getAttribute("data-waiting") === "1";
   let pendingTask = null;
   let loadStamp = null;
   let toggleInFlight = 0;
@@ -401,6 +403,27 @@
     if (consentEl) consentEl.hidden = true;
   }
 
+  function showGone() {
+    if (goneEl) goneEl.hidden = false;
+  }
+
+  function hideGone() {
+    if (goneEl) goneEl.hidden = true;
+  }
+
+  function unescapePathURL(urlPath) {
+    return String(urlPath || "")
+      .split("/")
+      .map(function (seg) {
+        try {
+          return decodeURIComponent(seg);
+        } catch (e) {
+          return seg;
+        }
+      })
+      .join("/");
+  }
+
   function showConsent() {
     if (consentEl) consentEl.hidden = false;
   }
@@ -463,8 +486,39 @@
           setStatus(text.slice(6) || "source unreadable", false);
           return;
         }
+        if (text === "delete") {
+          if (waiting) return;
+          closed = true;
+          try {
+            ws.close();
+          } catch (e) {}
+          showGone();
+          return;
+        }
+        if (text.indexOf("rename ") === 0) {
+          closed = true;
+          try {
+            ws.close();
+          } catch (e) {}
+          const urlPath = text.slice(7);
+          persistScroll();
+          try {
+            const raw = sessionStorage.getItem(SCROLL_KEY);
+            if (raw) sessionStorage.setItem("vellum-scroll:" + unescapePathURL(urlPath), raw);
+          } catch (e) {}
+          location.replace(urlPath);
+          return;
+        }
         if (text.indexOf("stamp ") !== 0) return;
         const stamp = text.slice(6);
+        if (waiting) {
+          closed = true;
+          try {
+            ws.close();
+          } catch (e) {}
+          reloadView();
+          return;
+        }
         if (loadStamp === null) {
           loadStamp = stamp;
           return;
@@ -539,6 +593,10 @@
           pendingTask.input.checked = !pendingTask.checked;
         }
         pendingTask = null;
+        return;
+      }
+      if (action === "gone-dismiss") {
+        hideGone();
         return;
       }
       if (action === "clipboard" || action === "reveal") {
@@ -1113,7 +1171,17 @@
     });
   }
 
+  if (goneEl) {
+    goneEl.addEventListener("click", function (ev) {
+      if (ev.target === goneEl) hideGone();
+    });
+  }
+
   document.addEventListener("keydown", function (ev) {
+    if (goneEl && !goneEl.hidden && ev.key === "Escape") {
+      hideGone();
+      return;
+    }
     if (consentEl && !consentEl.hidden && ev.key === "Escape") {
       hideConsent();
       if (pendingTask) {

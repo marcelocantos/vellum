@@ -5,11 +5,13 @@ package viewer
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -74,16 +76,49 @@ func TestWatch_RejectsMissingPath(t *testing.T) {
 	}
 }
 
-func TestWatch_RejectsMissingFile(t *testing.T) {
-	s := &Server{CacheDir: t.TempDir()}
+func TestWatch_MissingFileWaitsUntilItAppears(t *testing.T) {
+	dir := t.TempDir()
+	md := filepath.Join(dir, "later.md")
+	s := &Server{CacheDir: filepath.Join(dir, "cache"), WatchHeartbeat: time.Hour}
 	ts := startTestServer(t, s)
-	resp, err := http.Get(ts.URL + ChromeWatchPath + "?path=" + url.QueryEscape("/tmp/vellum-no-such.md"))
+	conn, ctx, _ := dialWatch(t, ts.URL, md)
+
+	got := make(chan string, 1)
+	errc := make(chan error, 1)
+	go func() {
+		typ, data, err := conn.Read(ctx)
+		if err != nil {
+			errc <- err
+			return
+		}
+		_ = typ
+		got <- strings.TrimSpace(string(data))
+	}()
+	select {
+	case msg := <-got:
+		t.Fatalf("unexpected message before the file exists: %q", msg)
+	case err := <-errc:
+		t.Fatal(err)
+	case <-time.After(80 * time.Millisecond):
+	}
+
+	if err := os.WriteFile(md, []byte("# Later\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var msg string
+	select {
+	case msg = <-got:
+	case err := <-errc:
+		t.Fatal(err)
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for the file to appear")
+	}
+	info, err := os.Stat(md)
 	if err != nil {
 		t.Fatal(err)
 	}
-	resp.Body.Close()
-	if resp.StatusCode != http.StatusNotFound {
-		t.Fatalf("status %d, want 404", resp.StatusCode)
+	if msg != "stamp "+sourceStamp(info) {
+		t.Fatalf("stamp %q, want %q", msg, sourceStamp(info))
 	}
 }
 
@@ -108,7 +143,6 @@ func TestWatch_InitialStampThenQuietThenChange(t *testing.T) {
 	}
 	s := &Server{
 		CacheDir:       filepath.Join(dir, "cache"),
-		WatchInterval:  25 * time.Millisecond,
 		WatchHeartbeat: time.Hour,
 	}
 	ts := startTestServer(t, s)
@@ -171,7 +205,7 @@ func TestWatch_InitialStampThenQuietThenChange(t *testing.T) {
 	}
 }
 
-func TestWatch_ErrorOnDeletedSource(t *testing.T) {
+func TestWatch_DeleteLeavesConnectionQuiet(t *testing.T) {
 	dir := t.TempDir()
 	md := filepath.Join(dir, "doc.md")
 	if err := os.WriteFile(md, []byte("# Doc\n"), 0o644); err != nil {
@@ -179,7 +213,6 @@ func TestWatch_ErrorOnDeletedSource(t *testing.T) {
 	}
 	s := &Server{
 		CacheDir:       filepath.Join(dir, "cache"),
-		WatchInterval:  20 * time.Millisecond,
 		WatchHeartbeat: time.Hour,
 	}
 	ts := startTestServer(t, s)
@@ -191,8 +224,8 @@ func TestWatch_ErrorOnDeletedSource(t *testing.T) {
 		t.Fatal(err)
 	}
 	msg := readWatchText(t, ctx, conn)
-	if !strings.HasPrefix(msg, "error ") {
-		t.Fatalf("want error, got %q", msg)
+	if msg != "delete" {
+		t.Fatalf("want delete, got %q", msg)
 	}
 	got := make(chan string, 1)
 	errc := make(chan error, 1)
@@ -207,12 +240,243 @@ func TestWatch_ErrorOnDeletedSource(t *testing.T) {
 	}()
 	select {
 	case extra := <-got:
-		if strings.HasPrefix(extra, "error ") {
-			t.Fatalf("error replayed: %q", extra)
-		}
+		t.Fatalf("unexpected follow-up %q", extra)
 	case err := <-errc:
 		t.Fatal(err)
-	case <-time.After(60 * time.Millisecond):
+	case <-time.After(80 * time.Millisecond):
+	}
+}
+
+// readWatchWithin waits up to d for one text message. A timeout leaves the
+// read in flight, so it must be the last read on conn.
+func readWatchWithin(t *testing.T, ctx context.Context, conn *websocket.Conn, d time.Duration) (string, bool) {
+	t.Helper()
+	got := make(chan string, 1)
+	errc := make(chan error, 1)
+	go func() {
+		typ, data, err := conn.Read(ctx)
+		if err != nil {
+			errc <- err
+			return
+		}
+		if typ != websocket.MessageText {
+			errc <- fmt.Errorf("message type %v", typ)
+			return
+		}
+		got <- strings.TrimSpace(string(data))
+	}()
+	select {
+	case msg := <-got:
+		return msg, true
+	case err := <-errc:
+		t.Fatal(err)
+	case <-time.After(d):
+		return "", false
+	}
+	return "", false
+}
+
+func TestWatch_CoalescesRapidWrites(t *testing.T) {
+	dir := t.TempDir()
+	md := filepath.Join(dir, "doc.md")
+	if err := os.WriteFile(md, []byte("# Doc\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s := &Server{CacheDir: filepath.Join(dir, "cache"), WatchHeartbeat: time.Hour}
+	ts := startTestServer(t, s)
+	conn, ctx, _ := dialWatch(t, ts.URL, md)
+	if msg := readWatchText(t, ctx, conn); !strings.HasPrefix(msg, "stamp ") {
+		t.Fatalf("first %q", msg)
+	}
+
+	until := time.Now().Add(40 * time.Millisecond)
+	n := 0
+	for time.Now().Before(until) {
+		n++
+		body := []byte("# Doc\n\n" + strconv.Itoa(n) + "\n")
+		if err := os.WriteFile(md, body, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	info, err := os.Stat(md)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "stamp " + sourceStamp(info)
+	msg, ok := readWatchWithin(t, ctx, conn, 2*time.Second)
+	if !ok {
+		t.Fatal("timeout waiting for coalesced stamp")
+	}
+	if msg != want {
+		t.Fatalf("stamp %q, want %q", msg, want)
+	}
+	if extra, ok := readWatchWithin(t, ctx, conn, 150*time.Millisecond); ok {
+		t.Fatalf("extra message %q", extra)
+	}
+}
+
+func TestWatch_RenameRedirects(t *testing.T) {
+	dir := t.TempDir()
+	md := filepath.Join(dir, "doc.md")
+	if err := os.WriteFile(md, []byte("# Doc\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s := &Server{CacheDir: filepath.Join(dir, "cache"), WatchHeartbeat: time.Hour}
+	ts := startTestServer(t, s)
+	conn, ctx, _ := dialWatch(t, ts.URL, md)
+	if msg := readWatchText(t, ctx, conn); !strings.HasPrefix(msg, "stamp ") {
+		t.Fatalf("first %q", msg)
+	}
+	dest := filepath.Join(dir, "moved.md")
+	if err := os.Rename(md, dest); err != nil {
+		t.Fatal(err)
+	}
+	msg := readWatchText(t, ctx, conn)
+	want := "rename " + pathURL(dest)
+	if msg != want {
+		if resolved, err := filepath.EvalSymlinks(dest); err == nil && msg == "rename "+pathURL(resolved) {
+			return
+		}
+		t.Fatalf("rename %q, want %q", msg, want)
+	}
+}
+
+func TestWatch_AtomicReplaceIsStamp(t *testing.T) {
+	dir := t.TempDir()
+	md := filepath.Join(dir, "doc.md")
+	if err := os.WriteFile(md, []byte("# Doc\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s := &Server{CacheDir: filepath.Join(dir, "cache"), WatchHeartbeat: time.Hour}
+	ts := startTestServer(t, s)
+	conn, ctx, _ := dialWatch(t, ts.URL, md)
+	if msg := readWatchText(t, ctx, conn); !strings.HasPrefix(msg, "stamp ") {
+		t.Fatalf("first %q", msg)
+	}
+	tmp := filepath.Join(dir, ".doc.md.tmp")
+	if err := os.WriteFile(tmp, []byte("# Doc\n\nreplaced\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(tmp, md); err != nil {
+		t.Fatal(err)
+	}
+	msg := readWatchText(t, ctx, conn)
+	info, err := os.Stat(md)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if msg != "stamp "+sourceStamp(info) {
+		t.Fatalf("message %q, want stamp %s", msg, sourceStamp(info))
+	}
+}
+
+func TestWatch_MissingParentThenFile(t *testing.T) {
+	dir := t.TempDir()
+	md := filepath.Join(dir, "a", "b", "doc.md")
+	s := &Server{CacheDir: filepath.Join(dir, "cache"), WatchHeartbeat: time.Hour}
+	ts := startTestServer(t, s)
+	conn, ctx, _ := dialWatch(t, ts.URL, md)
+	got := make(chan string, 1)
+	errc := make(chan error, 1)
+	go func() {
+		typ, data, err := conn.Read(ctx)
+		if err != nil {
+			errc <- err
+			return
+		}
+		if typ != websocket.MessageText {
+			errc <- fmt.Errorf("message type %v", typ)
+			return
+		}
+		got <- strings.TrimSpace(string(data))
+	}()
+	select {
+	case msg := <-got:
+		t.Fatalf("unexpected message before the file exists: %q", msg)
+	case err := <-errc:
+		t.Fatal(err)
+	case <-time.After(80 * time.Millisecond):
+	}
+	if err := os.MkdirAll(filepath.Dir(md), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(md, []byte("# Nested\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var msg string
+	select {
+	case msg = <-got:
+	case err := <-errc:
+		t.Fatal(err)
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for nested file")
+	}
+	info, err := os.Stat(md)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if msg != "stamp "+sourceStamp(info) {
+		t.Fatalf("stamp %q, want %q", msg, sourceStamp(info))
+	}
+}
+
+func TestWatch_SharedMachine(t *testing.T) {
+	dir := t.TempDir()
+	md := filepath.Join(dir, "doc.md")
+	if err := os.WriteFile(md, []byte("# Doc\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s := &Server{CacheDir: filepath.Join(dir, "cache"), WatchHeartbeat: time.Hour}
+	ts := startTestServer(t, s)
+	a, ctxA, _ := dialWatch(t, ts.URL, md)
+	b, ctxB, _ := dialWatch(t, ts.URL, md)
+	if msg := readWatchText(t, ctxA, a); !strings.HasPrefix(msg, "stamp ") {
+		t.Fatalf("a first %q", msg)
+	}
+	if msg := readWatchText(t, ctxB, b); !strings.HasPrefix(msg, "stamp ") {
+		t.Fatalf("b first %q", msg)
+	}
+	if err := os.WriteFile(md, []byte("# Doc\n\nboth\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(md)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "stamp " + sourceStamp(info)
+	msgA, ok := readWatchWithin(t, ctxA, a, 2*time.Second)
+	if !ok || msgA != want {
+		t.Fatalf("a got %q ok=%v, want %q", msgA, ok, want)
+	}
+	msgB, ok := readWatchWithin(t, ctxB, b, 2*time.Second)
+	if !ok || msgB != want {
+		t.Fatalf("b got %q ok=%v, want %q", msgB, ok, want)
+	}
+}
+
+func TestServe_MissingMarkdownWatches(t *testing.T) {
+	dir := t.TempDir()
+	md := filepath.Join(dir, "missing.md")
+	s := &Server{CacheDir: filepath.Join(dir, "cache")}
+	ts := startTestServer(t, s)
+	resp, err := http.Get(ViewURL(ts.URL, md))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	page := string(body)
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("status %d, want 404", resp.StatusCode)
+	}
+	if !strings.Contains(resp.Header.Get("Cache-Control"), "no-store") {
+		t.Fatalf("Cache-Control %q", resp.Header.Get("Cache-Control"))
+	}
+	if !strings.Contains(page, `data-waiting="1"`) {
+		t.Fatalf("missing waiting marker:\n%s", page)
+	}
+	if !strings.Contains(page, "not here yet") || !strings.Contains(page, "startWatch()") {
+		t.Fatalf("waiting page missing copy or watch:\n%s", page)
 	}
 }
 
@@ -224,7 +488,6 @@ func TestWatch_HeartbeatPing(t *testing.T) {
 	}
 	s := &Server{
 		CacheDir:       filepath.Join(dir, "cache"),
-		WatchInterval:  time.Hour,
 		WatchHeartbeat: 30 * time.Millisecond,
 	}
 	ts := startTestServer(t, s)

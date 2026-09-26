@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"html"
 	"io"
 	"mime"
 	"net"
@@ -15,6 +16,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -67,14 +69,14 @@ type Server struct {
 	// ConvertPDF, when non-nil, replaces convert.Convert for PDF download (tests).
 	ConvertPDF func(ctx context.Context, input, output string) error
 
-	// WatchInterval is how often a watch connection stats the source.
-	// Zero means DefaultWatchInterval. Tests inject a shorter tick.
-	WatchInterval time.Duration
 	// WatchHeartbeat is the WebSocket ping interval.
 	// Zero means DefaultWatchHeartbeat. Tests inject a shorter tick.
 	WatchHeartbeat time.Duration
 	// WatchPingCount increments once per successful protocol ping (tests).
 	WatchPingCount atomic.Int64
+
+	watchOnce sync.Once
+	watches   *watchHub
 
 	// WriteFile, when non-nil, replaces atomic Markdown writes (task-toggle tests).
 	WriteFile func(path string, data []byte) error
@@ -269,7 +271,7 @@ func (s *Server) serveMarkdown(w http.ResponseWriter, r *http.Request, absPath s
 	body, err := s.cachedHTML(r.Context(), absPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			http.NotFound(w, r)
+			s.serveMissingMarkdown(w, r, absPath)
 			return
 		}
 		if errors.Is(err, errIsDirectory) {
@@ -280,10 +282,10 @@ func (s *Server) serveMarkdown(w http.ResponseWriter, r *http.Request, absPath s
 		return
 	}
 	origin := requestOrigin(r)
-	html := rewriteMarkdownHrefs(string(body), absPath, origin)
+	page := rewriteMarkdownHrefs(string(body), absPath, origin)
 	// Ensure <base> matches this request's origin (cache may predate a port change).
-	html = ensureBaseHref(html, origin+pathURL(filepath.Dir(absPath))+"/")
-	html = injectChrome(html, absPath)
+	page = ensureBaseHref(page, origin+pathURL(filepath.Dir(absPath))+"/")
+	page = injectChrome(page, absPath)
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
@@ -292,7 +294,20 @@ func (s *Server) serveMarkdown(w http.ResponseWriter, r *http.Request, absPath s
 		w.WriteHeader(http.StatusOK)
 		return
 	}
-	_, _ = io.WriteString(w, html)
+	_, _ = io.WriteString(w, page)
+}
+
+func (s *Server) serveMissingMarkdown(w http.ResponseWriter, r *http.Request, absPath string) {
+	name := html.EscapeString(filepath.Base(absPath))
+	doc := `<!DOCTYPE html><html><head><title>` + name + `</title></head><body><p>` + name + ` is not here yet. This page will show the document when the file appears.</p></body></html>`
+	page := injectChromeInto(doc, absPath, true)
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(http.StatusNotFound)
+	if r.Method == http.MethodHead {
+		return
+	}
+	_, _ = io.WriteString(w, page)
 }
 
 // cachedHTML returns convert HTML for absPath (chrome-free). It is the

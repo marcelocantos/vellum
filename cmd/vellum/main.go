@@ -355,7 +355,8 @@ Open a Markdown file as rendered HTML on the localhost view server
 (http://127.0.0.1:18742 by default), or as PDF via a cache file.
 HTML mode converts one file per browser request — in-page .md links
 stay on the server; the open tab watches the source and reloads when
-it changes (scroll restored best-effort).
+it settles (scroll restored best-effort). A rename redirects the tab;
+a deletion leaves the page up.
 Never writes next to the source file.
 
 Requires the view server (auto-started if needed). Prefer a persistent
@@ -390,7 +391,9 @@ streamable HTTP MCP at /mcp. Binds loopback only — default
 Each GET of a .md/.markdown path converts that one file to HTML (no
 link-graph crawl). Relative .md links are rewritten to same-origin
 URLs. An open tab watches the source over /_vellum/watch and reloads
-when mtime/size changes. Served pages include view chrome (TOC, figure
+after the file has been quiet for a moment. A rename redirects the tab;
+a deletion leaves the rendered page up; a missing file is shown when it
+appears. Served pages include view chrome (TOC, figure
 lightbox, PDF/clipboard/Finder, live reload, editable task lists under
 /_vellum/). Chrome is not written into the convert cache.
 

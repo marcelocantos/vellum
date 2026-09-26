@@ -357,9 +357,11 @@ already work with files and `convert`.
   Each GET of a `.md`/`.markdown` path converts that one file to HTML
   (no link-graph crawl). Relative `.md` links are rewritten to
   same-origin URLs so clicks stay in the browser; an open tab watches
-  the source over `GET …/watch` (WebSocket) and reloads when
-  mtime/size changes (5-minute protocol heartbeat; heading-anchor
-  scroll restore). Served HTML is wrapped with view
+  the source over `GET …/watch` (WebSocket) and reloads after a change
+  has been quiet for a moment (5-minute protocol heartbeat; heading-anchor
+  scroll restore). A rename redirects the tab; a deletion leaves the
+  rendered page up and reports it; a missing file stays on a waiting
+  page until it appears. Served HTML is wrapped with view
   chrome (TOC sidebar with expand/collapse and « / » toggle, PDF /
   clipboard / Finder toolbar, dark / system / light theme with
   dark-mode syntax highlighting, figure lightbox, editable GFM task

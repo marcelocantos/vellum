@@ -140,9 +140,12 @@ vellum install-viewer                  # double-click .md → rendered view
 
 `vellum view` / `vellum --open` open Markdown as an **`http://127.0.0.1:18742/…`
 URL** on the localhost view server (not `file://`), so in-page `.md` links
-stay in the browser and the open tab updates when the source file changes
-(WebSocket watch with a 5-minute heartbeat; scroll is restored best-effort
-to the same heading, and a focused task checkbox is restored after reload).
+stay in the browser. The open tab watches the source (WebSocket, 5-minute
+heartbeat) and reloads after a change has been quiet for a moment. A rename
+redirects the tab; a deletion leaves the rendered page up and reports it.
+A missing file stays on a waiting page until the file appears. Scroll is
+restored best-effort to the same heading, and a focused task checkbox is
+restored after reload.
 HTML is the default (fast, no WeasyPrint needed for a casual read); pass
 `--pdf` for full typography in Preview via a cache file.
 

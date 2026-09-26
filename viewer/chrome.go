@@ -43,6 +43,10 @@ var (
 // shell, lightbox). The convert-cache file is left untouched; callers
 // apply this per response.
 func injectChrome(htmlDoc, sourcePath string) string {
+	return injectChromeInto(htmlDoc, sourcePath, false)
+}
+
+func injectChromeInto(htmlDoc, sourcePath string, waiting bool) string {
 	if htmlDoc == "" {
 		return htmlDoc
 	}
@@ -56,7 +60,7 @@ func injectChrome(htmlDoc, sourcePath string) string {
 		return htmlDoc
 	}
 	inner := annotateTaskCheckboxes(htmlDoc[open[1]:close[0]])
-	wrapped := chromeOpen(sourcePath) + inner + chromeClose()
+	wrapped := chromeOpen(sourcePath, waiting) + inner + chromeClose()
 	htmlDoc = htmlDoc[:open[1]] + wrapped + htmlDoc[close[0]:]
 	if loc := headCloseRe.FindStringIndex(htmlDoc); loc != nil {
 		htmlDoc = htmlDoc[:loc[0]] + chromeStyleTag() + htmlDoc[loc[0]:]
@@ -87,9 +91,13 @@ func downloadIconSVG() string {
 	return `<svg class="vellum-icon" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>`
 }
 
-func chromeOpen(sourcePath string) string {
+func chromeOpen(sourcePath string, waiting bool) string {
 	name := filepath.Base(sourcePath)
-	return `<div class="vellum-chrome" data-source="` + html.EscapeString(sourcePath) + `">` +
+	attrs := `data-source="` + html.EscapeString(sourcePath) + `"`
+	if waiting {
+		attrs += ` data-waiting="1"`
+	}
+	return `<div class="vellum-chrome" ` + attrs + `">` +
 		`<aside class="vellum-toc" id="vellum-toc">` +
 		`<div class="vellum-toc-header">` +
 		`<span class="vellum-toc-title">Contents</span>` +
@@ -125,6 +133,12 @@ func chromeClose() string {
 		`<button type="button" data-vellum="consent-session">This session</button>` +
 		`<button type="button" data-vellum="consent-always">Always allow</button>` +
 		`<button type="button" data-vellum="consent-cancel">Cancel</button>` +
+		`</div></div></div>` +
+		`<div class="vellum-consent" id="vellum-gone" hidden role="dialog" aria-modal="true" aria-labelledby="vellum-gone-title">` +
+		`<div class="vellum-consent-card">` +
+		`<p id="vellum-gone-title">This file was deleted.</p>` +
+		`<div class="vellum-consent-actions">` +
+		`<button type="button" data-vellum="gone-dismiss">Dismiss</button>` +
 		`</div></div></div></div>` +
 		`<div class="vellum-lightbox" id="vellum-lightbox" hidden role="dialog" aria-modal="true" aria-label="Figure viewer">` +
 		`<div class="vellum-lightbox-bar">` +

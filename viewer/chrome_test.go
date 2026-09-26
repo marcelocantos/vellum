@@ -63,6 +63,9 @@ func TestInjectChrome_WrapsBodyAndAddsClass(t *testing.T) {
 	if !strings.Contains(out, `id="vellum-lightbox"`) {
 		t.Fatalf("missing lightbox:\n%s", out)
 	}
+	if !strings.Contains(out, `id="vellum-gone"`) || !strings.Contains(out, "This file was deleted.") {
+		t.Fatalf("missing deletion dialog:\n%s", out)
+	}
 	if !strings.Contains(out, ".vellum-chrome") {
 		t.Fatalf("missing chrome CSS")
 	}
