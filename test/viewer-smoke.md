@@ -35,5 +35,7 @@ ipsum primis in faucibus orci luctus et ultrices posuere cubilia curae.
 
 - [ ] Confirm heartbeat: leave the tab idle; it should stay connected
       (protocol ping every five minutes; you will not see it).
-- [ ] Confirm delete-safety: rename this file while the tab is open —
-      the status line should error, not reload-loop.
+- [ ] Confirm rename: rename this file while the tab is open —
+      the tab should open the file at its new path.
+- [ ] Confirm delete: delete this file while the tab is open —
+      the rendered page stays, with a notice that the file was deleted.

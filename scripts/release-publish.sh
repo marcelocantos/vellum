@@ -55,6 +55,9 @@ if gh release view "$TAG" >/dev/null 2>&1; then
 fi
 
 notes_tmp=""
+if [[ -z "$NOTES_FILE" && -f ".release-notes-${TAG}.md" ]]; then
+	NOTES_FILE=".release-notes-${TAG}.md"
+fi
 if [[ -z "$NOTES_FILE" ]]; then
 	notes_tmp="$(mktemp)"
 	NOTES_FILE="$notes_tmp"
@@ -64,7 +67,9 @@ if [[ -z "$NOTES_FILE" ]]; then
 	[[ -s "$NOTES_FILE" ]] || echo "Release ${TAG}." >"$NOTES_FILE"
 fi
 
-trap 'rm -f "$notes_tmp"' EXIT
+if [[ -n "$notes_tmp" ]]; then
+	trap 'rm -f "$notes_tmp"' EXIT
+fi
 
 echo "release-publish: creating ${TAG} …" >&2
 gh release create "$TAG" --title "$TAG" --notes-file "$NOTES_FILE" dist/*.tar.gz
