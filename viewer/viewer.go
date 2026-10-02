@@ -299,6 +299,12 @@ func cacheName(absPath string, ext string) string {
 	return hex.EncodeToString(sum[:8]) + ext
 }
 
+// stampFormat versions the cache layout. A stamp from another format
+// never matches, so an entry written by an older vellum (for HTML, a whole
+// page with diagrams inline rather than the deferred shell) is re-rendered
+// instead of served. Bump when the cached bytes change meaning.
+const stampFormat = "v2"
+
 func stampPath(cachePath string) string {
 	return cachePath + ".stamp"
 }
@@ -308,7 +314,7 @@ func writeStamp(cachePath, absInput string) error {
 	if err != nil {
 		return fmt.Errorf("stamp stat source: %w", err)
 	}
-	body := strconv.FormatInt(info.ModTime().UnixNano(), 10) + " " + strconv.FormatInt(info.Size(), 10) + "\n"
+	body := strconv.FormatInt(info.ModTime().UnixNano(), 10) + " " + strconv.FormatInt(info.Size(), 10) + " " + stampFormat + "\n"
 	if err := os.WriteFile(stampPath(cachePath), []byte(body), 0o644); err != nil {
 		return fmt.Errorf("writing cache stamp: %w", err)
 	}
@@ -321,7 +327,7 @@ func stampMatches(cachePath string, source os.FileInfo) bool {
 		return false
 	}
 	fields := strings.Fields(string(data))
-	if len(fields) < 2 {
+	if len(fields) != 3 || fields[2] != stampFormat {
 		return false
 	}
 	mtime, err1 := strconv.ParseInt(fields[0], 10, 64)

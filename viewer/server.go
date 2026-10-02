@@ -55,8 +55,17 @@ type Server struct {
 	// Tests assert a single-file GET never crawls the link graph.
 	ConvertCount atomic.Int64
 
-	// RenderFile, when non-nil, replaces convert.RenderFile (tests).
+	// RenderFile, when non-nil, replaces convert.RenderFile (tests). The
+	// server always asks for a deferred render (convert.Options.Defer):
+	// the cached page is a shell whose diagrams and math are placeholders.
 	RenderFile func(ctx context.Context, path string, opts *convert.Options) (string, []string, error)
+	// RenderFragments, when non-nil, replaces convert.RenderFragments
+	// (tests stand in for mmdc and node).
+	RenderFragments func(ctx context.Context, frags []convert.Fragment) (map[string]convert.FragmentResult, error)
+	// FragmentRenderCount counts fragments handed to RenderFragments
+	// (cache misses only). Tests assert the fragment cache is hit.
+	FragmentRenderCount atomic.Int64
+	flights             flightGroup
 
 	// MCP, when non-nil, is mounted at MCPPath so the brew-service
 	// process hosts streamable HTTP MCP on the same listener as the view.
@@ -93,6 +102,31 @@ func (s *Server) Origin() string {
 		host = "127.0.0.1"
 	}
 	return "http://" + net.JoinHostPort(host, port)
+}
+
+func (s *Server) now() time.Time {
+	if s.Now != nil {
+		return s.Now()
+	}
+	return time.Now()
+}
+
+func (s *Server) cacheRoot() (string, error) {
+	root, err := resolveCacheDir(s.CacheDir)
+	if err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		return "", err
+	}
+	return root, nil
+}
+
+// convertOptions is the shared convert configuration for the view page
+// and its fragments; ExtractFragments must see the same Mermaid format
+// as the deferred render so ids agree.
+func (s *Server) convertOptions() *convert.Options {
+	return &convert.Options{Style: s.Style, Backend: s.Backend, Defer: true}
 }
 
 func (s *Server) addr() string {
@@ -286,9 +320,12 @@ func (s *Server) serveMarkdown(w http.ResponseWriter, r *http.Request, absPath s
 	page := rewriteMarkdownHrefs(string(body), absPath, origin)
 	// Ensure <base> matches this request's origin (cache may predate a port change).
 	page = ensureBaseHref(page, origin+pathURL(filepath.Dir(absPath))+"/")
-	// First paint waits on text only: images load lazily and Mermaid SVGs
-	// (hundreds of KB each) are fetched from ChromeFragmentPath on demand.
-	page, _ = deferMermaid(page)
+	// First paint waits on text only: the cached page is a shell whose
+	// Mermaid diagrams and math are placeholders that chrome.js fills from
+	// ChromeFragmentPath on demand, and images load lazily.
+	if cacheRoot, err := s.cacheRoot(); err == nil {
+		page = reserveDiagramBoxes(page, cacheRoot)
+	}
 	page = lazyLoadImages(page)
 	page = injectChrome(page, absPath)
 
@@ -315,8 +352,10 @@ func (s *Server) serveMissingMarkdown(w http.ResponseWriter, r *http.Request, ab
 	_, _ = io.WriteString(w, page)
 }
 
-// cachedHTML returns convert HTML for absPath (chrome-free). It is the
-// payload for both the view page (chrome is injected after) and clipboard.
+// cachedHTML returns the convert shell for absPath (chrome-free): the
+// goldmark page with Mermaid diagrams and math left as placeholders. It
+// is the payload for the view page (chrome is injected after); the
+// clipboard wants completeHTML, which resolves the placeholders.
 func (s *Server) cachedHTML(ctx context.Context, absPath string) ([]byte, error) {
 	info, err := os.Stat(absPath)
 	if err != nil {
@@ -326,26 +365,20 @@ func (s *Server) cachedHTML(ctx context.Context, absPath string) ([]byte, error)
 		return nil, errIsDirectory
 	}
 
-	cacheRoot, err := resolveCacheDir(s.CacheDir)
+	cacheRoot, err := s.cacheRoot()
 	if err != nil {
 		return nil, err
 	}
-	if err := os.MkdirAll(cacheRoot, 0o755); err != nil {
-		return nil, err
-	}
 	cachePath := filepath.Join(cacheRoot, cacheName(absPath, ".html"))
-	now := time.Now
-	if s.Now != nil {
-		now = s.Now
-	}
+	now := s.now()
 	maxAge := effectiveMaxAge(s.MaxAge)
 
 	hit := false
 	if st, err := os.Stat(cachePath); err == nil && !st.IsDir() {
-		ageOK := maxAge < 0 || now().Sub(st.ModTime()) <= maxAge
+		ageOK := maxAge < 0 || now.Sub(st.ModTime()) <= maxAge
 		if ageOK && stampMatches(cachePath, info) {
 			hit = true
-			_ = os.Chtimes(cachePath, now(), now())
+			_ = os.Chtimes(cachePath, now, now)
 		}
 	}
 	if !hit {
@@ -356,7 +389,7 @@ func (s *Server) cachedHTML(ctx context.Context, absPath string) ([]byte, error)
 			}
 		}
 	}
-	_ = pruneCache(cacheRoot, cachePath, effectiveMaxBytes(s.MaxBytes), maxAge, now())
+	_ = pruneCache(cacheRoot, cachePath, effectiveMaxBytes(s.MaxBytes), maxAge, now)
 	return os.ReadFile(cachePath)
 }
 
@@ -370,7 +403,7 @@ func requestOrigin(r *http.Request) string {
 
 func (s *Server) renderMarkdown(ctx context.Context, absInput, cachePath string) error {
 	s.ConvertCount.Add(1)
-	cOpts := &convert.Options{Style: s.Style, Backend: s.Backend}
+	cOpts := s.convertOptions()
 	// Placeholder base; rewritten per-response in serveMarkdown.
 	cOpts.HeadExtra = `<meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate">` + "\n" +
 		`<meta http-equiv="Pragma" content="no-cache">` + "\n" +

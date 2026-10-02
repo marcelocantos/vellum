@@ -324,22 +324,120 @@ body.vellum-view {
   cursor: zoom-in;
 }
 
-.vellum-article .vellum-lazy-svg {
+/* Deferred fragments: Mermaid diagrams and math arrive after first
+   paint. The placeholder shows a quiet box (diagram) or the raw source
+   (math); while a fetch is in flight it animates; on failure it shows the
+   source, the error, and a Retry button. */
+.vellum-article .vellum-deferred-mermaid {
   display: block;
   width: 100%;
   margin: 0 auto;
-  min-height: 2em;
+  min-height: 6em;
   border-radius: 6px;
   background: rgba(175, 184, 193, 0.12);
   cursor: progress;
+  overflow: hidden;
 }
 
-.vellum-article .vellum-lazy-svg.is-failed {
-  cursor: pointer;
+.vellum-article .vellum-deferred-mermaid > pre {
+  display: none;
+  margin: 0;
+  text-align: left;
+}
+
+.vellum-article .vellum-deferred-mermaid.is-loading {
+  background: linear-gradient(
+    100deg,
+    rgba(175, 184, 193, 0.12) 30%,
+    rgba(175, 184, 193, 0.32) 50%,
+    rgba(175, 184, 193, 0.12) 70%
+  );
+  background-size: 300% 100%;
+  animation: vellum-shimmer 1.4s ease-in-out infinite;
+}
+
+.vellum-article .vellum-deferred-math {
+  color: var(--vellum-muted, #656d76);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.9em;
+  cursor: progress;
+}
+
+.vellum-article .vellum-deferred-math.is-loading {
+  animation: vellum-pulse 1.2s ease-in-out infinite;
+}
+
+.vellum-article .vellum-deferred.is-failed {
+  cursor: auto;
+  animation: none;
+}
+
+.vellum-article .vellum-deferred-mermaid.is-failed {
   padding: 8px 12px;
   text-align: left;
   color: #cf222e;
   background: rgba(207, 34, 46, 0.08);
+}
+
+.vellum-article .vellum-deferred-mermaid.is-failed > pre {
+  display: block;
+  margin-top: 8px;
+  color: inherit;
+  opacity: 0.85;
+}
+
+.vellum-article .vellum-deferred-math.is-failed {
+  color: #cf222e;
+  text-decoration: underline dashed;
+  text-underline-offset: 3px;
+}
+
+.vellum-article .vellum-deferred-note {
+  display: inline;
+}
+
+.vellum-article .vellum-deferred-retry {
+  margin-left: 0.4em;
+  padding: 1px 8px;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 0.85em;
+  line-height: 1.5;
+  cursor: pointer;
+}
+
+.vellum-article .vellum-deferred-math .vellum-deferred-retry {
+  margin-left: 0.2em;
+  padding: 0 5px;
+}
+
+@keyframes vellum-shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: 0 0;
+  }
+}
+
+@keyframes vellum-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vellum-article .vellum-deferred-mermaid.is-loading,
+  .vellum-article .vellum-deferred-math.is-loading {
+    animation: none;
+  }
 }
 
 .vellum-lightbox {
@@ -583,6 +681,22 @@ html[data-vellum-theme="dark"] .vellum-article tr:nth-child(2n) {
 html[data-vellum-theme="dark"] .vellum-article hr {
   background-color: #30363d;
   border-color: #30363d;
+}
+
+html[data-vellum-theme="dark"] .vellum-article .vellum-deferred-math {
+  color: #8b949e;
+}
+
+html[data-vellum-theme="dark"] .vellum-article .vellum-deferred-mermaid {
+  background: rgba(110, 118, 129, 0.2);
+}
+
+html[data-vellum-theme="dark"] .vellum-article .vellum-deferred.is-failed {
+  color: #f85149;
+}
+
+html[data-vellum-theme="dark"] .vellum-article .vellum-deferred-mermaid.is-failed {
+  background: rgba(248, 81, 73, 0.12);
 }
 
 html[data-vellum-theme="dark"] .vellum-article mark {

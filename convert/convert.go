@@ -42,6 +42,12 @@ type Options struct {
 	// MermaidFormat selects mmdc output: MermaidSVG (default) or MermaidPNG.
 	// PDF sinks force PNG (Prince-safe labels); HTML/view keep SVG.
 	MermaidFormat string
+	// Defer skips the mmdc and KaTeX subprocesses: Render returns the page
+	// with a placeholder element per Mermaid diagram and math expression
+	// (see Fragment), ready for RenderFragments + ResolveFragments, or for
+	// serving fragments on demand. The view server uses it so first paint
+	// never waits on a diagram.
+	Defer bool
 }
 
 var htmlTmpl = template.Must(template.New("page").Parse(embed.HTMLTemplate))
@@ -145,6 +151,8 @@ func RenderFile(ctx context.Context, inputPath string, opts *Options) (html stri
 //
 // soft contains non-fatal Mermaid render failures (document still includes
 // source-as-code fallbacks). Hard failures return err with empty html.
+// With opts.Defer, no subprocess runs: diagrams and math are left as
+// placeholders (soft is nil) for RenderFragments / ResolveFragments.
 func Render(ctx context.Context, src []byte, opts *Options) (html string, soft []string, err error) {
 	// Pre-process: extract math and mermaid blocks before goldmark sees them.
 	// This prevents goldmark from mangling backslashes in LaTeX and from
@@ -163,11 +171,14 @@ func Render(ctx context.Context, src []byte, opts *Options) (html string, soft [
 		return "", nil, fmt.Errorf("rendering markdown: %w", err)
 	}
 
-	htmlContent, err = math.ReplaceAll(ctx, htmlContent)
-	if err != nil {
-		return "", nil, fmt.Errorf("rendering math: %w", err)
+	htmlContent = mermaid.deferAll(math.deferAll(htmlContent))
+	if opts == nil || !opts.Defer {
+		results, err := RenderFragments(ctx, append(math.fragments(), mermaid.fragments()...))
+		if err != nil {
+			return "", nil, fmt.Errorf("rendering math: %w", err)
+		}
+		htmlContent, soft = ResolveFragments(htmlContent, results)
 	}
-	htmlContent, soft = mermaid.ReplaceAll(ctx, htmlContent)
 
 	var style *Style
 	if opts != nil {
