@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package pandoc runs pandoc for the export direction: vellum's rendered
-// HTML out to rich-text formats.
+// HTML out to rich-text formats, and Markdown out to binary document
+// formats such as pptx.
 //
 // The import direction (rich text → Markdown) lives in importer/, which
 // needs --extract-media, a media directory and a cache, and shares
@@ -15,6 +16,7 @@ package pandoc
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -53,6 +55,37 @@ func HTMLToRTF(html, resourcePath string) ([]byte, error) {
 // HTMLToPlain converts an HTML document to plain text.
 func HTMLToPlain(html string) ([]byte, error) {
 	return run(html, "-f", "html", "-t", "plain")
+}
+
+// ToFile converts src from one format to another and writes the result
+// to outPath (pandoc -o). It returns pandoc's [WARNING] lines so callers
+// can surface them as soft errors: pandoc still exits 0 when it drops an
+// unsupported construct, and silently losing content is the failure
+// mode a deck author cannot see.
+//
+// extra holds additional pandoc arguments (reference doc, resource path,
+// extensions), appended verbatim.
+func ToFile(ctx context.Context, src, from, to, outPath string, extra ...string) (warnings []string, err error) {
+	if err := Available(); err != nil {
+		return nil, err
+	}
+	args := append([]string{"-f", from, "-t", to, "-o", outPath}, extra...)
+	cmd := exec.CommandContext(ctx, Binary, args...)
+	cmd.Stdin = strings.NewReader(src)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		if msg := strings.TrimSpace(stderr.String()); msg != "" {
+			return nil, fmt.Errorf("%s -t %s: %w: %s", Binary, to, err, msg)
+		}
+		return nil, fmt.Errorf("%s -t %s: %w", Binary, to, err)
+	}
+	for _, line := range strings.Split(stderr.String(), "\n") {
+		if line = strings.TrimSpace(line); strings.HasPrefix(line, "[WARNING]") {
+			warnings = append(warnings, Binary+": "+strings.TrimSpace(strings.TrimPrefix(line, "[WARNING]")))
+		}
+	}
+	return warnings, nil
 }
 
 func run(stdin string, args ...string) ([]byte, error) {

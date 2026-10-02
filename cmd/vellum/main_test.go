@@ -4,12 +4,17 @@
 package main
 
 import (
+	"archive/zip"
 	"bytes"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/marcelocantos/vellum/internal/pandoc"
+	"github.com/marcelocantos/vellum/internal/testdeps"
 )
 
 // captureStdout redirects os.Stdout to a pipe for the duration of fn and
@@ -141,5 +146,48 @@ func TestRun_UnknownFlag(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "unknown flag") {
 		t.Errorf("error message = %q, want it to mention %q", err.Error(), "unknown flag")
+	}
+}
+
+// TestRun_PPTXByOutputExtension pins the top-level sugar: `vellum deck.md
+// -o deck.pptx` writes a PowerPoint deck, where it used to write a PDF
+// under the .pptx name. --template is accepted on that path too.
+func TestRun_PPTXByOutputExtension(t *testing.T) {
+	testdeps.Need(t, pandoc.Binary)
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	dir := t.TempDir()
+	in := filepath.Join(dir, "deck.md")
+	if err := os.WriteFile(in, []byte("# One\n\n- a\n\n# Two\n\n- b\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out := filepath.Join(dir, "deck.pptx")
+
+	var err error
+	withArgs(t, []string{"vellum", in, "-o", out, "--template", "default"}, func() {
+		_ = captureStdout(t, func() { err = run() })
+	})
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	r, err := zip.OpenReader(out)
+	if err != nil {
+		t.Fatalf("%s is not a pptx zip: %v", out, err)
+	}
+	defer r.Close()
+	var slides int
+	for _, f := range r.File {
+		if strings.HasPrefix(f.Name, "ppt/slides/slide") && strings.HasSuffix(f.Name, ".xml") {
+			slides++
+		}
+	}
+	if slides != 2 {
+		t.Errorf("slides = %d, want 2", slides)
+	}
+
+	withArgs(t, []string{"vellum", in, "-o", out, "--template", "no-such-template"}, func() {
+		_ = captureStdout(t, func() { err = run() })
+	})
+	if err == nil || !strings.Contains(err.Error(), "no-such-template") {
+		t.Errorf("missing template: err = %v, want one naming it", err)
 	}
 }

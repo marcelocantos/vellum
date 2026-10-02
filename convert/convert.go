@@ -42,6 +42,9 @@ type Options struct {
 	// MermaidFormat selects mmdc output: MermaidSVG (default) or MermaidPNG.
 	// PDF sinks force PNG (Prince-safe labels); HTML/view keep SVG.
 	MermaidFormat string
+	// Template selects the PowerPoint reference deck for pptx output. See
+	// resolveTemplate for the accepted forms; empty is the built-in deck.
+	Template string
 	// Defer skips the mmdc and KaTeX subprocesses: Render returns the page
 	// with a placeholder element per Mermaid diagram and math expression
 	// (see Fragment), ready for RenderFragments + ResolveFragments, or for

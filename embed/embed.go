@@ -10,3 +10,11 @@ var GitHubCSS string
 
 //go:embed template.html
 var HTMLTemplate string
+
+// ReferencePPTX is the built-in PowerPoint reference deck: a pinned copy
+// of pandoc's own default (pandoc --print-default-data-file
+// reference.pptx, pandoc 3.11). Pinning it makes pptx output independent
+// of whichever pandoc happens to be installed.
+//
+//go:embed reference.pptx
+var ReferencePPTX []byte

@@ -1,15 +1,18 @@
 # vellum agent guide
 
-vellum has two directions:
+vellum has three directions:
 
 1. **Markdown → PDF.** GitHub-flavoured Markdown (with KaTeX math and
    Mermaid diagrams) is typeset to PDF via WeasyPrint (default, BSD-3)
    or Prince (opt-in, proprietary).
-2. **Rich text → Markdown.** RTF, DOCX, HTML, ODT, EPUB, LaTeX, and
+2. **Markdown → PowerPoint.** The same Markdown becomes a `.pptx` deck
+   via pandoc's pptx writer, with Mermaid diagrams as pictures and a
+   selectable reference deck (`template`).
+3. **Rich text → Markdown.** RTF, DOCX, HTML, ODT, EPUB, LaTeX, and
    anything else pandoc supports is converted back to GitHub-Flavoured
    Markdown via pandoc. Source can be a file or the system clipboard.
 
-Both directions run as either a command-line tool or as a single MCP
+All three run as either a command-line tool or as a single MCP
 (Model Context Protocol) `convert` tool over streamable HTTP (preferred)
 or stdio (fallback).
 
@@ -188,7 +191,8 @@ orthogonal to document format.
   },
   "files": [{ "input": "…", "output": "…" }],
   "style": { },
-  "backend": "weasyprint|prince"
+  "backend": "weasyprint|prince",
+  "template": "default | /abs/brand.pptx | brand"
 }
 ```
 
@@ -203,6 +207,7 @@ sugar). Formats are inferred aggressively when omitted:
 | `to.media=clipboard` | rich (RTF+HTML+plain) |
 | `to.media=content` | `markdown` |
 | `to.media=file` from markdown | `pdf` |
+| `to.media=file` with `path` ending `.pptx` | `pptx` (PowerPoint deck) |
 | `to.media=file` from rich-text / pdf | `markdown` |
 
 **Rich import:** RTF/DOCX/HTML/… via pandoc with `--extract-media`; PDF
@@ -213,8 +218,9 @@ includes `media_dir` and `assets`. Requires `pandoc` (office formats)
 and `poppler` (PDF) on PATH when those paths are used.
 
 **Disallowed (intractable):** `to.media` of `content` or `clipboard`
-with `format` `pdf` (binary PDF *out*). PDF *input* is allowed.
-`clipboard` and `file_reference` require macOS.
+with `format` `pdf` or `pptx` (binary *out*). PDF *input* is allowed;
+pptx input is not (pandoc has no PowerPoint reader). `clipboard` and
+`file_reference` require macOS.
 
 #### Examples
 
@@ -250,6 +256,31 @@ File → PDF:
   "arguments": {
     "from": { "media": "file", "path": "/abs/path/to/report.md" },
     "to": { "media": "file", "path": "/abs/path/to/report.pdf" }
+  }
+}
+```
+
+Markdown string → PowerPoint deck (built-in template):
+
+```json
+{
+  "name": "convert",
+  "arguments": {
+    "from": { "media": "content", "content": "---\ntitle: Review\n---\n\n# Agenda\n\n- One\n- Two\n" },
+    "to": { "media": "file", "path": "/abs/path/to/review.pptx" }
+  }
+}
+```
+
+File → PowerPoint deck with a branded template:
+
+```json
+{
+  "name": "convert",
+  "arguments": {
+    "from": { "media": "file", "path": "/abs/path/to/deck.md" },
+    "to": { "media": "file", "path": "/abs/path/to/deck.pptx" },
+    "template": "/abs/path/to/brand.pptx"
   }
 }
 ```
@@ -340,6 +371,7 @@ Shorthands (expand into the same router):
 | Command | Expands to |
 |---------|------------|
 | `vellum report.md` | `--from file --to file` (PDF) |
+| `vellum deck.md -o deck.pptx` | `--from file --to file` (PowerPoint; the `-o` extension picks the format) |
 | `vellum --to-clipboard report.md` | `--from file --to clipboard` |
 | `echo '# Hi' \| vellum --to-clipboard -` | `--from content --to clipboard` |
 | `vellum import doc.docx` | `--from file --to content` |
@@ -401,6 +433,55 @@ already work with files and `convert`.
   or the `files` sugar for Markdown→PDF.
 - `to.media=file` without `to.path` defaults the output next to the
   source (`.pdf` from markdown, `.md` from rich-text).
+
+## PowerPoint output
+
+A `to.path` ending in `.pptx`, or `to.format: "pptx"`, writes a
+PowerPoint deck through pandoc's pptx writer (`pandoc` must be on PATH).
+Only `file` and `file_reference` sinks accept it.
+
+How Markdown maps to slides (pandoc's rules):
+
+| Markdown | Slide |
+|----------|-------|
+| YAML title block (`title`, `subtitle`, `author`, `date`) | Title slide |
+| Heading above the slide level | Section slide |
+| Heading at the slide level | New slide, heading as title |
+| Heading below the slide level | Heading inside the slide |
+| `---` horizontal rule | New slide |
+| Lists, tables, images, code, `$math$`, footnotes, links | Slide body (math is native Office math) |
+| ```` ```mermaid ```` block | PNG picture (rendered by `mmdc`); failure keeps the source as code + soft error |
+| `::: notes … :::` | Speaker notes |
+| `::: incremental` / `::: nonincremental` | Per-list build behaviour |
+| `::: columns` containing `::: column` divs | Two-column slide |
+
+The slide level is the highest heading level that is directly followed
+by content. A deck with `#` sections and `##` slides gets section
+slides for each `#`; a deck of only `#` headings gets one slide per
+`#`. Write the title block so the first slide is a title slide, not a
+section slide. Images with relative paths resolve against the source
+file's directory, so use `from.media=file` for decks that reference
+local images, or absolute paths / data URIs with `from.media=content`.
+A referenced image that does not exist is a hard error from pandoc.
+
+Templates: `template` selects the reference deck whose slide master,
+layouts and theme the output inherits.
+
+| `template` value | Meaning |
+|------------------|---------|
+| omitted / `"default"` | Built-in deck (pinned copy of pandoc's default, 16:9) |
+| `/abs/path/brand.pptx` | That file (a `.pptx` or `.potx`) |
+| `brand` | `~/.config/vellum/templates/brand.pptx` (`$XDG_CONFIG_HOME` honoured) |
+
+Per-call `template` outranks `template:` in the user's `config.yaml`,
+which outranks the built-in. A missing template is a hard error that
+names the path looked for. A usable template needs pandoc's layout
+names in its slide master (Title Slide, Section Header, Title and
+Content, Two Content, Comparison, Content with Caption, Blank); any deck
+saved from PowerPoint with those layouts intact works.
+
+pptx is output-only: a `.pptx` *source* is rejected with an explicit
+message rather than handed to pandoc.
 
 ## Style overrides
 
@@ -505,8 +586,8 @@ the list. PDF reader bookmarks (`style.bookmarks`) stay independent.
 
 - vellum invokes local binaries: the renderer (`weasyprint` by
   default, optionally `prince`), `node` (KaTeX math HTML), `mmdc`
-  (Mermaid diagrams), and lazily `pandoc` (rich-text import /
-  clipboard fallback) and `pdftoppm`/`pdftotext` (PDF import). Math
+  (Mermaid diagrams), and lazily `pandoc` (rich-text import, pptx
+  output, clipboard fallback) and `pdftoppm`/`pdftotext` (PDF import). Math
   and Mermaid rendering run locally. Assembled HTML links KaTeX CSS from
   jsDelivr (`cdn.jsdelivr.net`) only when the document contains math;
   no-math documents omit the link. WeasyPrint or a browser may fetch
@@ -534,7 +615,8 @@ Common failure modes:
   backend (`weasyprint` by default, or `prince`) plus `node` and
   `mmdc` at startup. CLI PDF conversion does not preflight those
   binaries — a missing renderer fails at exec. pandoc is checked
-  lazily only on rich-text import; poppler only on PDF import.
+  lazily only on rich-text import and pptx output; poppler only on PDF
+  import.
   Missing tools are listed with install instructions when a check
   runs.
 - The `katex` node package is not installed globally. Fix with

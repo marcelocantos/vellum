@@ -44,6 +44,8 @@ const (
 	FormatHTML     = "html"
 	FormatRTF      = "rtf"
 	FormatPDF      = "pdf"
+	// FormatPPTX is the PowerPoint sink (pandoc pptx writer; file media only).
+	FormatPPTX = "pptx"
 	// FormatRich is the multi-representation clipboard sink (RTF+HTML+plain).
 	FormatRich = "rich"
 )
@@ -70,6 +72,10 @@ type Request struct {
 	To      Endpoint
 	Style   *Style
 	Backend string
+	// Template selects the PowerPoint reference deck for pptx sinks:
+	// empty or "default" for the built-in deck, a path to a .pptx/.potx
+	// file, or a bare name under ~/.config/vellum/templates/.
+	Template string
 	// Files, when non-empty, is sugar for a batch of file→file PDF
 	// conversions. From/To may be zero in that case.
 	Files []FilePair
@@ -127,7 +133,7 @@ func Run(ctx context.Context, req *Request) (*Result, error) {
 		}
 	}
 
-	opts := &Options{Style: req.Style, Backend: req.Backend}
+	opts := &Options{Style: req.Style, Backend: req.Backend, Template: req.Template}
 	out := &Result{FromMedia: req.From.Media, ToMedia: to.Media}
 
 	inputs, err := collectInputs(from)
@@ -360,6 +366,9 @@ func ingest(ctx context.Context, in inputItem, from Endpoint) (ingestResult, err
 		if fromFmt == "" {
 			fromFmt = FormatMarkdown
 		}
+		if err := checkSourceFormat(fromFmt); err != nil {
+			return ingestResult{}, err
+		}
 		if isMarkdownFormat(fromFmt) {
 			b, rerr := os.ReadFile(in.path)
 			if rerr != nil {
@@ -392,6 +401,9 @@ func ingest(ctx context.Context, in inputItem, from Endpoint) (ingestResult, err
 		fromFmt := normalizeFormat(from.Format)
 		if fromFmt == "" {
 			fromFmt = FormatMarkdown
+		}
+		if err := checkSourceFormat(fromFmt); err != nil {
+			return ingestResult{}, err
 		}
 		if isMarkdownFormat(fromFmt) {
 			return ingestResult{md: in.content, fromFmt: FormatMarkdown}, nil
@@ -487,6 +499,8 @@ func writeFileOutput(ctx context.Context, md, outPath, toFmt, baseDir string, op
 			return soft, fmt.Errorf("%s: %w", backend.Name(), err)
 		}
 		return soft, nil
+	case toFmt == FormatPPTX:
+		return writePPTX(ctx, md, outPath, baseDir, opts)
 	default:
 		return nil, fmt.Errorf("convert: to.media file does not support format %q", toFmt)
 	}
@@ -539,13 +553,26 @@ func inferToFormat(to Endpoint, fromFmt string) string {
 	}
 }
 
+// checkDisallowed rejects binary sink formats on the two media that can
+// only carry text.
 func checkDisallowed(media Media, format string) error {
-	f := normalizeFormat(format)
-	if f == FormatPDF {
+	switch f := normalizeFormat(format); f {
+	case FormatPDF, FormatPPTX:
 		switch media {
 		case MediaContent, MediaClipboard:
-			return fmt.Errorf("convert: to.media %s cannot use format pdf", media)
+			return fmt.Errorf("convert: to.media %s cannot use format %s", media, f)
 		}
+	}
+	return nil
+}
+
+// checkSourceFormat rejects formats vellum can only write. pandoc has
+// no pptx reader, so without this a .pptx source would reach the
+// importer and fail with pandoc's "unknown input format" instead of a
+// message that names the actual limitation.
+func checkSourceFormat(format string) error {
+	if normalizeFormat(format) == FormatPPTX {
+		return fmt.Errorf("convert: pptx is an output-only format; vellum cannot import PowerPoint decks")
 	}
 	return nil
 }
@@ -568,6 +595,8 @@ func normalizeFormat(f string) string {
 		return FormatMarkdown
 	case "htm":
 		return FormatHTML
+	case "powerpoint":
+		return FormatPPTX
 	default:
 		return f
 	}
@@ -596,6 +625,11 @@ func checkInferredText(b []byte, path string) error {
 	return nil
 }
 
+// FormatForPath returns the canonical format a file extension implies
+// (markdown, html, rtf, pdf, pptx, docx, …), or "" when the extension is
+// not a recognised document format.
+func FormatForPath(path string) string { return formatFromExt(path) }
+
 func formatFromExt(path string) string {
 	ext := strings.ToLower(filepath.Ext(path))
 	switch ext {
@@ -607,6 +641,8 @@ func formatFromExt(path string) string {
 		return FormatRTF
 	case ".pdf":
 		return FormatPDF
+	case ".pptx":
+		return FormatPPTX
 	case ".docx":
 		return "docx"
 	case ".odt":

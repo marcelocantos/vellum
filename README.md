@@ -1,6 +1,6 @@
 # vellum
 
-Document preparation MCP server — converts GitHub-flavoured Markdown to PDF via [goldmark](https://github.com/yuin/goldmark) and [WeasyPrint](https://www.courtbouillon.org/weasyprint) (or [Prince](https://www.princexml.com/) opt-in), and the inverse: rich-text formats (RTF, DOCX, HTML, ODT, EPUB, …) back to Markdown via [pandoc](https://pandoc.org/).
+Document preparation MCP server — converts GitHub-flavoured Markdown to PDF via [goldmark](https://github.com/yuin/goldmark) and [WeasyPrint](https://www.courtbouillon.org/weasyprint) (or [Prince](https://www.princexml.com/) opt-in), to PowerPoint decks via [pandoc](https://pandoc.org/), and the inverse: rich-text formats (RTF, DOCX, HTML, ODT, EPUB, …) back to Markdown via pandoc.
 
 vellum is primarily an HTTP [Model Context Protocol](https://modelcontextprotocol.io/) server (streamable HTTP at `/mcp` on the brew-service daemon), exposing both conversion directions as a single media-orthogonal `convert` tool for AI agents. It also ships a direct CLI for scripted and interactive use, and a stdio MCP fallback (`vellum --mcp`).
 
@@ -22,7 +22,7 @@ vellum shells out to external tools at conversion time. Each must be on `PATH` w
 - **[Node.js](https://nodejs.org/)** — runtime for KaTeX math rendering.
 - **[KaTeX](https://katex.org/)** — `npm install -g katex`.
 - **[mermaid-cli](https://github.com/mermaid-js/mermaid-cli)** (`mmdc`) — `brew install mermaid-cli` (or the equivalent on your platform). Required only if your documents contain Mermaid diagrams.
-- **[pandoc](https://pandoc.org/)** — `brew install pandoc`. Required for rich-text import (RTF, DOCX, HTML, …) with image extraction.
+- **[pandoc](https://pandoc.org/)** — `brew install pandoc`. Required for rich-text import (RTF, DOCX, HTML, …) with image extraction, and for PowerPoint (`.pptx`) output.
 - **[poppler](https://poppler.freedesktop.org/)** — `brew install poppler` (`pdftoppm`, `pdftotext`). Required for PDF import (page images + text).
 
 ### Switching to Prince
@@ -108,8 +108,10 @@ Options:
   --mcp               Run as an MCP server on stdio (fallback)
   --to-clipboard      Sugar: file|stdin → clipboard (macOS)
   --open              Open via the localhost view server (alias for `view`)
-  -o <path>           Output path (single input file only)
+  -o <path>           Output path (single input file only); a .pptx
+                      extension writes a PowerPoint deck instead of PDF
   --backend <name>    Renderer backend: "weasyprint" (default) or "prince"
+  --template <t>      PowerPoint reference deck for .pptx output
 
 Subcommands:
   convert             Media-orthogonal conversion (file, content, clipboard,
@@ -126,6 +128,8 @@ Examples:
 
 ```sh
 vellum report.md                       # writes report.pdf
+vellum deck.md -o deck.pptx            # writes a PowerPoint deck
+vellum convert --from file --to file deck.md --to-format pptx --template brand.pptx
 vellum convert --from file --to clipboard report.md
 echo '# Hi' | vellum convert --from content --to clipboard
 vellum convert --from clipboard --to content
@@ -212,8 +216,9 @@ another process.
 
 The server exposes a **single** tool, `convert`, with media-orthogonal
 `from` / `to` (media: `file`, `content`, `clipboard`, `file_reference`).
-Formats are inferred when omitted. Optional `style` and `backend` overlay
-config for that call. See `docs/agents-guide.md` or `vellum --help-agent`.
+Formats are inferred when omitted. Optional `style`, `backend` and
+`template` overlay config for that call. See `docs/agents-guide.md` or
+`vellum --help-agent`.
 
 ```json
 {
@@ -232,8 +237,49 @@ Legacy batch sugar still works for Markdown → PDF:
 }
 ```
 
-Rich-text import paths require `pandoc` on `PATH`. `clipboard` and
-`file_reference` are macOS-only.
+Rich-text import paths and pptx output require `pandoc` on `PATH`.
+`clipboard` and `file_reference` are macOS-only.
+
+## PowerPoint output
+
+A `.pptx` output path (or `--to-format pptx` / `to.format: pptx`) writes
+a PowerPoint deck through pandoc's pptx writer. The Markdown is carved
+into slides by pandoc's rules:
+
+- A YAML title block (`title`, `subtitle`, `author`, `date`) becomes the
+  title slide.
+- The slide level is the highest heading level followed directly by
+  content. Headings at that level start a slide; headings above it
+  become section slides; headings below it are headings within a slide.
+  A horizontal rule always starts a new slide.
+- Lists, tables, images, code blocks, inline and display math (as native
+  Office math), footnotes and links carry through. A `::: notes … :::`
+  div becomes speaker notes; `::: incremental` / `::: nonincremental`
+  and `::: columns` with `::: column` children work as in pandoc.
+- Mermaid blocks are rendered to PNG by `mmdc` and placed as pictures.
+  A diagram that fails to render stays on its slide as a code block and
+  is reported as a soft error.
+
+Templates control the look. The binary ships a built-in reference deck
+(a pinned copy of pandoc's default, 16:9), used when nothing else is
+selected. To use another:
+
+```sh
+vellum deck.md -o deck.pptx --template ~/decks/brand.pptx   # a path
+vellum deck.md -o deck.pptx --template brand                # ~/.config/vellum/templates/brand.pptx
+vellum deck.md -o deck.pptx --template default              # the built-in deck
+```
+
+The MCP `convert` tool takes the same value as `template`, and
+`config.yaml` sets a default with `template:`. A template is any
+`.pptx` (or `.potx`) whose slide master has the layouts pandoc looks for
+— Title Slide, Section Header, Title and Content, Two Content,
+Comparison, Content with Caption, Blank. Save a deck from PowerPoint
+with those layouts styled the way you want and point `--template` at it.
+
+pptx is output-only: vellum does not import PowerPoint decks (pandoc has
+no pptx reader). Like PDF, pptx cannot go to the `content` or
+`clipboard` sinks.
 
 ## Style customisation
 
@@ -243,6 +289,8 @@ Example `config.yaml`:
 
 ```yaml
 backend: weasyprint     # or "prince"; default is weasyprint
+template: brand         # pptx reference deck: a path, a name under
+                        # ~/.config/vellum/templates/, or "default"
 
 style:
   font_size: 14px
@@ -334,7 +382,7 @@ render cache that reloads in the same browser tab.
 | Default `.md` handler | **Yes** (macOS) | No | No | Yes |
 | Runtime footprint | Single static binary | Single binary | Node + Chromium | Desktop app |
 | Input formats | 8 | **51** | 1 | 1–2 |
-| Output formats | 4 <sub>(see roadmap)</sub> | **76** | 1–2 | Several |
+| Output formats | 5 <sub>(see roadmap)</sub> | **76** | 1–2 | Several |
 
 **Where pandoc wins, and it isn't close: breadth.** 51 readers and 76
 writers against vellum's 8 and 4. If you need DocBook, JATS, or Texinfo,
@@ -345,11 +393,11 @@ without a configuration session.
 
 ### Roadmap: output format expansion
 
-vellum currently writes Markdown, HTML, PDF, and rich text. Because
-pandoc is already a dependency, adding a writer arm exposes its full
-catalogue — docx, odt, rtf, epub, pptx, latex, typst, rst, org, asciidoc,
-ipynb and more — closing the loop with the existing DOCX and RTF import.
-This is **not yet released**; the table above reflects what ships today.
+vellum writes Markdown, HTML, PDF, rich text, and PowerPoint. The pptx
+sink is the first arm of pandoc's writer catalogue; the same seam can
+expose docx, odt, rtf, epub, latex, typst, rst, org, asciidoc, ipynb and
+more, closing the loop with the existing DOCX and RTF import. Those are
+**not yet implemented**; the table above reflects what ships today.
 
 ## Markdown feature support
 
@@ -364,6 +412,7 @@ This is **not yet released**; the table above reflects what ships today.
 - Optional table of contents — `style.toc: true` or a `<!-- vellum:toc -->` hint injects a static Contents list (nested heading links, no JavaScript). PDF adds dotted leaders and page numbers.
 - YAML front-matter `title` extraction.
 - Blockquotes, horizontal rules, images (including base64 data URIs).
+- PowerPoint output (`.pptx`) via pandoc — see [PowerPoint output](#powerpoint-output).
 
 ## Pipeline
 
@@ -376,6 +425,11 @@ Markdown
   → HTML template with embedded CSS
   → WeasyPrint (default) or Prince (opt-in) when targeting PDF
   → PDF (or HTML / view / clipboard sink)
+
+Markdown
+  → Mermaid via mmdc (PNG) inlined as images
+  → pandoc (gfm reader → pptx writer, --reference-doc = template)
+  → .pptx
 ```
 
 ## Agent guide
