@@ -21,7 +21,7 @@ change between minor releases — though in practice we aim to minimise churn.
 
 ## Interaction surface catalogue
 
-Snapshot as of **v0.24.0** (`const version` in `cmd/vellum`). Annotations:
+Snapshot as of **v0.25.0** (`const version` in `cmd/vellum`). Annotations:
 **stable** (unlikely to change), **needs review** (functional but may be
 refined), **fluid** (actively evolving).
 
@@ -35,7 +35,8 @@ Package paths are under `github.com/marcelocantos/vellum/…`.
 - `func RenderFile(ctx context.Context, inputPath string, opts *Options) (html string, soft []string, err error)` — **needs review** (second return is non-fatal Mermaid diagnostics; not `*SoftError`)
 - `func Render(ctx context.Context, src []byte, opts *Options) (html string, soft []string, err error)` — **needs review** (same)
 - `type SoftError struct { Messages []string }` — **needs review** (added in v0.9.0; `Convert` / `Run` wrap `soft` into this after still producing output; CLI non-zero exit / MCP `errors`)
-- `type Options struct { CSS string; HeadExtra string; Style *Style; Backend string; MermaidFormat string }` — **needs review** (`MermaidFormat` is `MermaidSVG` default or `MermaidPNG`; PDF sinks force PNG)
+- `type Options struct { CSS string; HeadExtra string; Style *Style; Backend string; MermaidFormat string; Template string }` — **needs review** (`MermaidFormat` is `MermaidSVG` default or `MermaidPNG`; PDF sinks force PNG; `Template` selects the pptx reference deck, added in v0.25.0)
+- `const TemplateDefault` / `func TemplatesDir() (string, error)` — **needs review** (added in v0.25.0; `"default"` names the built-in deck; bare template names resolve under `~/.config/vellum/templates/`)
 - `const MermaidSVG, MermaidPNG` — **needs review**
 - `type Style struct { ... }` — **needs review** (14-field customisation surface; `toc` added in 🎯T38; field set likely to grow before 1.0)
 - `type Backend interface` — **needs review** (added in v0.4.0; the surface is small but extension shape may evolve)
@@ -51,12 +52,14 @@ Package paths are under `github.com/marcelocantos/vellum/…`.
 - `type Media`, `Endpoint`, `Request`, `Result`, `FilePair` — **needs review**
 - `Result.MediaDir`, `Result.Assets` — **needs review** (extracted import media; also on MCP `ConvertOutput`)
 - `const MediaFile, MediaContent, MediaClipboard, MediaFileReference` — **needs review**
-- `const FormatMarkdown, FormatHTML, FormatRTF, FormatPDF, FormatRich` — **needs review** (`FormatRTF` is inferred from `.rtf`; file sinks currently refuse it — 🎯T25)
+- `const FormatMarkdown, FormatHTML, FormatRTF, FormatPDF, FormatPPTX, FormatRich` — **needs review** (`FormatRTF` is inferred from `.rtf`; file sinks currently refuse it — 🎯T25; `FormatPPTX` added in v0.25.0, file sinks only, output-only — 🎯T47)
+- `func FormatForPath(path string) string` — **needs review** (added in v0.25.0; the format a file extension implies, or empty)
+- `Request.Template` — **needs review** (added in v0.25.0; pptx reference deck for this call)
 
 **`mcp`** — the MCP server (streamable HTTP preferred; stdio fallback).
 
 - `func Serve(ctx context.Context, version string) error` — **stable** (stdio fallback)
-- `func HTTPHandler(version string, baseStyle *convert.Style, baseBackend string) http.Handler` — **needs review** (streamable HTTP; mounted at `/mcp` on the brew-service daemon, 🎯T31)
+- `func HTTPHandler(version string, baseStyle *convert.Style, baseBackend, baseTemplate string) http.Handler` — **needs review** (streamable HTTP; mounted at `/mcp` on the brew-service daemon, 🎯T31; `baseTemplate` added in v0.25.0)
 - **Single tool** `convert` with `from`/`to` media endpoints (+ optional `files` sugar) — **needs review** (replaced the four-tool surface: old `convert_to_clipboard`, `convert_from_clipboard`, `import` removed)
 - `type Endpoint`, `FilePair`, `ConvertInput`, `ConvertOutput` — **needs review**
 
@@ -82,6 +85,7 @@ Package paths are under `github.com/marcelocantos/vellum/…`.
 
 - `var GitHubCSS string` — **needs review** (exposed for the CLI binary's own use; may become unexported if no external consumer appears)
 - `var HTMLTemplate string` — **needs review** (same)
+- `var ReferencePPTX []byte` — **needs review** (added in v0.25.0; pinned copy of pandoc's default reference deck, 16:9)
 
 **`docs`** — embedded documentation.
 
@@ -89,7 +93,7 @@ Package paths are under `github.com/marcelocantos/vellum/…`.
 
 **`config`** — on-disk configuration (added in v0.4.0).
 
-- `type Config struct { Backend string; Style *convert.Style }` — **needs review**
+- `type Config struct { Backend string; Style *convert.Style; Template string }` — **needs review** (`Template` added in v0.25.0)
 - `func Path() (string, error)` — **needs review** (XDG-aware path resolution)
 - `func Load() (*Config, error)` — **needs review** (missing file returns empty Config, not error)
 
@@ -163,6 +167,8 @@ Binary: `vellum`.
 | `--output=<path>`| Same as `-o` (inline form)                          | stable    |
 | `--backend <name>` | Renderer: `weasyprint` (default) or `prince` (added in v0.4.0) | needs review |
 | `--backend=<name>` | Same as `--backend <name>` (inline form)          | needs review |
+| `--template <t>` | PowerPoint reference deck for `.pptx` output: a `.pptx`/`.potx` path, a bare name under `~/.config/vellum/templates/`, or `default` (added in v0.25.0) | needs review |
+| `--template=<t>` | Same as `--template <t>` (inline form)              | needs review |
 
 **Subcommands**
 
@@ -180,7 +186,7 @@ Binary: `vellum`.
 
 **Positional arguments**
 
-- One or more input `.md` files (bare form sugar for file→PDF). **stable**.
+- One or more input `.md` files (bare form sugar for file→PDF). **stable**. With `-o`, a recognised output extension picks the format (`.pptx` writes a deck, `.html` a page); unknown or absent extensions still mean PDF (changed in v0.25.0: it used to force PDF under any name). **needs review**.
 
 **Output contract**
 
@@ -207,8 +213,9 @@ Removed: `convert_to_clipboard`, `convert_from_clipboard`, `import`.
 
 - **Description**: media-orthogonal convert across file, content,
   clipboard, and file_reference; formats inferred; content/clipboard
-  PDF sinks refused. Optional `files` sugar for Markdown→PDF batch.
-  Optional `style` / `backend`. **needs review**
+  PDF and pptx sinks refused; pptx is output-only. Optional `files`
+  sugar for Markdown→PDF batch. Optional `style` / `backend` /
+  `template`. **needs review**
 - **Input schema**: **needs review**
 
   ```json
@@ -217,7 +224,8 @@ Removed: `convert_to_clipboard`, `convert_from_clipboard`, `import`.
     "to":   { "media": "file|content|clipboard|file_reference", "path?": "…", "format?": "…" },
     "files": [{ "input": "…", "output?": "…" }],
     "style?": {},
-    "backend?": "weasyprint|prince"
+    "backend?": "weasyprint|prince",
+    "template?": "<.pptx path | bare name | default>"
   }
   ```
 
@@ -288,7 +296,7 @@ Required external binaries on `PATH`:
   - `prince` — Prince 16.2 or later. **stable** (opt-in via `backend: prince`).
 - `node` — any recent Node.js. **stable**.
 - `mmdc` — mermaid-cli. **stable**.
-- `pandoc` — Pandoc 3.x. **needs review** (rich-text import: RTF/DOCX/HTML/… with `--extract-media`; lazily checked).
+- `pandoc` — Pandoc 3.x. **needs review** (rich-text import: RTF/DOCX/HTML/… with `--extract-media`; pptx output via `--reference-doc`; lazily checked).
 - `pdftoppm` / `pdftotext` — Poppler. **needs review** (PDF import: page images + text; lazily checked).
 
 Required Node package (installed globally):
@@ -335,8 +343,8 @@ Features and changes explicitly deferred past 1.0.
 - **Bundled Chromium.** Distributing a Chromium binary alongside
   vellum would solve the `mmdc` setup pain but adds ~200 MB to the
   release and introduces a security-update treadmill. Stays external.
-- **Further writers.** Markdown, HTML, PDF, and clipboard rich already
-  ship. File RTF (🎯T25), EPUB, and ADF-as-a-`Run` sink (🎯T27) are not
+- **Further writers.** Markdown, HTML, PDF, PowerPoint (pptx), and
+  clipboard rich already ship. File RTF (🎯T25), EPUB, and ADF-as-a-`Run` sink (🎯T27) are not
   1.0 commitments.
 - **Additional renderers.** vellum now supports WeasyPrint (default) and
   Prince (opt-in). No plans to add wkhtmltopdf (deprecated/abandoned) or
