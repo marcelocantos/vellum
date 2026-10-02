@@ -434,8 +434,10 @@ func TestMermaidReplaceAll_RendersConcurrently(t *testing.T) {
 
 	p := newMermaidPreprocessor(MermaidSVG)
 	var b strings.Builder
+	// Distinct sources: identical diagrams share a fragment id and
+	// render once, which would hide a regression to serial rendering.
 	for i := 0; i < n; i++ {
-		b.WriteString("```mermaid\ngraph TD\n  A --> B\n```\n\n")
+		fmt.Fprintf(&b, "```mermaid\ngraph TD\n  A --> B%d\n```\n\n", i)
 	}
 	html := "<p>" + p.Extract(b.String()) + "</p>"
 

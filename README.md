@@ -171,11 +171,18 @@ an external file-change reload keeps keyboard focus on that box. The same proces
 streamable HTTP MCP at `/mcp`. The server binds loopback only (override
 with `--addr` / `VELLUM_VIEW_ADDR`). Cache health: entries older than 7
 days are dropped, then oldest entries are evicted until total size is
-under 50 MB. First paint waits on the article text only: images carry
-`loading="lazy"`, and each Mermaid SVG (typically hundreds of KB) is
-lifted out of the page and fetched from `/_vellum/fragment` when it
-scrolls near the viewport, into a placeholder that already has the
-diagram's aspect ratio so nothing below it shifts.
+under 50 MB. First paint waits on the article text only: the page is
+converted without running `mmdc` or KaTeX, so each Mermaid diagram and
+math expression arrives as a placeholder (an animated box, or the raw
+TeX), and images carry `loading="lazy"`. The page fetches each
+placeholder from `/_vellum/fragment` when it scrolls near the viewport
+(or on click); the server renders it then, caching the result by content
+hash so the same diagram or expression is never rendered twice, and
+renders a document's math in one `node` batch. A fragment whose render
+fails shows its source, the error, and a Retry button; a fetch that the
+daemon did not answer retries by itself. Copy and PDF still convert the
+whole document. A revisit reserves each cached diagram's aspect ratio
+so nothing below it shifts.
 
 `vellum install-viewer` generates `~/Applications/Vellum Viewer.app`,
 registers it with Launch Services, and (with [`duti`](https://github.com/moretension/duti) on `PATH`) sets it as the default handler for Markdown. The app executable is a small Cocoa binary (compiled with clang at install time) that receives Launch Services open-document Apple Events and runs `vellum --open` — a shell-script launcher cannot receive those events. Requires Xcode Command Line Tools. Uninstall with `vellum uninstall-viewer`. Debug log: `~/Library/Logs/vellum-viewer.log`.

@@ -5,34 +5,74 @@ package viewer
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/marcelocantos/vellum/convert"
 )
 
-// mmdc-shaped SVG: nested <svg> icon plus a <foreignObject><div> label, so
-// naive div or svg matching would cut the wrapper short.
+// A document with inline and display math and two Mermaid diagrams, the
+// second a scaled duplicate of the first (same fragment id).
+const lazyDoc = "# Hello\n\nbefore $x^2$ and\n\n$$\na = b\n$$\n\n```mermaid\ngraph TD\n  A --> B\n```\n\n<!-- vellum:scale 0.5 -->\n```mermaid\ngraph TD\n  A --> B\n```\n\n![pic](pic.png)\n\nafter\n"
+
+// mmdc-shaped SVG: nested <svg> icon plus a <foreignObject><div> label.
 const sampleMermaidSVG = `<svg id="my-svg" width="100%" xmlns="http://www.w3.org/2000/svg" class="flowchart" style="max-width: 360px; background-color: white;" viewBox="4 4 360 418" role="graphics-document document"><g><foreignObject width="80" height="24"><div xmlns="http://www.w3.org/1999/xhtml"><span>Start</span></div></foreignObject><svg width="10" height="10"><circle r="4"/></svg></g></svg>`
 
-const sampleSequenceSVG = `<svg id="my-svg" width="100%" xmlns="http://www.w3.org/2000/svg" style="max-width: 450px;" viewBox="-50 -10 450 261"><g><text>Hi</text></g></svg>`
+// stubFragments stands in for mmdc and node: every Mermaid diagram becomes
+// sampleMermaidSVG, every math expression a KaTeX-shaped span. Sources
+// containing "boom" fail.
+func stubFragments(calls *atomic.Int64) func(context.Context, []convert.Fragment) (map[string]convert.FragmentResult, error) {
+	return func(_ context.Context, frags []convert.Fragment) (map[string]convert.FragmentResult, error) {
+		out := map[string]convert.FragmentResult{}
+		for _, f := range frags {
+			calls.Add(1)
+			if strings.Contains(f.Source, "boom") {
+				out[f.ID] = convert.FragmentResult{Err: errors.New("mmdc: simulated failure")}
+				continue
+			}
+			switch f.Kind {
+			case convert.FragmentMermaid:
+				out[f.ID] = convert.FragmentResult{HTML: sampleMermaidSVG}
+			default:
+				out[f.ID] = convert.FragmentResult{HTML: `<span class="katex">` + f.Source + `</span>`}
+			}
+		}
+		return out, nil
+	}
+}
 
-func mermaidStubHTML(_ context.Context, _ string, _ *convert.Options) (string, []string, error) {
-	return `<!DOCTYPE html><html><head><title>T</title></head><body>
-<h1 id="hello">Hello</h1>
-<p>before</p>
-<div class="mermaid-svg">` + sampleMermaidSVG + `</div>
-<p>between</p>
-<div class="mermaid-svg" style="max-width: 50%">` + sampleSequenceSVG + `</div>
-<div class="mermaid-svg"><pre class="mermaid-error">graph TD</pre></div>
-<p><img src="pic.png" alt="pic"></p>
-<p>after</p>
-</body></html>`, nil, nil
+func writeDoc(t *testing.T, body string) (dir, md string) {
+	t.Helper()
+	dir = t.TempDir()
+	md = filepath.Join(dir, "doc.md")
+	if err := os.WriteFile(md, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return dir, md
+}
+
+func getText(t *testing.T, u string) (int, http.Header, string) {
+	t.Helper()
+	resp, err := http.Get(u)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	b, _ := io.ReadAll(resp.Body)
+	return resp.StatusCode, resp.Header, string(b)
+}
+
+func fragmentURL(ts, md, id string) string {
+	return ts + ChromeFragmentPath + "?path=" + url.QueryEscape(md) + "&id=" + id
 }
 
 func TestLazyLoadImages(t *testing.T) {
@@ -47,158 +87,276 @@ func TestLazyLoadImages(t *testing.T) {
 	}
 }
 
-func TestDeferMermaid_LiftsSVGsAndReservesBox(t *testing.T) {
-	in, _, _ := mermaidStubHTML(context.Background(), "", nil)
-	out, frags := deferMermaid(in)
-	if len(frags) != 2 {
-		t.Fatalf("want 2 fragments, got %d", len(frags))
+func TestStamp_RejectsOtherFormats(t *testing.T) {
+	dir, md := writeDoc(t, "x")
+	cache := filepath.Join(dir, "c.html")
+	if err := os.WriteFile(cache, []byte("c"), 0o644); err != nil {
+		t.Fatal(err)
 	}
-	if strings.Contains(out, "<svg") {
-		t.Fatalf("SVG left inline:\n%s", out)
+	if err := writeStamp(cache, md); err != nil {
+		t.Fatal(err)
 	}
-	for _, want := range []string{
-		`<p>before</p>`, `<p>between</p>`, `<p>after</p>`,
-		`<div class="mermaid-svg"><div class="vellum-lazy-svg" data-vellum-fragment="` + fragmentID(sampleMermaidSVG) + `"`,
-		`style="aspect-ratio: 360 / 418; max-width: 360px"`,
-		`<div class="mermaid-svg" style="max-width: 50%"><div class="vellum-lazy-svg" data-vellum-fragment="` + fragmentID(sampleSequenceSVG) + `"`,
-		`style="aspect-ratio: 450 / 261; max-width: 450px"`,
-		`<div class="mermaid-svg"><pre class="mermaid-error">graph TD</pre></div>`,
-	} {
-		if !strings.Contains(out, want) {
-			t.Fatalf("missing %q in:\n%s", want, out)
+	info, _ := os.Stat(md)
+	if !stampMatches(cache, info) {
+		t.Fatal("fresh stamp must match")
+	}
+	// A v0.24 stamp (mtime and size only) belongs to a whole-page cache
+	// entry with diagrams inline; it must miss so the shell is rendered.
+	data, _ := os.ReadFile(stampPath(cache))
+	old := strings.Join(strings.Fields(string(data))[:2], " ") + "\n"
+	if err := os.WriteFile(stampPath(cache), []byte(old), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if stampMatches(cache, info) {
+		t.Fatal("two-field stamp from an older layout must not match")
+	}
+}
+
+func TestFlightGroup_CoalescesSameKey(t *testing.T) {
+	var g flightGroup
+	var runs atomic.Int32
+	release := make(chan struct{})
+	fn := func() (map[string]convert.FragmentResult, error) {
+		runs.Add(1)
+		<-release
+		return map[string]convert.FragmentResult{"a": {HTML: "x"}}, nil
+	}
+	var wg sync.WaitGroup
+	results := make([]map[string]convert.FragmentResult, 3)
+	for i := range results {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			results[i], _ = g.do("k", fn)
+		}()
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for runs.Load() == 0 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	time.Sleep(10 * time.Millisecond) // let the other two queue behind the flight
+	close(release)
+	wg.Wait()
+	if runs.Load() != 1 {
+		t.Fatalf("fn ran %d times, want 1", runs.Load())
+	}
+	for i, r := range results {
+		if r["a"].HTML != "x" {
+			t.Fatalf("waiter %d got %+v", i, r)
 		}
 	}
-	if got := frags[fragmentID(sampleMermaidSVG)]; got != sampleMermaidSVG {
-		t.Fatalf("fragment 1 mangled:\n%s", got)
-	}
-	if got := frags[fragmentID(sampleSequenceSVG)]; got != sampleSequenceSVG {
-		t.Fatalf("fragment 2 mangled:\n%s", got)
-	}
-	// Exactly one `</div>` follows each placeholder: the original wrapper's.
-	if n := strings.Count(out, `"></div></div>`); n != 2 {
-		t.Fatalf("want 2 closed placeholders, got %d:\n%s", n, out)
+	// A later call after landing runs again.
+	if _, _ = g.do("k", fn); runs.Load() != 2 {
+		t.Fatalf("post-landing call did not run: %d", runs.Load())
 	}
 }
 
-func TestDeferMermaid_NoDiagramsIsIdentity(t *testing.T) {
-	in := `<html><body><p>plain</p><svg viewBox="0 0 1 1"></svg><div class="mermaid-svg"><pre class="mermaid-error">x</pre></div></body></html>`
-	out, frags := deferMermaid(in)
-	if out != in || frags != nil {
-		t.Fatalf("expected identity, got %v:\n%s", frags, out)
-	}
-	unterminated := `<div class="mermaid-svg"><svg><g></g>`
-	if out, frags := deferMermaid(unterminated); out != unterminated || frags != nil {
-		t.Fatalf("unterminated svg must be left alone, got %v:\n%s", frags, out)
-	}
-}
-
-func TestInlineSVGLength(t *testing.T) {
-	s := `<svg><svg></svg><foreignObject><div></div></foreignObject></svg></div>tail`
-	n, ok := inlineSVGLength(s)
-	if !ok || s[:n] != `<svg><svg></svg><foreignObject><div></div></foreignObject></svg>` {
-		t.Fatalf("got ok=%v n=%d %q", ok, n, s[:n])
-	}
-	if _, ok := inlineSVGLength(`<p></p>`); ok {
-		t.Fatal("non-svg prefix must not match")
-	}
-	if _, ok := inlineSVGLength(`<svg><svg></svg>`); ok {
-		t.Fatal("unbalanced svg must not match")
-	}
-}
-
-func TestServer_DefersMermaidAndServesFragments(t *testing.T) {
-	dir := t.TempDir()
-	md := filepath.Join(dir, "doc.md")
-	if err := os.WriteFile(md, []byte("# Hello\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	s := &Server{CacheDir: filepath.Join(dir, "cache"), RenderFile: mermaidStubHTML}
+func TestServer_ShellFirstThenFragmentsOnDemand(t *testing.T) {
+	dir, md := writeDoc(t, lazyDoc)
+	var renders atomic.Int64
+	s := &Server{CacheDir: filepath.Join(dir, "cache"), RenderFragments: stubFragments(&renders)}
 	ts := startTestServer(t, s)
 
-	resp, err := http.Get(ViewURL(ts.URL, md))
-	if err != nil {
-		t.Fatal(err)
+	status, _, page := getText(t, ViewURL(ts.URL, md))
+	if status != http.StatusOK {
+		t.Fatalf("status %d: %s", status, page)
 	}
-	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
-	page := string(body)
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("status %d: %s", resp.StatusCode, page)
+	if renders.Load() != 0 {
+		t.Fatalf("first paint waited on %d fragment renders", renders.Load())
 	}
-	if strings.Contains(page, "<svg id=") {
-		t.Fatalf("page must not inline Mermaid SVG:\n%s", page)
+	frags := convert.ExtractFragments([]byte(lazyDoc), nil)
+	if len(frags) != 4 {
+		t.Fatalf("fragments: %+v", frags)
 	}
-	id := fragmentID(sampleMermaidSVG)
-	if !strings.Contains(page, `data-vellum-fragment="`+id+`"`) {
-		t.Fatalf("page missing fragment placeholder:\n%s", page)
+	display, inline, diagram := frags[0], frags[1], frags[2]
+	// Chrome toolbar icons are inline SVG too, so look for the diagram's.
+	if strings.Contains(page, `<svg id="my-svg"`) || strings.Contains(page, `class="katex"`) {
+		t.Fatalf("page must not carry rendered fragments:\n%s", page)
 	}
-	if !strings.Contains(page, `<img src="pic.png" alt="pic" loading="lazy" decoding="async">`) {
-		t.Fatalf("page missing lazy image:\n%s", page)
+	for _, want := range []string{
+		`<p>before <span class="vellum-deferred vellum-deferred-math" data-vellum-fragment="` + inline.ID + `">x^2</span> and</p>`,
+		`<div class="katex-display"><span class="vellum-deferred vellum-deferred-math" data-vellum-fragment="` + display.ID + `">a = b</span></div>`,
+		`<div class="mermaid-svg"><div class="vellum-deferred vellum-deferred-mermaid" data-vellum-fragment="` + diagram.ID + `" role="img" aria-label="Diagram, loading"><pre>graph TD`,
+		`<div class="mermaid-svg" style="max-width: 50%"><div class="vellum-deferred vellum-deferred-mermaid" data-vellum-fragment="` + diagram.ID + `"`,
+		`<img src="pic.png" alt="pic" loading="lazy" decoding="async">`,
+		`<p>after</p>`,
+		`katex.min.css`,
+		"hydrateDeferred()",
+	} {
+		if !strings.Contains(page, want) {
+			t.Fatalf("missing %q in:\n%s", want, page)
+		}
 	}
-	if !strings.Contains(page, "hydrateLazyFragments()") || !strings.Contains(page, ".vellum-lazy-svg") {
-		t.Fatalf("chrome missing lazy fragment loader")
+	if strings.Contains(page, "aspect-ratio") {
+		t.Fatalf("no render is cached yet, so no box can be reserved:\n%s", page)
 	}
 
-	// The convert cache (clipboard / PDF source) keeps the SVG inline.
+	// The shell cache holds placeholders, never a rendered fragment.
 	ents, err := os.ReadDir(s.CacheDir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	cached := ""
 	for _, e := range ents {
-		if strings.HasSuffix(e.Name(), ".html") {
-			b, err := os.ReadFile(filepath.Join(s.CacheDir, e.Name()))
-			if err != nil {
-				t.Fatal(err)
+		if strings.HasSuffix(e.Name(), ".html") && !strings.HasPrefix(e.Name(), fragmentCachePrefix) {
+			b, _ := os.ReadFile(filepath.Join(s.CacheDir, e.Name()))
+			if !strings.Contains(string(b), "vellum-deferred") || strings.Contains(string(b), "<svg") {
+				t.Fatalf("shell cache must hold placeholders only:\n%s", b)
 			}
-			cached = string(b)
 		}
 	}
-	if !strings.Contains(cached, sampleMermaidSVG) || strings.Contains(cached, "vellum-lazy-svg") {
-		t.Fatalf("cache must stay whole and placeholder-free:\n%s", cached)
-	}
 
-	fragURL := ts.URL + ChromeFragmentPath + "?path=" + url.QueryEscape(md) + "&id=" + id
-	fr, err := http.Get(fragURL)
-	if err != nil {
-		t.Fatal(err)
+	// Mermaid: one render per id, then cache hits; immutable response.
+	status, hdr, body := getText(t, fragmentURL(ts.URL, md, diagram.ID))
+	if status != http.StatusOK || body != sampleMermaidSVG {
+		t.Fatalf("fragment %d: %s", status, body)
 	}
-	defer fr.Body.Close()
-	fb, _ := io.ReadAll(fr.Body)
-	if fr.StatusCode != http.StatusOK {
-		t.Fatalf("fragment status %d: %s", fr.StatusCode, fb)
-	}
-	if string(fb) != sampleMermaidSVG {
-		t.Fatalf("fragment body mismatch:\n%s", fb)
-	}
-	if cc := fr.Header.Get("Cache-Control"); !strings.Contains(cc, "immutable") {
+	if cc := hdr.Get("Cache-Control"); !strings.Contains(cc, "immutable") {
 		t.Fatalf("fragment should be immutable, got %q", cc)
 	}
-	if got := s.ConvertCount.Load(); got != 1 {
-		t.Fatalf("fragment fetch must hit the cache, converts=%d", got)
+	if renders.Load() != 1 {
+		t.Fatalf("renders=%d after one diagram", renders.Load())
+	}
+	if _, _, again := getText(t, fragmentURL(ts.URL, md, diagram.ID)); again != sampleMermaidSVG || renders.Load() != 1 {
+		t.Fatalf("second fetch must come from the fragment cache (renders=%d)", renders.Load())
+	}
+	if _, err := os.Stat(fragmentCachePath(s.CacheDir, diagram.ID)); err != nil {
+		t.Fatalf("fragment not cached: %v", err)
 	}
 
-	for _, bad := range []struct{ q, name string }{
-		{"?path=" + url.QueryEscape(md) + "&id=0000000000000000", "unknown id"},
-		{"?path=" + url.QueryEscape(md) + "&id=nope", "malformed id"},
-		{"?path=" + url.QueryEscape(filepath.Join(dir, "missing.md")) + "&id=" + id, "missing file"},
-		{"?id=" + id, "missing path"},
+	// Math: the first request renders the document's whole batch (one
+	// node start), so the second expression is already cached.
+	status, _, body = getText(t, fragmentURL(ts.URL, md, inline.ID))
+	if status != http.StatusOK || body != `<span class="katex">x^2</span>` {
+		t.Fatalf("math fragment %d: %s", status, body)
+	}
+	if renders.Load() != 3 {
+		t.Fatalf("renders=%d, want the two math expressions batched with the diagram", renders.Load())
+	}
+	status, _, body = getText(t, fragmentURL(ts.URL, md, display.ID))
+	if status != http.StatusOK || body != `<span class="katex">a = b</span>` || renders.Load() != 3 {
+		t.Fatalf("display math %d %q renders=%d", status, body, renders.Load())
+	}
+
+	// A revisit reserves the diagram's box from the cached SVG.
+	_, _, page = getText(t, ViewURL(ts.URL, md))
+	if !strings.Contains(page, `data-vellum-fragment="`+diagram.ID+`" role="img" aria-label="Diagram, loading" style="aspect-ratio: 360 / 418; max-width: 360px">`) {
+		t.Fatalf("revisit should reserve the diagram box:\n%s", page)
+	}
+	if got := s.ConvertCount.Load(); got != 1 {
+		t.Fatalf("shell must be served from cache, converts=%d", got)
+	}
+
+	for _, bad := range []struct {
+		q, name string
+		status  int
+	}{
+		{"?path=" + url.QueryEscape(md) + "&id=0000000000000000", "unknown id", http.StatusNotFound},
+		{"?path=" + url.QueryEscape(md) + "&id=nope", "malformed id", http.StatusBadRequest},
+		{"?path=" + url.QueryEscape(filepath.Join(dir, "missing.md")) + "&id=" + "0000000000000000", "missing file", http.StatusNotFound},
+		{"?id=" + diagram.ID, "missing path", http.StatusBadRequest},
 	} {
-		r, err := http.Get(ts.URL + ChromeFragmentPath + bad.q)
-		if err != nil {
-			t.Fatal(err)
-		}
-		r.Body.Close()
-		if r.StatusCode == http.StatusOK {
-			t.Fatalf("%s: expected error status, got 200", bad.name)
+		status, _, _ := getText(t, ts.URL+ChromeFragmentPath+bad.q)
+		if status != bad.status {
+			t.Fatalf("%s: status %d, want %d", bad.name, status, bad.status)
 		}
 	}
-	if r, err := http.Post(ts.URL+ChromeFragmentPath+"?path="+url.QueryEscape(md)+"&id="+id, "", nil); err != nil {
+	if r, err := http.Post(fragmentURL(ts.URL, md, diagram.ID), "", nil); err != nil {
 		t.Fatal(err)
 	} else {
 		r.Body.Close()
 		if r.StatusCode != http.StatusMethodNotAllowed {
 			t.Fatalf("POST status %d", r.StatusCode)
 		}
+	}
+}
+
+func TestServer_FragmentRenderFailureIsNotCached(t *testing.T) {
+	dir, md := writeDoc(t, "```mermaid\ngraph TD\n  boom\n```\n")
+	var renders atomic.Int64
+	s := &Server{CacheDir: filepath.Join(dir, "cache"), RenderFragments: stubFragments(&renders)}
+	ts := startTestServer(t, s)
+	id := convert.ExtractFragments([]byte("```mermaid\ngraph TD\n  boom\n```\n"), nil)[0].ID
+
+	for attempt := 1; attempt <= 2; attempt++ {
+		status, hdr, body := getText(t, fragmentURL(ts.URL, md, id))
+		if status != http.StatusInternalServerError || !strings.Contains(body, "simulated failure") {
+			t.Fatalf("attempt %d: %d %s", attempt, status, body)
+		}
+		if cc := hdr.Get("Cache-Control"); cc != "no-store" {
+			t.Fatalf("failure must not be cacheable, got %q", cc)
+		}
+		if renders.Load() != int64(attempt) {
+			t.Fatalf("attempt %d: renders=%d (failure cached?)", attempt, renders.Load())
+		}
+	}
+	if _, err := os.Stat(fragmentCachePath(s.CacheDir, id)); !os.IsNotExist(err) {
+		t.Fatalf("failed fragment must not reach the cache: %v", err)
+	}
+}
+
+func TestServer_ClipboardResolvesEveryFragment(t *testing.T) {
+	dir, md := writeDoc(t, lazyDoc)
+	var renders atomic.Int64
+	var got string
+	s := &Server{
+		CacheDir:        filepath.Join(dir, "cache"),
+		RenderFragments: stubFragments(&renders),
+		WriteClipboard:  func(html string) error { got = html; return nil },
+	}
+	ts := startTestServer(t, s)
+
+	resp, err := http.Post(ts.URL+ChromeClipboardPath+"?path="+url.QueryEscape(md), "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("clipboard status %d", resp.StatusCode)
+	}
+	if strings.Contains(got, "vellum-deferred") {
+		t.Fatalf("clipboard HTML still has placeholders:\n%s", got)
+	}
+	for _, want := range []string{
+		`<p>before <span class="katex">x^2</span> and</p>`,
+		`<div class="katex-display"><span class="katex">a = b</span></div>`,
+		`<div class="mermaid-svg">` + sampleMermaidSVG + `</div>`,
+		`<div class="mermaid-svg" style="max-width: 50%">` + sampleMermaidSVG + `</div>`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("clipboard missing %q:\n%s", want, got)
+		}
+	}
+	// Three distinct fragments, rendered once; the view page then serves
+	// them from the fragment cache.
+	if renders.Load() != 3 {
+		t.Fatalf("renders=%d", renders.Load())
+	}
+	diagram := convert.ExtractFragments([]byte(lazyDoc), nil)[2]
+	if _, _, body := getText(t, fragmentURL(ts.URL, md, diagram.ID)); body != sampleMermaidSVG || renders.Load() != 3 {
+		t.Fatalf("fragment after clipboard: %q renders=%d", body, renders.Load())
+	}
+	// The shell cache is untouched by the full render.
+	shell, err := s.cachedHTML(context.Background(), md)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(shell), "vellum-deferred") {
+		t.Fatalf("shell cache lost its placeholders:\n%s", shell)
+	}
+}
+
+func TestServer_FragmentNotFoundWhenSourceChanged(t *testing.T) {
+	dir, md := writeDoc(t, lazyDoc)
+	var renders atomic.Int64
+	s := &Server{CacheDir: filepath.Join(dir, "cache"), RenderFragments: stubFragments(&renders)}
+	ts := startTestServer(t, s)
+	diagram := convert.ExtractFragments([]byte(lazyDoc), nil)[2]
+
+	if err := os.WriteFile(md, []byte("# no diagrams\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	status, _, _ := getText(t, fragmentURL(ts.URL, md, diagram.ID))
+	if status != http.StatusNotFound || renders.Load() != 0 {
+		t.Fatalf("stale id: status %d renders=%d", status, renders.Load())
 	}
 }

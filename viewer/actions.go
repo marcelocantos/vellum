@@ -125,7 +125,9 @@ func (s *Server) handleClipboard(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	html, err := s.cachedHTML(r.Context(), absPath)
+	// The clipboard carries the whole document, so every deferred
+	// diagram and expression is rendered now (cache hits are free).
+	html, _, err := s.completeHTML(r.Context(), absPath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			http.NotFound(w, r)
@@ -145,7 +147,7 @@ func (s *Server) handleClipboard(w http.ResponseWriter, r *http.Request) {
 			return err
 		}
 	}
-	if err := writeFn(string(html)); err != nil {
+	if err := writeFn(html); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

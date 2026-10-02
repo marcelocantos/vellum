@@ -132,23 +132,12 @@ func (m *mathPreprocessor) ReplaceAll(ctx context.Context, html string) (string,
 	if len(m.exprs) == 0 {
 		return html, nil
 	}
-
-	rendered, err := batchKaTeX(ctx, m.exprs)
+	results, err := RenderFragments(ctx, m.fragments())
 	if err != nil {
 		return "", err
 	}
-
-	for i, p := range m.placeholders {
-		var wrapped string
-		if m.exprs[i].DisplayMode {
-			wrapped = `<div class="katex-display">` + rendered[i] + `</div>`
-		} else {
-			wrapped = rendered[i]
-		}
-		html = strings.Replace(html, p, wrapped, 1)
-	}
-
-	return html, nil
+	out, _ := ResolveFragments(m.deferAll(html), results)
+	return out, nil
 }
 
 func batchKaTeX(ctx context.Context, exprs []mathExpr) ([]string, error) {

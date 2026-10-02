@@ -903,40 +903,126 @@
     requestAnimationFrame(start);
   }
 
-  // Mermaid SVGs are lifted out of the page by the server; fetch each
-  // one as it nears the viewport so first paint is text-only.
-  function hydrateLazyFragments() {
+  // Mermaid diagrams and math reach the page as placeholders; the server
+  // runs mmdc / KaTeX for one only when asked. Fetch each as it nears the
+  // viewport (or on click) so first paint never waits on a subprocess.
+  // A transport failure (daemon restarting, connection dropped) retries
+  // with backoff; a render failure or a stale id shows the fragment's
+  // source with the error and a Retry button, never a half state.
+  function hydrateDeferred() {
     if (!article) return;
     const nodes = Array.prototype.slice.call(
-      article.querySelectorAll(".vellum-lazy-svg[data-vellum-fragment]")
+      article.querySelectorAll(".vellum-deferred[data-vellum-fragment]")
     );
     if (!nodes.length) return;
 
-    function load(el) {
+    const RETRY_DELAYS_MS = [1000, 3000];
+    const MESSAGE_MAX = 240;
+
+    function isMermaid(el) {
+      return el.classList.contains("vellum-deferred-mermaid");
+    }
+
+    function firstLine(text) {
+      const line = String(text || "").trim().split("\n")[0];
+      return line.length > MESSAGE_MAX ? line.slice(0, MESSAGE_MAX) + "…" : line;
+    }
+
+    function clearNote(el) {
+      const note = el.querySelector(".vellum-deferred-note");
+      if (note) note.remove();
+    }
+
+    function markLoading(el) {
+      clearNote(el);
+      el.classList.remove("is-failed");
+      el.classList.add("is-loading");
+      el.setAttribute("aria-busy", "true");
+      if (isMermaid(el)) el.setAttribute("aria-label", "Diagram, loading");
+    }
+
+    function markFailed(el, message) {
+      el.classList.remove("is-loading");
+      el.classList.add("is-failed");
+      el.removeAttribute("aria-busy");
+      clearNote(el);
+      const label = (isMermaid(el) ? "Diagram failed to render" : "Math failed to render") + ": " + message;
+      const note = document.createElement("span");
+      note.className = "vellum-deferred-note";
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "vellum-deferred-retry";
+      btn.title = label;
+      btn.setAttribute("aria-label", label + ". Retry");
+      if (isMermaid(el)) {
+        const text = document.createElement("span");
+        text.textContent = label + ". ";
+        note.appendChild(text);
+        btn.textContent = "Retry";
+        el.setAttribute("aria-label", label);
+      } else {
+        btn.textContent = "↻";
+        el.title = label;
+      }
+      btn.addEventListener("click", function (ev) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        load(el, 0);
+      });
+      note.appendChild(btn);
+      el.insertBefore(note, el.firstChild);
+    }
+
+    function load(el, attempt) {
       if (el.getAttribute("data-vellum-loading") === "1") return;
       el.setAttribute("data-vellum-loading", "1");
+      markLoading(el);
       const id = el.getAttribute("data-vellum-fragment") || "";
       fetch(actionURL("fragment") + "&id=" + encodeURIComponent(id))
         .then(function (resp) {
-          if (!resp.ok) throw new Error("HTTP " + resp.status);
-          return resp.text();
+          return resp.text().then(function (text) {
+            if (resp.ok) return text;
+            const err = new Error(
+              resp.status === 404
+                ? "no longer in the document (reload to refresh)"
+                : firstLine(text) || "HTTP " + resp.status
+            );
+            // Gateway-style statuses mean the daemon is not there to
+            // answer; anything else is a definitive answer.
+            err.transient = resp.status === 502 || resp.status === 503 || resp.status === 504;
+            throw err;
+          });
         })
         .then(function (text) {
           const tpl = document.createElement("template");
           tpl.innerHTML = text;
-          const svg = tpl.content.querySelector("svg");
-          if (!svg) throw new Error("no SVG in fragment");
-          el.replaceWith(svg);
+          const node = tpl.content.firstElementChild;
+          if (!node) throw new Error("empty fragment");
+          el.replaceWith(node);
         })
         .catch(function (err) {
           el.removeAttribute("data-vellum-loading");
-          el.classList.add("is-failed");
-          el.textContent = "Diagram failed to load (" + (err && err.message ? err.message : err) + "). Click to retry.";
+          // fetch rejects with a TypeError when the connection fails.
+          const transient = Boolean(err && (err.transient || err instanceof TypeError));
+          if (transient && attempt < RETRY_DELAYS_MS.length) {
+            window.setTimeout(function () {
+              if (document.contains(el)) load(el, attempt + 1);
+            }, RETRY_DELAYS_MS[attempt]);
+            return;
+          }
+          const message = transient
+            ? "the view server did not answer (" + (err && err.message ? err.message : err) + ")"
+            : err && err.message
+              ? err.message
+              : String(err);
+          markFailed(el, message);
         });
     }
 
     if (typeof IntersectionObserver !== "function") {
-      nodes.forEach(load);
+      nodes.forEach(function (n) {
+        load(n, 0);
+      });
       return;
     }
     const io = new IntersectionObserver(
@@ -944,7 +1030,7 @@
         entries.forEach(function (entry) {
           if (!entry.isIntersecting) return;
           io.unobserve(entry.target);
-          load(entry.target);
+          load(entry.target, 0);
         });
       },
       { root: scrollPane || null, rootMargin: "1200px 0px" }
@@ -955,11 +1041,11 @@
     article.addEventListener("click", function (ev) {
       const t = ev.target;
       if (!(t instanceof Element)) return;
-      const el = t.closest(".vellum-lazy-svg");
-      if (el && article.contains(el)) {
+      const el = t.closest(".vellum-deferred");
+      if (el && article.contains(el) && !el.classList.contains("is-failed")) {
         ev.preventDefault();
         io.unobserve(el);
-        load(el);
+        load(el, 0);
       }
     });
   }
@@ -967,7 +1053,7 @@
   buildTOC();
   fillTOC();
   restoreScroll();
-  hydrateLazyFragments();
+  hydrateDeferred();
   focusScrollPane();
   startWatch();
 
@@ -1150,6 +1236,8 @@
     article.addEventListener("click", function (ev) {
       const t = ev.target;
       if (!(t instanceof Element)) return;
+      // A placeholder has nothing to show in the lightbox yet.
+      if (t.closest(".vellum-deferred")) return;
       const img = t.closest("img");
       if (img && article.contains(img)) {
         ev.preventDefault();
