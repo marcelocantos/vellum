@@ -903,9 +903,71 @@
     requestAnimationFrame(start);
   }
 
+  // Mermaid SVGs are lifted out of the page by the server; fetch each
+  // one as it nears the viewport so first paint is text-only.
+  function hydrateLazyFragments() {
+    if (!article) return;
+    const nodes = Array.prototype.slice.call(
+      article.querySelectorAll(".vellum-lazy-svg[data-vellum-fragment]")
+    );
+    if (!nodes.length) return;
+
+    function load(el) {
+      if (el.getAttribute("data-vellum-loading") === "1") return;
+      el.setAttribute("data-vellum-loading", "1");
+      const id = el.getAttribute("data-vellum-fragment") || "";
+      fetch(actionURL("fragment") + "&id=" + encodeURIComponent(id))
+        .then(function (resp) {
+          if (!resp.ok) throw new Error("HTTP " + resp.status);
+          return resp.text();
+        })
+        .then(function (text) {
+          const tpl = document.createElement("template");
+          tpl.innerHTML = text;
+          const svg = tpl.content.querySelector("svg");
+          if (!svg) throw new Error("no SVG in fragment");
+          el.replaceWith(svg);
+        })
+        .catch(function (err) {
+          el.removeAttribute("data-vellum-loading");
+          el.classList.add("is-failed");
+          el.textContent = "Diagram failed to load (" + (err && err.message ? err.message : err) + "). Click to retry.";
+        });
+    }
+
+    if (typeof IntersectionObserver !== "function") {
+      nodes.forEach(load);
+      return;
+    }
+    const io = new IntersectionObserver(
+      function (entries) {
+        entries.forEach(function (entry) {
+          if (!entry.isIntersecting) return;
+          io.unobserve(entry.target);
+          load(entry.target);
+        });
+      },
+      { root: scrollPane || null, rootMargin: "1200px 0px" }
+    );
+    nodes.forEach(function (n) {
+      io.observe(n);
+    });
+    article.addEventListener("click", function (ev) {
+      const t = ev.target;
+      if (!(t instanceof Element)) return;
+      const el = t.closest(".vellum-lazy-svg");
+      if (el && article.contains(el)) {
+        ev.preventDefault();
+        io.unobserve(el);
+        load(el);
+      }
+    });
+  }
+
   buildTOC();
   fillTOC();
   restoreScroll();
+  hydrateLazyFragments();
   focusScrollPane();
   startWatch();
 
