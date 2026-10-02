@@ -101,7 +101,7 @@ func advertisements(t *testing.T) ([]advertisement, []*mcp.Tool) {
 	t.Cleanup(cancel)
 
 	clientTransport, serverTransport := mcp.NewInMemoryTransports()
-	serverSession, err := newServer("test", nil, "").Connect(ctx, serverTransport, nil)
+	serverSession, err := newServer("test", nil, "", "").Connect(ctx, serverTransport, nil)
 	if err != nil {
 		t.Fatalf("connecting server: %v", err)
 	}

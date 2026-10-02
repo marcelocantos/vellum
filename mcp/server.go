@@ -24,7 +24,7 @@ type Endpoint struct {
 	Path    string   `json:"path,omitempty" jsonschema:"absolute path (file media; or write path for file_reference)"`
 	Paths   []string `json:"paths,omitempty" jsonschema:"multiple absolute paths (file media batch only)"`
 	Content string   `json:"content,omitempty" jsonschema:"raw text (content media only)"`
-	Format  string   `json:"format,omitempty" jsonschema:"optional document format override (markdown, html, rtf, pdf, docx, …)"`
+	Format  string   `json:"format,omitempty" jsonschema:"optional document format override (markdown, html, rtf, pdf, pptx, docx, …)"`
 }
 
 // FilePair is sugar for Markdown → PDF file batches (legacy convert shape).
@@ -35,11 +35,12 @@ type FilePair struct {
 
 // ConvertInput is the input schema for the unified convert tool.
 type ConvertInput struct {
-	From    *Endpoint      `json:"from,omitempty" jsonschema:"source medium descriptor (required unless files is set)"`
-	To      *Endpoint      `json:"to,omitempty" jsonschema:"sink medium descriptor (required unless files is set)"`
-	Files   []FilePair     `json:"files,omitempty" jsonschema:"legacy sugar: batch Markdown file → PDF file pairs"`
-	Style   *convert.Style `json:"style,omitempty" jsonschema:"per-call style overrides; each field overlays the corresponding config-file value"`
-	Backend string         `json:"backend,omitempty" jsonschema:"renderer backend for this call: \"weasyprint\" (default) or \"prince\"; empty falls through to the config file"`
+	From     *Endpoint      `json:"from,omitempty" jsonschema:"source medium descriptor (required unless files is set)"`
+	To       *Endpoint      `json:"to,omitempty" jsonschema:"sink medium descriptor (required unless files is set)"`
+	Files    []FilePair     `json:"files,omitempty" jsonschema:"legacy sugar: batch Markdown file → PDF file pairs"`
+	Style    *convert.Style `json:"style,omitempty" jsonschema:"per-call style overrides; each field overlays the corresponding config-file value"`
+	Backend  string         `json:"backend,omitempty" jsonschema:"renderer backend for this call: \"weasyprint\" (default) or \"prince\"; empty falls through to the config file"`
+	Template string         `json:"template,omitempty" jsonschema:"PowerPoint reference deck for pptx output: a .pptx path, a bare name under ~/.config/vellum/templates/, or \"default\" for the built-in deck; empty falls through to the config file"`
 }
 
 // ConvertOutput is the structured output schema for convert.
@@ -75,15 +76,15 @@ func Serve(ctx context.Context, version string) error {
 	if err != nil {
 		return fmt.Errorf("loading config: %w", err)
 	}
-	return newServer(version, cfg.Style, cfg.Backend).Run(ctx, &mcp.StdioTransport{})
+	return newServer(version, cfg.Style, cfg.Backend, cfg.Template).Run(ctx, &mcp.StdioTransport{})
 }
 
 // HTTPHandler returns a streamable HTTP handler for the vellum MCP
 // server. Mount it at /mcp on the localhost daemon (same process as
 // the Markdown view server). One shared MCP server instance serves
 // every session; convert is request-scoped.
-func HTTPHandler(version string, baseStyle *convert.Style, baseBackend string) http.Handler {
-	server := newServer(version, baseStyle, baseBackend)
+func HTTPHandler(version string, baseStyle *convert.Style, baseBackend, baseTemplate string) http.Handler {
+	server := newServer(version, baseStyle, baseBackend, baseTemplate)
 	return mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server {
 		return server
 	}, &mcp.StreamableHTTPOptions{SessionTimeout: idleSessionTimeout})
@@ -93,7 +94,7 @@ func HTTPHandler(version string, baseStyle *convert.Style, baseBackend string) h
 // to connect over any transport. Serve wires it to stdio; HTTPHandler
 // wires it to streamable HTTP; the tool-name consistency check connects
 // it in memory and reads the wire.
-func newServer(version string, baseStyle *convert.Style, baseBackend string) *mcp.Server {
+func newServer(version string, baseStyle *convert.Style, baseBackend, baseTemplate string) *mcp.Server {
 	server := mcp.NewServer(&mcp.Implementation{
 		Name:    "vellum",
 		Version: version,
@@ -113,28 +114,36 @@ Examples:
   { "from": { "media": "file", "path": "/abs/in.md" }, "to": { "media": "file", "path": "/abs/out.pdf" } }
   { "from": { "media": "file", "path": "/abs/doc.docx" }, "to": { "media": "content" } }
   { "from": { "media": "file", "path": "/abs/in.md" }, "to": { "media": "file_reference", "path": "/abs/out.pdf" } }
+  { "from": { "media": "file", "path": "/abs/deck.md" }, "to": { "media": "file", "path": "/abs/deck.pptx" }, "template": "/abs/brand.pptx" }
   { "files": [{ "input": "/abs/a.md" }, { "input": "/abs/b.md", "output": "/abs/b.pdf" }] }
 
 Formats are inferred aggressively (file extension, clipboard UTI, markdown default for content, pdf for md→file, markdown for rich→file). Optional from.format / to.format override.
 
+PowerPoint: to.path ending .pptx (or to.format pptx) writes a deck through pandoc. Headings at the slide level become slides, headings above it section slides, a YAML title block the title slide; lists, tables, images, code, math and ::: notes speaker notes carry through; Mermaid blocks become PNG pictures. Optional template picks the reference deck (a .pptx path, a bare name under ~/.config/vellum/templates/, or default for the built-in deck).
+
 Rich import (rtf/docx/html/… via pandoc; pdf via pdftoppm+pdftotext) extracts images/page renders into a TTL cache (or media_dir) and rewrites Markdown to absolute asset paths. Clipboard import probes RTF, HTML, then PDF (e.g. PowerPoint com.adobe.pdf).
 
-Disallowed (intractable): to.media content|clipboard with format pdf (binary PDF out). PDF *input* is allowed. macOS required for clipboard and file_reference. Optional style and backend overlay the user config for this call only.
+Disallowed (intractable): to.media content|clipboard with format pdf or pptx (binary out). PDF *input* is allowed; pptx input is not. macOS required for clipboard and file_reference. Optional style, backend and template overlay the user config for this call only.
 `),
-	}, makeConvertHandler(baseStyle, baseBackend))
+	}, makeConvertHandler(baseStyle, baseBackend, baseTemplate))
 
 	return server
 }
 
-func makeConvertHandler(baseStyle *convert.Style, baseBackend string) func(context.Context, *mcp.CallToolRequest, ConvertInput) (*mcp.CallToolResult, ConvertOutput, error) {
+func makeConvertHandler(baseStyle *convert.Style, baseBackend, baseTemplate string) func(context.Context, *mcp.CallToolRequest, ConvertInput) (*mcp.CallToolResult, ConvertOutput, error) {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, input ConvertInput) (*mcp.CallToolResult, ConvertOutput, error) {
 		backend := input.Backend
 		if backend == "" {
 			backend = baseBackend
 		}
+		template := input.Template
+		if template == "" {
+			template = baseTemplate
+		}
 		req := &convert.Request{
-			Style:   input.Style.OverlayOn(baseStyle),
-			Backend: backend,
+			Style:    input.Style.OverlayOn(baseStyle),
+			Backend:  backend,
+			Template: template,
 		}
 
 		if len(input.Files) > 0 {

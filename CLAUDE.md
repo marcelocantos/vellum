@@ -2,7 +2,7 @@
 
 Document preparation MCP server — media-orthogonal conversion (file,
 content, clipboard, file_reference) via goldmark + WeasyPrint (Prince
-opt-in) and pandoc for rich-text import.
+opt-in), pandoc for rich-text import and PowerPoint (pptx) output.
 
 ## Architecture
 
@@ -19,19 +19,22 @@ from media → normalise (pandoc import and/or math/mermaid preprocessors + gold
 
 Markdown → PDF path still: source preprocessors → goldmark → HTML template → WeasyPrint/Prince.
 
+Markdown → pptx path: Mermaid preprocessor (PNG, inlined as images) → pandoc gfm reader → pptx writer with `--reference-doc` = the selected template (`convert/pptx.go`). Built-in template is `embed/reference.pptx`, a pinned copy of pandoc's default.
+
 ### Key packages
 
 | Package | Role |
 |---------|------|
 | `cmd/vellum/` | CLI entry point |
-| `convert/` | Markdown → HTML/PDF pipeline; unified `Run` router; Backend interface. Math and Mermaid are source preprocessors (`convert/katex.go`, `convert/mermaid.go`), not goldmark extensions. |
+| `convert/` | Markdown → HTML/PDF pipeline; unified `Run` router; Backend interface. Math and Mermaid are source preprocessors (`convert/katex.go`, `convert/mermaid.go`), not goldmark extensions. `convert/pptx.go` is the pandoc-backed PowerPoint sink and template resolution. |
 | `clipboard/` | Rich pasteboard + Finder file references (macOS). `Write` tries AppKit then pandoc HTML→RTF. |
 | `importer/` | Rich-text → Markdown via pandoc; PDF via Poppler |
 | `adf/` | Markdown → Confluence ADF (library only; not a `convert.Run` sink) |
-| `internal/pandoc/` | HTML → RTF/plain export helper (clipboard fallback; not a public API) |
+| `internal/pandoc/` | pandoc export helpers: HTML → RTF/plain (clipboard fallback) and Markdown → file (pptx); not a public API |
+| `internal/xdg/` | Per-user config directory (`$XDG_CONFIG_HOME/vellum` or `~/.config/vellum`) shared by `config/` and template lookup |
 | `config/` | User configuration loaded from `~/.config/vellum/config.yaml` |
 | `mcp/` | MCP server (single `convert` tool; streamable HTTP + stdio) |
-| `embed/` | Embedded assets (CSS, HTML templates) |
+| `embed/` | Embedded assets (CSS, HTML template, built-in pptx reference deck) |
 | `internal/testdeps/` | Test gate for external converters (`VELLUM_REQUIRE_DEPS`) |
 | `viewer/` | Localhost daemon (HTML view + chrome + `/mcp`); cached PDF open; macOS default .md handler |
 
@@ -40,7 +43,7 @@ Markdown → PDF path still: source preprocessors → goldmark → HTML template
 - **WeasyPrint** (default) — HTML → PDF, BSD-3 (must be on PATH; `brew install weasyprint`)
 - **Prince** (opt-in via `backend: prince`) — HTML → PDF, proprietary (must be on PATH)
 - **mmdc** — Mermaid CLI for diagram rendering (optional, on PATH)
-- **pandoc** — rich-text import and clipboard HTML→RTF fallback (lazy; only when needed)
+- **pandoc** — rich-text import, pptx output, and clipboard HTML→RTF fallback (lazy; only when needed)
 - **poppler** — PDF import (`pdftoppm`, `pdftotext`; lazy)
 
 ## Gate

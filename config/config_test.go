@@ -30,7 +30,8 @@ func TestLoad_File(t *testing.T) {
 	if err := os.MkdirAll(vellumDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	yaml := `style:
+	yaml := `template: brand
+style:
   font_size: 13px
   page_margin: 1.2cm
   toc: true
@@ -54,6 +55,9 @@ func TestLoad_File(t *testing.T) {
 	}
 	if !cfg.Style.TOCOn() {
 		t.Errorf("TOC: want on from config")
+	}
+	if cfg.Template != "brand" {
+		t.Errorf("Template: want brand, got %q", cfg.Template)
 	}
 }
 

@@ -18,6 +18,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/marcelocantos/vellum/convert"
+	"github.com/marcelocantos/vellum/internal/xdg"
 )
 
 // Config is the on-disk vellum configuration.
@@ -25,6 +26,10 @@ type Config struct {
 	// Backend names the default renderer ("weasyprint" or "prince"). Empty
 	// resolves to convert.DefaultBackend (WeasyPrint).
 	Backend string `yaml:"backend,omitempty"`
+	// Template names the default PowerPoint reference deck for pptx
+	// output: a path to a .pptx file, a bare name under
+	// ~/.config/vellum/templates/, or empty for the built-in deck.
+	Template string `yaml:"template,omitempty"`
 	// Style holds default style overrides applied to every conversion.
 	Style *convert.Style `yaml:"style,omitempty"`
 }
@@ -32,14 +37,11 @@ type Config struct {
 // Path returns the resolved config file path. Honors XDG_CONFIG_HOME and
 // falls back to ~/.config/vellum/config.yaml.
 func Path() (string, error) {
-	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
-		return filepath.Join(xdg, "vellum", "config.yaml"), nil
-	}
-	home, err := os.UserHomeDir()
+	dir, err := xdg.ConfigDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(home, ".config", "vellum", "config.yaml"), nil
+	return filepath.Join(dir, "config.yaml"), nil
 }
 
 // Load reads and parses the config file. A missing file is not an error:

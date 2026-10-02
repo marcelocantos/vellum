@@ -57,6 +57,7 @@ func run() error {
 		asPDF         bool
 		output        string
 		backend       string
+		template      string
 		positional    []string
 	)
 
@@ -96,6 +97,14 @@ func run() error {
 			backend = args[i]
 		case strings.HasPrefix(a, "--backend="):
 			backend = a[len("--backend="):]
+		case a == "--template":
+			if i+1 >= len(args) {
+				return fmt.Errorf("%s requires an argument", a)
+			}
+			i++
+			template = args[i]
+		case strings.HasPrefix(a, "--template="):
+			template = a[len("--template="):]
 		case a == "-":
 			// Stdin sentinel for --to-clipboard (and similar). Must not
 			// fall through to the unknown-flag branch.
@@ -150,13 +159,22 @@ func run() error {
 		return runClipboard(positional, output, backend)
 	}
 
-	return runCLI(positional, output, backend)
+	return runCLI(positional, output, backend, template)
 }
 
 // effectiveBackend resolves the backend name as: CLI flag > config > default.
 // Returns the empty string when nothing is set so callers can use it directly
 // — convert.ResolveBackend treats "" as DefaultBackend.
 func effectiveBackend(flag, fromConfig string) string {
+	if flag != "" {
+		return flag
+	}
+	return fromConfig
+}
+
+// effectiveTemplate resolves the pptx template as: CLI flag > config >
+// built-in. Empty means the built-in deck.
+func effectiveTemplate(flag, fromConfig string) string {
 	if flag != "" {
 		return flag
 	}
@@ -341,7 +359,7 @@ func runServeView(args []string) error {
 		Addr:    addr,
 		Style:   cfg.Style,
 		Backend: cfg.Backend,
-		MCP:     vellummcp.HTTPHandler(version, cfg.Style, cfg.Backend),
+		MCP:     vellummcp.HTTPHandler(version, cfg.Style, cfg.Backend, cfg.Template),
 	}
 	fmt.Fprintf(os.Stderr, "vellum server listening on %s (view + MCP %s%s)\n", srv.Origin(), srv.Origin(), viewer.MCPPath)
 	return srv.ListenAndServe(context.Background())
@@ -448,6 +466,7 @@ func runConvert(args []string) error {
 		toFmt      string
 		output     string
 		backend    string
+		template   string
 		positional []string
 	)
 	for i := 0; i < len(args); i++ {
@@ -505,6 +524,14 @@ func runConvert(args []string) error {
 			backend = args[i]
 		case strings.HasPrefix(a, "--backend="):
 			backend = a[len("--backend="):]
+		case a == "--template":
+			if i+1 >= len(args) {
+				return fmt.Errorf("%s requires an argument", a)
+			}
+			i++
+			template = args[i]
+		case strings.HasPrefix(a, "--template="):
+			template = a[len("--template="):]
 		case a == "-":
 			positional = append(positional, a)
 		case strings.HasPrefix(a, "-"):
@@ -527,10 +554,11 @@ func runConvert(args []string) error {
 		return err
 	}
 	req := &convert.Request{
-		From:    convert.Endpoint{Media: convert.Media(fromMedia), Format: fromFmt},
-		To:      convert.Endpoint{Media: convert.Media(toMedia), Format: toFmt, Path: output},
-		Style:   cfg.Style,
-		Backend: effectiveBackend(backend, cfg.Backend),
+		From:     convert.Endpoint{Media: convert.Media(fromMedia), Format: fromFmt},
+		To:       convert.Endpoint{Media: convert.Media(toMedia), Format: toFmt, Path: output},
+		Style:    cfg.Style,
+		Backend:  effectiveBackend(backend, cfg.Backend),
+		Template: effectiveTemplate(template, cfg.Template),
 	}
 
 	switch convert.Media(fromMedia) {
@@ -622,10 +650,15 @@ Options:
   --to-format <fmt>   Sink format override (markdown, html, pdf, …)
   -o <path>           Output path (file / file_reference sinks)
   --backend <name>    PDF backend: weasyprint (default) or prince
+  --template <t>      PowerPoint reference deck for pptx output: a .pptx
+                      path, a bare name under ~/.config/vellum/templates/,
+                      or "default" (built-in)
   --help              Show this help
 
 Examples:
   vellum convert --from file --to file report.md -o report.pdf
+  vellum convert --from file --to file deck.md -o deck.pptx
+  vellum convert --from file --to file deck.md --to-format pptx --template brand.pptx
   vellum convert --from file --to clipboard report.md
   echo '# Hi' | vellum convert --from content --to clipboard
   vellum convert --from clipboard --to content
@@ -639,7 +672,12 @@ Shorthand (also available):
   vellum import doc.docx            → --from file --to content
   vellum import --from-clipboard    → --from clipboard --to content
 
-Disallowed: --to content|clipboard with --to-format pdf.
+PowerPoint (pptx): headings at the slide level become slides, headings
+above it section slides, a YAML title block the title slide; lists,
+tables, images, code, math, Mermaid and ::: notes carry through.
+Requires pandoc on PATH.
+
+Disallowed: --to content|clipboard with --to-format pdf or pptx.
 clipboard and file_reference require macOS.
 `)
 }
@@ -773,8 +811,10 @@ Options:
                       brew services + HTTP at /mcp)
   --to-clipboard      Sugar: file|stdin → clipboard (macOS)
   --open              Alias for 'view': open via localhost view server (macOS)
-  -o <path>           Output path (single input file only)
+  -o <path>           Output path (single input file only); a .pptx
+                      extension writes a PowerPoint deck instead of PDF
   --backend <name>    Renderer backend: "weasyprint" (default) or "prince"
+  --template <t>      PowerPoint reference deck for .pptx output
 
 Subcommands:
   convert             Media-orthogonal conversion (--from / --to). See
@@ -789,6 +829,7 @@ Subcommands:
 
 Examples:
   vellum report.md                       # produces report.pdf
+  vellum deck.md -o deck.pptx            # PowerPoint deck via pandoc
   vellum convert --from file --to clipboard report.md
   echo '# Hi' | vellum convert --from content --to clipboard
   vellum convert --from clipboard --to content
@@ -797,11 +838,11 @@ Examples:
   vellum serve-view                      # localhost view + MCP daemon
 
 Renderer (default WeasyPrint, optional Prince) must be on PATH for PDF
-output. pandoc must be on PATH for rich-text import paths.
+output. pandoc must be on PATH for rich-text import and pptx output.
 `)
 }
 
-func runCLI(args []string, output, backendFlag string) error {
+func runCLI(args []string, output, backendFlag, templateFlag string) error {
 	if len(args) == 0 {
 		printUsage()
 		return fmt.Errorf("no input files specified")
@@ -818,12 +859,20 @@ func runCLI(args []string, output, backendFlag string) error {
 	backendName := effectiveBackend(backendFlag, cfg.Backend)
 
 	req := &convert.Request{
-		Style:   cfg.Style,
-		Backend: backendName,
+		Style:    cfg.Style,
+		Backend:  backendName,
+		Template: effectiveTemplate(templateFlag, cfg.Template),
 	}
 	if len(args) == 1 {
 		req.From = convert.Endpoint{Media: convert.MediaFile, Path: args[0]}
-		req.To = convert.Endpoint{Media: convert.MediaFile, Path: output, Format: convert.FormatPDF}
+		// With -o, the output extension decides the format (.pptx is a
+		// deck, .html a page); PDF stays the default when the extension
+		// is unknown or absent. Forcing pdf here used to write a PDF
+		// under whatever name the user gave.
+		req.To = convert.Endpoint{Media: convert.MediaFile, Path: output}
+		if output == "" || convert.FormatForPath(output) == "" {
+			req.To.Format = convert.FormatPDF
+		}
 	} else {
 		req.From = convert.Endpoint{Media: convert.MediaFile, Paths: args}
 		req.To = convert.Endpoint{Media: convert.MediaFile, Format: convert.FormatPDF}

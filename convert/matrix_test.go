@@ -256,11 +256,14 @@ func TestFormatInferenceGrid(t *testing.T) {
 		{MediaFile, "out.html", "", FormatMarkdown, FormatHTML},
 		{MediaFile, "out.md", "", FormatMarkdown, FormatMarkdown},
 		{MediaFile, "out.pdf", "", "docx", FormatPDF},
+		{MediaFile, "deck.pptx", "", FormatMarkdown, FormatPPTX},
+		{MediaFileReference, "deck.pptx", "", FormatMarkdown, FormatPPTX},
 
 		// An explicit format outranks everything.
 		{MediaFile, "out.html", FormatPDF, FormatMarkdown, FormatPDF},
 		{MediaClipboard, "", FormatHTML, FormatMarkdown, FormatHTML},
 		{MediaContent, "", "md", FormatMarkdown, FormatMarkdown},
+		{MediaFile, "deck.pdf", "powerpoint", FormatMarkdown, FormatPPTX},
 	}
 	for _, c := range cases {
 		got := inferToFormat(Endpoint{Media: c.media, Path: c.toPath, Format: c.toFormat}, c.fromFmt)
@@ -271,17 +274,19 @@ func TestFormatInferenceGrid(t *testing.T) {
 	}
 }
 
-// TestPDFSinkRestrictions pins that PDF is rejected for the two sinks
-// that cannot carry binary content.
-func TestPDFSinkRestrictions(t *testing.T) {
-	for _, m := range []Media{MediaContent, MediaClipboard} {
-		if err := checkDisallowed(m, FormatPDF); err == nil {
-			t.Errorf("%s + pdf should be rejected", m)
+// TestBinarySinkRestrictions pins that the binary formats (PDF, pptx)
+// are rejected for the two sinks that cannot carry binary content.
+func TestBinarySinkRestrictions(t *testing.T) {
+	for _, f := range []string{FormatPDF, FormatPPTX} {
+		for _, m := range []Media{MediaContent, MediaClipboard} {
+			if err := checkDisallowed(m, f); err == nil {
+				t.Errorf("%s + %s should be rejected", m, f)
+			}
 		}
-	}
-	for _, m := range []Media{MediaFile, MediaFileReference} {
-		if err := checkDisallowed(m, FormatPDF); err != nil {
-			t.Errorf("%s + pdf should be allowed: %v", m, err)
+		for _, m := range []Media{MediaFile, MediaFileReference} {
+			if err := checkDisallowed(m, f); err != nil {
+				t.Errorf("%s + %s should be allowed: %v", m, f, err)
+			}
 		}
 	}
 }

@@ -19,7 +19,7 @@ import (
 // over streamable HTTP and both lists tools and calls convert. This is
 // the transport the brew-service daemon exposes at /mcp (🎯T31).
 func TestHTTPHandler_ConvertOverStreamableHTTP(t *testing.T) {
-	h := HTTPHandler("test", nil, "")
+	h := HTTPHandler("test", nil, "", "")
 	if c, ok := h.(interface{ Close() error }); ok {
 		t.Cleanup(func() { _ = c.Close() })
 	}
@@ -77,7 +77,7 @@ func TestHTTPHandler_ConvertOverStreamableHTTP(t *testing.T) {
 // lives at /mcp on a mux that also has other routes. Clients must use
 // the /mcp endpoint, not the origin root.
 func TestHTTPHandler_MountedAtMCPPath(t *testing.T) {
-	h := HTTPHandler("test", nil, "")
+	h := HTTPHandler("test", nil, "", "")
 	if c, ok := h.(interface{ Close() error }); ok {
 		t.Cleanup(func() { _ = c.Close() })
 	}
