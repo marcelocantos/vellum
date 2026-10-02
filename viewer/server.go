@@ -125,6 +125,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc(ChromeRevealPath, s.handleReveal)
 	mux.HandleFunc(ChromeWatchPath, s.handleWatch)
 	mux.HandleFunc(ChromeTaskTogglePath, s.handleTaskToggle)
+	mux.HandleFunc(ChromeFragmentPath, s.handleFragment)
 	mux.HandleFunc(ChromeFaviconPath, s.handleFavicon)
 	mux.HandleFunc(FaviconICOPath, s.handleFavicon)
 	mux.HandleFunc("/", s.handlePath)
@@ -285,6 +286,10 @@ func (s *Server) serveMarkdown(w http.ResponseWriter, r *http.Request, absPath s
 	page := rewriteMarkdownHrefs(string(body), absPath, origin)
 	// Ensure <base> matches this request's origin (cache may predate a port change).
 	page = ensureBaseHref(page, origin+pathURL(filepath.Dir(absPath))+"/")
+	// First paint waits on text only: images load lazily and Mermaid SVGs
+	// (hundreds of KB each) are fetched from ChromeFragmentPath on demand.
+	page, _ = deferMermaid(page)
+	page = lazyLoadImages(page)
 	page = injectChrome(page, absPath)
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")

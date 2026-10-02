@@ -324,6 +324,24 @@ body.vellum-view {
   cursor: zoom-in;
 }
 
+.vellum-article .vellum-lazy-svg {
+  display: block;
+  width: 100%;
+  margin: 0 auto;
+  min-height: 2em;
+  border-radius: 6px;
+  background: rgba(175, 184, 193, 0.12);
+  cursor: progress;
+}
+
+.vellum-article .vellum-lazy-svg.is-failed {
+  cursor: pointer;
+  padding: 8px 12px;
+  text-align: left;
+  color: #cf222e;
+  background: rgba(207, 34, 46, 0.08);
+}
+
 .vellum-lightbox {
   position: fixed;
   inset: 0;
