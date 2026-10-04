@@ -1,13 +1,12 @@
 # STABILITY
 
-Vellum is pre-1.0. This document tracks the project's readiness for 1.0 and
-catalogues the interaction surface that will become the backwards-compatibility
-baseline at that point.
+Vellum is pre-1.0. This document catalogues the interaction surface a
+1.0 lock would promise to keep.
 
 ## Stability commitment
 
 Vellum 1.0 will be a backwards-compatibility contract. After 1.0, breaking
-changes to any of the following require a major version bump:
+any of the following means forking the product:
 
 - The public Go API of packages that consumers import
 - The CLI flags, subcommands, and stdout/stderr contract
@@ -16,14 +15,15 @@ changes to any of the following require a major version bump:
 - The set of recognised environment variables
 - The runtime dependency expectations (tool names, minimum versions)
 
-The pre-1.0 period exists to get these right. Until 1.0, any of these may
-change between minor releases — though in practice we aim to minimise churn.
+Until 1.0, any of these may change between minor releases.
 
 ## Interaction surface catalogue
 
 Snapshot as of **v0.25.0** (`const version` in `cmd/vellum`). Annotations:
-**stable** (unlikely to change), **needs review** (functional but may be
-refined), **fluid** (actively evolving).
+
+- **stable** — after 1.0, breaking this promise means forking the product.
+- **needs review** — may still be refined after 1.0. A needs-review row is not a failed gate.
+- **fluid** — actively evolving, and may still be true after 1.0. A fluid row is not a failed gate.
 
 ### Go package API
 
@@ -308,33 +308,30 @@ dependency set itself is considered stable.
 
 ## Gaps and prerequisites
 
-Items that must land before 1.0 can be cut.
+These are inputs to the owner's `## 1.0 judgment`. They do not authorize the cut.
 
-- **Cross-platform coverage.** The release matrix currently targets
-  macOS arm64 and Linux x86_64/arm64. Windows is not tested. Decide
-  whether Windows is in-scope for 1.0 or deferred.
-- **Runtime dependency installer.** First-time setup of `mmdc` + its
+- **Cross-platform coverage.** **Additive.** The release matrix currently targets
+  macOS arm64 and Linux x86_64/arm64. Windows is not tested. A Windows port can land later without revising the macOS promises.
+- **Runtime dependency installer.** **Additive.** First-time setup of `mmdc` + its
   pinned Chromium is a consistent pain point. A `vellum doctor` or
-  equivalent one-shot setup command would move this out of the 1.0
-  gap list.
-- **Custom CSS API smoke-test.** `Options.CSS` is exposed but not
+  equivalent one-shot setup command can land later.
+- **Custom CSS API smoke-test.** **Expandability.** `Options.CSS` is exposed but not
   exercised by the CLI. Either wire a `--css` flag or remove the
-  field; shipping an untested extension point into 1.0 is a trap.
-- **`HeadExtra`.** Currently a bare string append. Either keep (and
-  document) or replace with a typed options struct. Shipping it as-is
-  locks a fragile shape.
-- **Error-shape consistency.** Per-file errors in `ConvertOutput.Errors`
+  field; leaving the bare string locks that shape.
+- **`HeadExtra`.** **Expandability.** Currently a bare string append. Either keep (and
+  document) or replace with a typed options struct. Leaving it locks that shape.
+- **Error-shape consistency.** **Expandability.** Per-file errors in `ConvertOutput.Errors`
   are currently strings ("path: message"). A structured `{path, message}`
-  object would be more robust for programmatic consumers.
-- **Audit logging.** `docs/audit-log.md` is new; the release skill
-  appends to it. Ensure the convention sticks across subsequent releases.
-- **Binding / wrapper libraries.** None exist. If any land (e.g., a
+  object would revise that promise.
+- **Audit logging.** **Additive.** `docs/audit-log.md` is new; the release skill
+  appends to it. The convention can keep developing after the lock.
+- **Binding / wrapper libraries.** **Additive.** None exist. If any land (e.g., a
   Node/Python wrapper that speaks streamable HTTP at `/mcp` or spawns
-  `vellum --mcp`), their public surface must be catalogued here too before 1.0.
-- **Concurrent convert.** `convert.Convert` is not explicitly documented
-  as safe for concurrent use. In practice each call writes to a distinct
+  `vellum --mcp`), catalogue their public surface here when they do.
+- **Concurrent convert.** **Closure.** `convert.Convert` is not documented
+  as safe for concurrent use. Each call writes to a distinct
   temp file and a caller-chosen output path, so parallel calls should
-  work, but the contract needs to be nailed down.
+  work, and that promise is still unstated. A later finding that they must not run together is a situation the locked contract has not absorbed.
 
 ## Out of scope for 1.0
 
@@ -356,12 +353,4 @@ Features and changes explicitly deferred past 1.0.
 
 ## 1.0 readiness check
 
-Not eligible.
-
-- **Checklist**: not clear (see *Gaps and prerequisites*).
-- **Settling threshold**: counting surface items (Go API + CLI flags +
-  MCP tool schema + Markdown extensions + env vars ≈ 50 items) →
-  3-month minimum settling period (historical note; 1.0 shakeout for
-  this project is the 1-month rule in the release skill). Clock last
-  reset on 2026-07-31 by v0.8.0 (media-orthogonal `convert` MCP/CLI
-  surface; removed three MCP tools).
+The cut is the owner's `## 1.0 judgment`, under `/release` B.3a, and the last breaking release recorded here is v0.8.0 (2026-07-31), the media-orthogonal `convert` surface that removed three MCP tools. The settling-period checklist, including a threshold scaled to surface size, no longer authorizes or blocks the cut.
