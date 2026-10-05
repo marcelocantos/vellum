@@ -308,7 +308,7 @@ dependency set itself is considered stable.
 
 ## Gaps and prerequisites
 
-These are inputs to the owner's `## 1.0 judgment`. They do not authorize the cut.
+These are inputs to the agent's `## 1.0 judgment`. They do not authorize the cut.
 
 - **Cross-platform coverage.** **Additive.** The release matrix currently targets
   macOS arm64 and Linux x86_64/arm64. Windows is not tested. A Windows port can land later without revising the macOS promises.
@@ -351,6 +351,47 @@ Features and changes explicitly deferred past 1.0.
 - **Non-squash merges.** Release history is linear by policy. Not a
   stability concern but stated for the avoidance of doubt.
 
+## 1.0 judgment
+
+Evaluated at v0.25.0 (2026-10-02). That release changed the bare `-o`
+rule: a recognised output extension picks the format, and an unknown or
+absent extension still means PDF.
+
+**Expandability.** A requirement not yet seen can be met by addition.
+
+`Options.CSS`, `HeadExtra`, and `ConvertOutput.Errors` (`"path: message"`
+strings) can each gain a typed field beside the current value. Media
+(`file`, `content`, `clipboard`, `file_reference`), formats (`markdown`,
+`html`, `rtf`, `pdf`, `pptx`, `rich`), and backends (`weasyprint`,
+`prince`) can each gain a value. `Style` can gain fields. `--template`
+and `FormatPPTX` can gain behavior beside the v0.25.0 rules. The `-o`
+extension rule is the rule a lock would keep. Shipping the file RTF
+writer adds a sink for `FormatRTF`, which file sinks still refuse.
+
+No expandability concern would force a fork.
+
+**Closure.** The risk is an unmapped part of the domain that the locked
+contract could not absorb.
+
+`convert.Convert` has no documented concurrency promise. Each call
+writes a distinct temp file (`vellum-*.html`, `vellum-mmd-*`,
+`vellum-reference-*`) and a caller-chosen output path. The promise a
+lock can state is that parallel calls with distinct outputs are safe.
+A later discovery that those calls must not overlap would be an
+unmapped situation. Distinct temp files are what the code does today.
+
+PowerPoint output is checked in LibreOffice headless. Microsoft
+PowerPoint has not opened a deck, and `.potx` is accepted but untested.
+The promise on the table is a pandoc reference-doc pptx sink. A
+byte-level fix in the reference deck stays inside that promise. A
+change to template resolution, or to how markdown is carved into
+slides, would break callers who depend on today's decks. Nothing now
+known requires that change.
+
+No closure concern would force a fork. Windows, a setup command, the
+audit-log convention, language bindings, file RTF, EPUB, and ADF as a
+`Run` sink can land later by addition.
+
 ## 1.0 readiness check
 
-The cut is the owner's `## 1.0 judgment`, under `/release` B.3a, and the last breaking release recorded here is v0.8.0 (2026-07-31), the media-orthogonal `convert` surface that removed three MCP tools. The settling-period checklist, including a threshold scaled to surface size, no longer authorizes or blocks the cut.
+The cut requires the agent's `## 1.0 judgment`, under `/release` B.3a. The last breaking release is v0.25.0 (2026-10-02). The settling-period checklist, including a threshold scaled to surface size, no longer authorizes or blocks the cut.
