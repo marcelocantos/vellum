@@ -59,9 +59,20 @@ macOS only. The clipboard, Finder file references, and the viewer are
 darwin-only, so a Linux runner would exercise a strict subset while
 implying a platform vellum does not support.
 
+## Gates
+
+profile: base
+override:
+  - pr-workflow: skip
+
+Direct push to `master` is the default delivery path (Colossus gated-push).
+`cv gate` is the local oracle; keep `tests-exist`. `/push` must not open a
+PR for this repo unless the user explicitly asks for one on a non-default
+branch. Never auto-merge remote PRs.
+
 ## Delivery
 
-Merged to master.
+Pushed to master (Colossus gated-push; no mandatory GitHub PR).
 
 ## Followable work
 
