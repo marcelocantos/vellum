@@ -1,0 +1,5 @@
+<!-- Copyright 2026 Marcelo Cantos. SPDX-License-Identifier: Apache-2.0 -->
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" role="img" aria-label="Small green status badge">
+  <circle cx="32" cy="32" r="28" fill="#e8f6ed" stroke="#207848" stroke-width="3"/>
+  <path d="M17 33l10 10 20-23" fill="none" stroke="#207848" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

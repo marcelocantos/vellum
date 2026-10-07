@@ -1,0 +1,21 @@
+<!-- Copyright 2026 Marcelo Cantos. SPDX-License-Identifier: Apache-2.0 -->
+<svg xmlns="http://www.w3.org/2000/svg" width="320" height="800" viewBox="0 0 320 800" role="img" aria-label="Portrait publishing process">
+  <rect width="320" height="800" rx="18" fill="#f5f8fc" stroke="#8394a8"/>
+  <g fill="#fff" stroke="#48627a" stroke-width="2">
+    <rect x="35" y="44" width="250" height="115" rx="12"/>
+    <rect x="35" y="239" width="250" height="115" rx="12"/>
+    <rect x="35" y="434" width="250" height="115" rx="12"/>
+    <rect x="35" y="629" width="250" height="115" rx="12"/>
+  </g>
+  <g fill="#17324d" font-family="Arial, sans-serif" font-size="23" text-anchor="middle">
+    <text x="160" y="109">Markdown</text>
+    <text x="160" y="304">ADF and assets</text>
+    <text x="160" y="499">Confluence page</text>
+    <text x="160" y="694">Rendered review</text>
+  </g>
+  <g fill="#48627a" font-family="Arial, sans-serif" font-size="30" text-anchor="middle">
+    <text x="160" y="213">↓</text>
+    <text x="160" y="408">↓</text>
+    <text x="160" y="603">↓</text>
+  </g>
+</svg>
