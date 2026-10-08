@@ -19,7 +19,7 @@ Until 1.0, any of these may change between minor releases.
 
 ## Interaction surface catalogue
 
-Snapshot as of **v0.25.0** (`const version` in `cmd/vellum`). Annotations:
+Snapshot as of **v0.26.0** (`const version` in `cmd/vellum`). Annotations:
 
 - **stable** — after 1.0, breaking this promise means forking the product.
 - **needs review** — may still be refined after 1.0. A needs-review row is not a failed gate.
