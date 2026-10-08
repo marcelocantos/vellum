@@ -66,6 +66,21 @@ Speaker note text
 // slideFileRe matches a slide part inside the pptx zip.
 var slideFileRe = regexp.MustCompile(`^ppt/slides/slide\d+\.xml$`)
 
+// slideTextRe matches one DrawingML text run.
+var slideTextRe = regexp.MustCompile(`<a:t>([^<]*)</a:t>`)
+
+// slideText returns a slide's visible text with its runs joined. pandoc
+// (3.12+) highlights code blocks token by token, so a source line such as
+// "graph LR" is split across several runs and never appears verbatim in
+// the XML.
+func slideText(body string) string {
+	var b strings.Builder
+	for _, m := range slideTextRe.FindAllStringSubmatch(body, -1) {
+		b.WriteString(m[1])
+	}
+	return b.String()
+}
+
 // readPPTX opens a generated deck and returns its parts by name.
 func readPPTX(t *testing.T, path string) map[string]string {
 	t.Helper()
@@ -248,7 +263,7 @@ func TestPPTXMermaidBecomesPicture(t *testing.T) {
 			t.Error("deck has no media part; the diagram was not embedded")
 		}
 		for name, body := range parts {
-			if slideFileRe.MatchString(name) && strings.Contains(body, "graph LR") {
+			if slideFileRe.MatchString(name) && strings.Contains(slideText(body), "graph LR") {
 				t.Errorf("%s still carries the Mermaid source", name)
 			}
 		}
@@ -275,7 +290,7 @@ func TestPPTXMermaidBecomesPicture(t *testing.T) {
 		}
 		var kept bool
 		for name, body := range readPPTX(t, out) {
-			kept = kept || (slideFileRe.MatchString(name) && strings.Contains(body, "graph LR"))
+			kept = kept || (slideFileRe.MatchString(name) && strings.Contains(slideText(body), "graph LR"))
 		}
 		if !kept {
 			t.Error("the failed diagram's source is missing from the deck")
