@@ -588,10 +588,11 @@ the list. PDF reader bookmarks (`style.bookmarks`) stay independent.
   default, optionally `prince`), `node` (KaTeX math HTML), `mmdc`
   (Mermaid diagrams), and lazily `pandoc` (rich-text import, pptx
   output, clipboard fallback) and `pdftoppm`/`pdftotext` (PDF import). Math
-  and Mermaid rendering run locally. Assembled HTML links KaTeX CSS from
-  jsDelivr (`cdn.jsdelivr.net`) only when the document contains math;
-  no-math documents omit the link. WeasyPrint or a browser may fetch
-  that stylesheet when it is present.
+  and Mermaid rendering run locally. Assembled HTML links KaTeX's
+  stylesheet only when the document contains math, and that stylesheet
+  and its fonts are vellum's own embedded copy (served by the viewer at
+  `/_vellum/katex/`, or a `file://` link to the user cache directory for
+  PDF and HTML output). Nothing is fetched from a CDN.
 - Neither renderer executes JavaScript from the input HTML during
   typesetting (Prince's JS engine is off by default; WeasyPrint has none).
 - KaTeX runs in `throwOnError: false` mode, so malformed math

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/marcelocantos/vellum/embed"
 	"github.com/marcelocantos/vellum/internal/testdeps"
 )
 
@@ -257,13 +258,13 @@ func TestRender_NoTOCByDefault(t *testing.T) {
 	}
 }
 
-func TestRender_NoMathOmitsKaTeXCDN(t *testing.T) {
+func TestRender_NoMathOmitsKaTeXCSS(t *testing.T) {
 	html, _, err := Render(context.Background(), []byte("# Tasks\n\n- [ ] one\n"), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(html, "cdn.jsdelivr.net") {
-		t.Fatalf("no-math HTML still fetches KaTeX CSS:\n%s", html)
+	if strings.Contains(html, embed.KaTeXCSSName) {
+		t.Fatalf("no-math HTML still links KaTeX CSS:\n%s", html)
 	}
 }
 

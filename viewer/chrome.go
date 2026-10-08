@@ -20,7 +20,10 @@ const (
 	ChromeWatchPath      = "/_vellum/watch"
 	ChromeTaskTogglePath = "/_vellum/task-toggle"
 	ChromeFaviconPath    = "/_vellum/favicon.svg"
-	FaviconICOPath       = "/favicon.ico"
+	// ChromeKaTeXPrefix serves the embedded KaTeX stylesheet and fonts, so
+	// a viewed math document loads nothing from the network.
+	ChromeKaTeXPrefix = "/_vellum/katex/"
+	FaviconICOPath    = "/favicon.ico"
 )
 
 //go:embed chrome.css

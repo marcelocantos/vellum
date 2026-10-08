@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/marcelocantos/vellum/convert"
+	"github.com/marcelocantos/vellum/embed"
 )
 
 const (
@@ -126,7 +127,12 @@ func (s *Server) cacheRoot() (string, error) {
 // and its fragments; ExtractFragments must see the same Mermaid format
 // as the deferred render so ids agree.
 func (s *Server) convertOptions() *convert.Options {
-	return &convert.Options{Style: s.Style, Backend: s.Backend, Defer: true}
+	return &convert.Options{
+		Style:        s.Style,
+		Backend:      s.Backend,
+		Defer:        true,
+		KaTeXCSSHref: ChromeKaTeXPrefix + embed.KaTeXCSSName,
+	}
 }
 
 func (s *Server) addr() string {
@@ -161,6 +167,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc(ChromeTaskTogglePath, s.handleTaskToggle)
 	mux.HandleFunc(ChromeFragmentPath, s.handleFragment)
 	mux.HandleFunc(ChromeFaviconPath, s.handleFavicon)
+	mux.Handle(ChromeKaTeXPrefix, http.StripPrefix(ChromeKaTeXPrefix, http.FileServerFS(embed.KaTeX())))
 	mux.HandleFunc(FaviconICOPath, s.handleFavicon)
 	mux.HandleFunc("/", s.handlePath)
 	return mux

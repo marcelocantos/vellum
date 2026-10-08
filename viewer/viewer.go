@@ -302,8 +302,9 @@ func cacheName(absPath string, ext string) string {
 // stampFormat versions the cache layout. A stamp from another format
 // never matches, so an entry written by an older vellum (for HTML, a whole
 // page with diagrams inline rather than the deferred shell) is re-rendered
-// instead of served. Bump when the cached bytes change meaning.
-const stampFormat = "v2"
+// instead of served. Bump when the cached bytes change meaning (v3: the
+// KaTeX stylesheet is linked from ChromeKaTeXPrefix, not a CDN).
+const stampFormat = "v3"
 
 func stampPath(cachePath string) string {
 	return cachePath + ".stamp"

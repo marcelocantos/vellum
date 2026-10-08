@@ -25,14 +25,17 @@ import (
 	"github.com/marcelocantos/vellum/embed"
 )
 
-const katexCSSLink = `<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.css">`
-
 // Options configures the conversion pipeline.
 type Options struct {
 	// CSS overrides the default GitHub-style CSS.
 	CSS string
-	// HeadExtra is additional HTML to inject into <head> (e.g., KaTeX CSS).
+	// HeadExtra is additional HTML to inject into <head>.
 	HeadExtra string
+	// KaTeXCSSHref is the URL a math document links for KaTeX's stylesheet.
+	// Empty links vellum's copy under the user cache directory (see
+	// KaTeXAssetDir); the view server sets its own route, which serves the
+	// same embedded files. Vellum never links a CDN.
+	KaTeXCSSHref string
 	// Style applies a small set of CSS overrides on top of the base
 	// stylesheet (whether default or supplied via CSS).
 	Style *Style
@@ -193,7 +196,13 @@ func Render(ctx context.Context, src []byte, opts *Options) (html string, soft [
 	css := embed.GitHubCSS
 	headExtra := ""
 	if len(math.exprs) > 0 {
-		headExtra = katexCSSLink
+		var href string
+		if opts != nil {
+			href = opts.KaTeXCSSHref
+		}
+		if headExtra, err = katexHead(href); err != nil {
+			return "", soft, err
+		}
 	}
 	if opts != nil {
 		if opts.CSS != "" {

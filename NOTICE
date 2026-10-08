@@ -68,6 +68,13 @@ dependencies.
 - **golang.org/x/sys** v0.41.0 —
   https://cs.opensource.google/go/x/sys/+/v0.41.0:LICENSE
 
+## Bundled assets
+
+- **KaTeX** stylesheet and fonts — https://katex.org/ (MIT; `embed/katex/`,
+  license text at `embed/katex/LICENSE`). Embedded so math documents render
+  without a network fetch; the version is in `embed/katex/VERSION`.
+- **pandoc** default `reference.pptx` — https://pandoc.org/ (`embed/reference.pptx`).
+
 ## Runtime dependencies (not linked)
 
 Vellum invokes the following tools via `exec.LookPath` at runtime.

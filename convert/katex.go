@@ -13,9 +13,12 @@ import (
 	"strings"
 )
 
-// katexRenderScript uses createRequire to resolve katex from the global
-// npm prefix, avoiding dependency on the local working directory.
-const katexRenderScript = `
+// katexResolveScript binds `katex` using createRequire against the global
+// npm prefix, avoiding dependency on the local working directory. It is
+// the prelude of every node script vellum runs against KaTeX, so the
+// version the test suite pins the vendored stylesheet to (embed/katex) is
+// the one that renders.
+const katexResolveScript = `
 const {execSync} = require("child_process");
 const {createRequire} = require("module");
 
@@ -28,7 +31,9 @@ try {
   const req = createRequire(prefix + "/lib/node_modules/katex/package.json");
   katex = req("katex");
 }
+`
 
+const katexRenderScript = katexResolveScript + `
 let input = "";
 process.stdin.on("data", d => input += d);
 process.stdin.on("end", () => {

@@ -20,7 +20,7 @@ vellum shells out to external tools at conversion time. Each must be on `PATH` w
   - **[WeasyPrint](https://www.courtbouillon.org/weasyprint)** 60 or later — **default**. BSD-3 licensed, open-source, no commercial entanglement. Install with `brew install weasyprint` (or `pipx install weasyprint`).
   - **[Prince](https://www.princexml.com/download/)** 16.2 or later — opt-in. Proprietary, free for non-commercial use with a first-page watermark; commercial license required for commercial use. Marginally better typography (kerning, optical sizing) and ~6× faster on typical documents.
 - **[Node.js](https://nodejs.org/)** — runtime for KaTeX math rendering.
-- **[KaTeX](https://katex.org/)** — `npm install -g katex`.
+- **[KaTeX](https://katex.org/)** — `npm install -g katex`. Vellum embeds the matching stylesheet and fonts (`scripts/vendor-katex.sh` refreshes them after an upgrade), so rendering never fetches from a CDN.
 - **[mermaid-cli](https://github.com/mermaid-js/mermaid-cli)** (`mmdc`) — `brew install mermaid-cli` (or the equivalent on your platform). Required only if your documents contain Mermaid diagrams.
 - **[pandoc](https://pandoc.org/)** — `brew install pandoc`. Required for rich-text import (RTF, DOCX, HTML, …) with image extraction, and for PowerPoint (`.pptx`) output.
 - **[poppler](https://poppler.freedesktop.org/)** — `brew install poppler` (`pdftoppm`, `pdftotext`). Required for PDF import (page images + text).
@@ -406,7 +406,7 @@ more, closing the loop with the existing DOCX and RTF import. Those are
 - Syntax highlighting via [chroma](https://github.com/alecthomas/chroma) using the GitHub style, across many languages.
 - Long-line code wrapping in rendered code blocks.
 - Footnotes in the PHP Markdown Extra style.
-- Inline (`$...$`) and block (`$$...$$`) LaTeX math via KaTeX, including multi-line matrices. HTML that contains no math omits the KaTeX jsDelivr stylesheet.
+- Inline (`$...$`) and block (`$$...$$`) LaTeX math via KaTeX, including multi-line matrices. KaTeX's stylesheet and fonts ship inside vellum: the viewer serves them, and PDF and HTML output link vellum's copy under the user cache directory (`~/Library/Caches/vellum/katex/<version>/` on macOS), so math renders with no network. HTML that contains no math omits the stylesheet.
 - Mermaid diagrams: flowchart, sequence, class, state, Gantt, ER, pie. HTML/view/content paths embed **SVG** (vector); PDF conversion keeps **PNG at 2×** because Mermaid SVG `foreignObject` labels do not paint in Prince.
 - Per-diagram scale hint — place `<!-- vellum:scale 0.6 -->` immediately before a ```` ```mermaid ```` block to apply a `max-width` to the rendered diagram. Useful for keeping a diagram on the same page as its heading.
 - Optional table of contents — `style.toc: true` or a `<!-- vellum:toc -->` hint injects a static Contents list (nested heading links, no JavaScript). PDF adds dotted leaders and page numbers.

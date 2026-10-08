@@ -34,7 +34,7 @@ Markdown → pptx path: Mermaid preprocessor (PNG, inlined as images) → pandoc
 | `internal/xdg/` | Per-user config directory (`$XDG_CONFIG_HOME/vellum` or `~/.config/vellum`) shared by `config/` and template lookup |
 | `config/` | User configuration loaded from `~/.config/vellum/config.yaml` |
 | `mcp/` | MCP server (single `convert` tool; streamable HTTP + stdio) |
-| `embed/` | Embedded assets (CSS, HTML template, built-in pptx reference deck) |
+| `embed/` | Embedded assets (CSS, HTML template, built-in pptx reference deck, KaTeX stylesheet + fonts under `katex/`, refreshed by `scripts/vendor-katex.sh`) |
 | `internal/testdeps/` | Test gate for external converters (`VELLUM_REQUIRE_DEPS`) |
 | `viewer/` | Localhost daemon (HTML view + chrome + `/mcp`); cached PDF open; macOS default .md handler |
 
@@ -42,6 +42,7 @@ Markdown → pptx path: Mermaid preprocessor (PNG, inlined as images) → pandoc
 
 - **WeasyPrint** (default) — HTML → PDF, BSD-3 (must be on PATH; `brew install weasyprint`)
 - **Prince** (opt-in via `backend: prince`) — HTML → PDF, proprietary (must be on PATH)
+- **node + katex** — KaTeX math HTML (`npm install -g katex`); the stylesheet and fonts are embedded, never fetched, and `TestKaTeXVersionMatchesRenderer` pins the vendored copy to the installed package
 - **mmdc** — Mermaid CLI for diagram rendering (optional, on PATH)
 - **pandoc** — rich-text import, pptx output, and clipboard HTML→RTF fallback (lazy; only when needed)
 - **poppler** — PDF import (`pdftoppm`, `pdftotext`; lazy)

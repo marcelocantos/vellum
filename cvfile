@@ -15,7 +15,7 @@ pkg = ./cmd/vellum
 
 # Every external converter the suite exercises. Missing any of them
 # makes VELLUM_REQUIRE_DEPS=1 fail rather than skip.
-converters = pandoc weasyprint pdftoppm pdftotext
+converters = pandoc weasyprint pdftoppm pdftotext pdffonts
 
 # Runner prefix, so tasks stay agnostic about where they execute.
 # Empty means "on this host", which is the only case today.

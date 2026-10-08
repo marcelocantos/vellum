@@ -35,7 +35,8 @@ Package paths are under `github.com/marcelocantos/vellum/…`.
 - `func RenderFile(ctx context.Context, inputPath string, opts *Options) (html string, soft []string, err error)` — **needs review** (second return is non-fatal Mermaid diagnostics; not `*SoftError`)
 - `func Render(ctx context.Context, src []byte, opts *Options) (html string, soft []string, err error)` — **needs review** (same)
 - `type SoftError struct { Messages []string }` — **needs review** (added in v0.9.0; `Convert` / `Run` wrap `soft` into this after still producing output; CLI non-zero exit / MCP `errors`)
-- `type Options struct { CSS string; HeadExtra string; Style *Style; Backend string; MermaidFormat string; Template string }` — **needs review** (`MermaidFormat` is `MermaidSVG` default or `MermaidPNG`; PDF sinks force PNG; `Template` selects the pptx reference deck, added in v0.25.0)
+- `type Options struct { CSS string; HeadExtra string; KaTeXCSSHref string; Style *Style; Backend string; MermaidFormat string; Template string }` — **needs review** (`MermaidFormat` is `MermaidSVG` default or `MermaidPNG`; PDF sinks force PNG; `Template` selects the pptx reference deck, added in v0.25.0; `KaTeXCSSHref` overrides where a math document links KaTeX's stylesheet, added in v0.26.0 — empty links the copy `KaTeXAssetDir` lays out)
+- `func KaTeXAssetDir() (string, error)` — **needs review** (added in v0.26.0; the directory under `os.UserCacheDir()/vellum/katex/<version>/` holding vellum's copy of the KaTeX stylesheet and fonts, written on first use)
 - `const TemplateDefault` / `func TemplatesDir() (string, error)` — **needs review** (added in v0.25.0; `"default"` names the built-in deck; bare template names resolve under `~/.config/vellum/templates/`)
 - `const MermaidSVG, MermaidPNG` — **needs review**
 - `type Style struct { ... }` — **needs review** (14-field customisation surface; `toc` added in 🎯T38; field set likely to grow before 1.0)
@@ -86,6 +87,7 @@ Package paths are under `github.com/marcelocantos/vellum/…`.
 - `var GitHubCSS string` — **needs review** (exposed for the CLI binary's own use; may become unexported if no external consumer appears)
 - `var HTMLTemplate string` — **needs review** (same)
 - `var ReferencePPTX []byte` — **needs review** (added in v0.25.0; pinned copy of pandoc's default reference deck, 16:9)
+- `func KaTeX() fs.FS` / `var KaTeXVersion string` / `const KaTeXCSSName, KaTeXFontsDir` — **needs review** (added in v0.26.0; the vendored KaTeX stylesheet and woff2 fonts, rooted at `katex.min.css`)
 
 **`docs`** — embedded documentation.
 
@@ -275,9 +277,10 @@ not listed here is either GFM (via goldmark's GFM extension) or not supported.
   listener). **needs review** (added in v0.14.0; MCP mount 🎯T31).
 - `VELLUM_DEBUG_HTML=<path>` — if set, vellum writes the assembled HTML to
   this path before invoking the PDF backend (WeasyPrint default, or Prince).
-  Intended for development only. Documents that omit math do not inject the
-  KaTeX CSS CDN link; math documents still do. **needs review** (may be
-  renamed with a `VELLUM_DEBUG_*` namespace if more debug hooks are added).
+  Intended for development only. Math documents link vellum's own KaTeX
+  stylesheet (see *Embedded assets*); documents without math omit it.
+  **needs review** (may be renamed with a `VELLUM_DEBUG_*` namespace if
+  more debug hooks are added).
 
 ### Embedded assets
 
@@ -286,6 +289,12 @@ not listed here is either GFM (via goldmark's GFM extension) or not supported.
   hook already allows it, but the embedded default may shift).
 - HTML wrapper template. **stable** (layout choices are minimal; anything
   surfaced via CSS overrides rather than template edits).
+- KaTeX stylesheet and woff2 fonts (`embed/katex`, vendored by
+  `scripts/vendor-katex.sh`; `TestKaTeXVersionMatchesRenderer` pins them to
+  the installed `katex` package). The viewer serves them at `/_vellum/katex/`;
+  PDF and standalone HTML link the copy `convert.KaTeXAssetDir` writes under
+  `os.UserCacheDir()/vellum/katex/<version>/`. Nothing is fetched from a CDN.
+  **needs review** (added in v0.26.0).
 
 ### Runtime dependencies
 
@@ -301,7 +310,7 @@ Required external binaries on `PATH`:
 
 Required Node package (installed globally):
 
-- `katex` — `npm install -g katex`. **stable**.
+- `katex` — `npm install -g katex`. **stable** (renders the HTML; its stylesheet and fonts are embedded, see *Embedded assets*).
 
 Bundling strategy may change (see *Out of scope for 1.0*), but the
 dependency set itself is considered stable.
