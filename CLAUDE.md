@@ -51,8 +51,9 @@ Markdown → pptx path: Mermaid preprocessor (PNG, inlined as images) → pandoc
 `cv gate` is the definition of green — gofmt, vet, the suite with
 `VELLUM_REQUIRE_DEPS=1`, a skip census locked at 0 non-pasteboard
 skips (pasteboard skips must name “pasteboard”), and the CLI
-contract. CI installs converters and calls `cv gate`; it holds no gate
-logic of its own, so a red build reproduces locally with one command.
+contract. The gate runs locally on Colossus (macOS); there is no
+GitHub Actions. `cv gate` is the only oracle, so there is no remote
+build to reproduce: a red gate is the failure, one command away.
 `cv bullseye` adds a clean-tree check for convergence.
 
 macOS only. The clipboard, Finder file references, and the viewer are
