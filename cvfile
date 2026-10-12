@@ -1,10 +1,10 @@
 # vellum build and gate definition.
 #
-# The gate lives here, not in .github/workflows/ci.yml. CI is a caller:
-# it installs dependencies and runs `cv gate`, exactly as a developer
-# does locally. Nothing about what "green" means is expressible only on
-# GitHub, so the gate can always be reproduced on the machine in front
-# of you.
+# The gate lives here and runs locally on Colossus (macOS). There is no
+# GitHub Actions (workflows removed in e090840): `cv gate` is run by hand
+# before every push to master, and `cv release` runs it as its preflight.
+# Nothing about what "green" means lives anywhere else, so the gate can
+# always be reproduced on the machine in front of you.
 #
 # macOS is the platform. The clipboard, Finder file references, and the
 # viewer are darwin-only, so that is where the gate has to be green.

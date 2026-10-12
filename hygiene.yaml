@@ -9,7 +9,7 @@
 # per-dimension ratchet (below floor => DRIFT); `aspires` is the gap horizon;
 # `enforce` is intent-only and does not affect tiers.
 #
-# Honest snapshot: cv gate on macos-latest is the definition of green
+# Honest snapshot: cv gate, run locally on Colossus macOS, is the definition of green
 # (gofmt, vet, VELLUM_REQUIRE_DEPS=1 -race, skip-census, CLI contract).
 # Gaps (gitleaks, govulncheck, CodeQL, Dependabot, CHANGELOG, SECURITY.md,
 # signing, fuzz, benches, committed hooks, AGENTS.md, Makefile==cv) sit
@@ -42,21 +42,21 @@ items:
   # ============================== CORRECTNESS =============================
   - id: correctness.tests
     dim: correctness
-    desc: cv gate (fmt, vet, VELLUM_REQUIRE_DEPS=1 -race, skip-census, CLI) on every push/PR
+    desc: cv gate (fmt, vet, VELLUM_REQUIRE_DEPS=1 -race, skip-census, CLI) before every push to master and every release (local, Colossus macOS)
     state: enforced
     cadence: continuous
     enforce: blocking
     tier: 1
-    evidence: {ci_step: {workflow: ci.yml, name: Gate}}
+    evidence: {file: {path: cvfile, matches: '(?m)^!gate: fmt vet test skip-census cli-contract'}}
 
   - id: correctness.macos-gate
     dim: correctness
-    desc: Product gate runs on macos-latest (clipboard, file refs, and viewer are darwin-only)
+    desc: Product gate runs on macOS (Colossus, locally; clipboard, file refs, and viewer are darwin-only)
     state: enforced
     cadence: continuous
     enforce: blocking
     tier: 2
-    evidence: {ci_job: ci.yml#gate}
+    evidence: {file: {path: cvfile, matches: 'macOS is the platform'}}
 
   - id: correctness.race
     dim: correctness
@@ -92,7 +92,7 @@ items:
     cadence: per-release
     enforce: warning
     tier: 2
-    evidence: {ci_job: release.yml#build}
+    evidence: {file: {path: scripts/release-package.sh, matches: 'build_one linux arm64'}}
 
   - id: correctness.windows
     dim: correctness
@@ -105,7 +105,7 @@ items:
       Product is macOS-only (clipboard, Finder file references, viewer).
       CLAUDE.md and cvfile reject a Linux runner as implying a platform
       vellum does not support; Windows is the same class.
-    evidence: {absent: {ci_job: ci.yml#windows}}
+    evidence: {absent: {file: {path: scripts/release-package.sh, matches: '(?i)windows'}}}
 
   - id: correctness.fuzzing
     dim: correctness
@@ -178,17 +178,17 @@ items:
     enforce: warning
     tier: 3
     reason: No CodeQL workflow; go vet in cv gate is the only static check.
-    evidence: {absent: {ci_job: ci.yml#codeql}}
+    evidence: {absent: {file: {path: .github/workflows/codeql.yml}}}
 
   - id: security.actions-perms
     dim: security
     desc: GitHub Actions default token permissions scoped to least privilege
-    state: planned
+    state: skipped
     cadence: once-must-hold
-    enforce: warning
+    enforce: informational
     tier: 3
-    reason: ci.yml has no top-level permissions block; inherits the repo default.
-    evidence: {absent: {file: {path: .github/workflows/ci.yml, matches: '(?m)^permissions:'}}}
+    reason: No GitHub Actions workflows exist (removed in e090840, 27 Aug); the gate and releases run locally on Colossus.
+    evidence: {absent: {file: {path: .github/workflows}}}
 
   - id: security.signed-releases
     dim: security
@@ -197,8 +197,8 @@ items:
     cadence: per-release
     enforce: informational
     tier: 3
-    reason: release.yml uploads tarballs via gh release; no signing/attestation step.
-    evidence: {absent: {ci_step: {workflow: release.yml, name: Sign}}}
+    reason: scripts/release-publish.sh uploads tarballs via gh release create; no signing/attestation step.
+    evidence: {absent: {file: {path: scripts/release-publish.sh, matches: '(?i)cosign|attest'}}}
 
   # ============================== CODE QUALITY ============================
   - id: quality.fmt
@@ -288,20 +288,24 @@ items:
   - id: release.ci-built
     dim: release
     desc: Release binaries are built by CI across target triples, never locally
-    state: present
+    state: skipped
     cadence: per-release
-    enforce: warning
+    enforce: informational
     tier: 2
-    evidence: {ci_job: release.yml#build}
+    reason: >-
+      GitHub Actions was removed in e090840 (27 Aug). Releases are built
+      locally on Colossus by `cv release-dist` (scripts/release-package.sh)
+      after `cv gate` passes.
+    evidence: {absent: {file: {path: .github/workflows/release.yml}}}
 
   - id: release.homebrew
     dim: release
-    desc: Published to the Homebrew tap on release (homebrew-releaser job)
+    desc: Published to the Homebrew tap on release (`cv release-tap` → tapper push)
     state: present
     cadence: per-release
     enforce: informational
     tier: 2
-    evidence: {ci_job: release.yml#homebrew}
+    evidence: {file: {path: scripts/release-tap.sh, matches: 'tapper push'}}
 
   - id: release.changelog
     dim: release
@@ -316,15 +320,11 @@ items:
   - id: release.gate-on-publish
     dim: release
     desc: Published releases re-run the macOS cv gate (not a Linux subset)
-    state: planned
+    state: enforced
     cadence: per-release
-    enforce: warning
+    enforce: blocking
     tier: 3
-    reason: >-
-      release.yml test job is ubuntu-latest `go test ./...` without converters;
-      the step name still says pipeline tests skip without Prince (ENT-002).
-      CI gate is macOS `cv gate`.
-    evidence: {absent: {ci_step: {workflow: release.yml, name: Gate}}}
+    evidence: {file: {path: cvfile, matches: '(?m)^!release: gate '}}
 
   # ============================ GOVERNANCE / META ========================
   - id: governance.license
@@ -395,12 +395,12 @@ items:
   # ================================= BUILD ===============================
   - id: build.ci
     dim: build
-    desc: CI installs converters + cv and runs the local gate
+    desc: The gate runs locally on Colossus macOS via `cv gate` (no GitHub Actions since e090840)
     state: enforced
     cadence: continuous
     enforce: blocking
     tier: 1
-    evidence: {ci_job: ci.yml#gate}
+    evidence: {file: {path: cvfile, matches: '(?m)^!gate:'}}
 
   - id: build.go-version
     dim: build
