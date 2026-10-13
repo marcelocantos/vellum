@@ -12,7 +12,7 @@
 # Honest snapshot: cv gate, run locally on Colossus macOS, is the definition of green
 # (gofmt, vet, VELLUM_REQUIRE_DEPS=1 -race, skip-census, CLI contract).
 # Gaps (gitleaks, govulncheck, CodeQL, Dependabot, CHANGELOG, SECURITY.md,
-# signing, fuzz, benches, committed hooks, AGENTS.md, Makefile==cv) sit
+# signing, fuzz, benches, committed hooks, AGENTS.md) sit
 # above each floor.
 
 schema_version: 1
@@ -85,14 +85,14 @@ items:
     tier: 2
     evidence: {file: {path: cvfile, matches: '(?m)^!cli-contract:'}}
 
-  - id: correctness.release-multitarget
+  - id: correctness.release-darwin-only
     dim: correctness
-    desc: Release builds darwin-arm64, linux-amd64, and linux-arm64
-    state: present
+    desc: Release builds darwin-arm64 only (vellum is macOS-only; no Linux tarballs or tap block)
+    state: enforced
     cadence: per-release
     enforce: warning
     tier: 2
-    evidence: {file: {path: scripts/release-package.sh, matches: 'build_one linux arm64'}}
+    evidence: {absent: {file: {path: scripts/release-package.sh, matches: '(?m)^build_one linux'}}}
 
   - id: correctness.windows
     dim: correctness
@@ -203,7 +203,7 @@ items:
   # ============================== CODE QUALITY ============================
   - id: quality.fmt
     dim: quality
-    desc: gofmt -l is a blocking cv gate component (CI runs cv gate)
+    desc: gofmt -l is a blocking cv gate component (run locally before every push)
     state: enforced
     cadence: continuous
     enforce: blocking
@@ -212,7 +212,7 @@ items:
 
   - id: quality.vet
     dim: quality
-    desc: go vet ./... is a blocking cv gate component (CI runs cv gate)
+    desc: go vet ./... is a blocking cv gate component (run locally before every push)
     state: enforced
     cadence: continuous
     enforce: blocking
@@ -232,15 +232,11 @@ items:
   - id: quality.makefile-gate
     dim: quality
     desc: Makefile bullseye is the same oracle as cv bullseye
-    state: planned
+    state: enforced
     cadence: continuous
     enforce: warning
     tier: 3
-    reason: >-
-      Makefile bullseye is gofmt/vet/build/test without -race,
-      VELLUM_REQUIRE_DEPS, skip-census, or the CLI contract (ENT-001).
-      cv gate is the definition of green.
-    evidence: {absent: {file: {path: Makefile, matches: 'cv bullseye'}}}
+    evidence: {file: {path: Makefile, matches: '(?m)^\tcv bullseye$'}}
 
   # =========================== DEPENDENCY HEALTH ==========================
   - id: deps.lock
@@ -265,13 +261,16 @@ items:
   # ========================== RELEASE & VERSIONING =======================
   - id: release.semver-minor
     dim: release
-    desc: Git tags are MINOR-only (vMAJOR.MINOR.0)
+    desc: >-
+      Git tags are MINOR-only (vMAJOR.MINOR.0). Patch tags are reserved for
+      emergency fixes to a release older than the latest; v0.26.1 predates
+      that standing order and is grandfathered.
     state: enforced
     cadence: per-release
     enforce: blocking
     tier: 2
     evidence:
-      command: test -z "$(git tag | grep -vE '^v[0-9]+\.[0-9]+\.0$')"
+      command: test -z "$(git tag | grep -vE '^v[0-9]+\.[0-9]+\.0$' | grep -vx 'v0.26.1')"
 
   - id: release.version-matches-tag
     dim: release
@@ -287,7 +286,7 @@ items:
 
   - id: release.ci-built
     dim: release
-    desc: Release binaries are built by CI across target triples, never locally
+    desc: Release binaries are built by CI, never locally
     state: skipped
     cadence: per-release
     enforce: informational

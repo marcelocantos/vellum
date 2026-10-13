@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build release tarballs into dist/ (darwin/arm64 + linux/amd64 + linux/arm64).
+# Build the release tarball into dist/ (darwin/arm64 only; vellum is macOS-only).
 set -euo pipefail
 source "$(dirname "$0")/release-common.sh"
 
@@ -25,7 +25,5 @@ build_one() {
 }
 
 build_one darwin arm64 1 darwin arm64
-build_one linux amd64 0 linux amd64
-build_one linux arm64 0 linux arm64
 
 echo "release-package: v${VERSION} → dist/"

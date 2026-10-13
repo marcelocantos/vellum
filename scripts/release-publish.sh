@@ -41,7 +41,7 @@ done
 
 require_gh
 
-for triple in darwin-arm64 linux-amd64 linux-arm64; do
+for triple in darwin-arm64; do
 	f="dist/vellum-${VERSION}-${triple}.tar.gz"
 	[[ -f "$f" ]] || {
 		echo "missing $f — run cv release-dist first" >&2

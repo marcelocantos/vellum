@@ -52,7 +52,7 @@ brew install marcelocantos/tap/vellum
 
    Alternatives: `go install github.com/marcelocantos/vellum/cmd/vellum@latest`,
    or a prebuilt binary from the [GitHub releases](https://github.com/marcelocantos/vellum/releases)
-   (macOS arm64, Linux x86_64, Linux arm64).
+   (macOS arm64).
 
 2. **Install runtime dependencies** (WeasyPrint, node, KaTeX, mermaid-cli,
    pandoc, poppler — see [Requirements](#requirements)). The formula pulls
