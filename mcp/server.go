@@ -104,7 +104,7 @@ func newServer(version string, baseStyle *convert.Style, baseBackend, baseTempla
 		Name:  "convert",
 		Title: "Convert between file, content, clipboard, and file references",
 		Description: strings.TrimSpace(`
-Convert documents across media: file, content (inline text), clipboard (rich text), and file_reference (Finder-style pasteboard file URLs).
+Convert documents across media: file, content (inline text), clipboard (rich text), and file_reference (Finder pasteboard file URLs on macOS, CF_HDROP on Windows).
 
 Provide from + to (each with media and media-specific fields), or files for legacy Markdown→PDF batch sugar.
 
@@ -123,7 +123,7 @@ PowerPoint: to.path ending .pptx (or to.format pptx) writes a deck through pando
 
 Rich import (rtf/docx/html/… via pandoc; pdf via pdftoppm+pdftotext) extracts images/page renders into a TTL cache (or media_dir) and rewrites Markdown to absolute asset paths. Clipboard import probes RTF, HTML, then PDF (e.g. PowerPoint com.adobe.pdf).
 
-Disallowed (intractable): to.media content|clipboard with format pdf or pptx (binary out). PDF *input* is allowed; pptx input is not. macOS required for clipboard and file_reference. Optional style, backend and template overlay the user config for this call only.
+Disallowed (intractable): to.media content|clipboard with format pdf or pptx (binary out). PDF *input* is allowed; pptx input is not. clipboard and file_reference need macOS or Windows. Optional style, backend and template overlay the user config for this call only.
 `),
 	}, makeConvertHandler(baseStyle, baseBackend, baseTemplate))
 

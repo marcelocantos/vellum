@@ -13,6 +13,7 @@ import (
 	"github.com/marcelocantos/vellum/config"
 	"github.com/marcelocantos/vellum/convert"
 	"github.com/marcelocantos/vellum/docs"
+	"github.com/marcelocantos/vellum/internal/hint"
 	vellummcp "github.com/marcelocantos/vellum/mcp"
 	"github.com/marcelocantos/vellum/viewer"
 )
@@ -42,6 +43,10 @@ func run() error {
 			return runInstallViewer(args[1:])
 		case "uninstall-viewer":
 			return runUninstallViewer(args[1:])
+		case "install-service":
+			return runInstallService(args[1:])
+		case "uninstall-service":
+			return runUninstallService(args[1:])
 		}
 	}
 
@@ -366,7 +371,7 @@ func runServeView(args []string) error {
 }
 
 func printViewUsage() {
-	fmt.Print(`Usage: vellum view [options] <file.md>
+	fmt.Print(osText(`Usage: vellum view [options] <file.md>
        vellum --open [options] <file.md>
 
 Open a Markdown file as rendered HTML on the localhost view server
@@ -378,7 +383,7 @@ a deletion leaves the page up.
 Never writes next to the source file.
 
 Requires the view server (auto-started if needed). Prefer a persistent
-daemon: brew services start vellum  (or: vellum serve-view). That
+daemon: {{service}}  (or: vellum serve-view). That
 process also hosts streamable HTTP MCP at /mcp.
 
 Options:
@@ -389,18 +394,18 @@ Options:
 
 Examples:
   vellum view notes.md            # HTML → browser via view server
-  vellum view --pdf notes.md      # PDF → Preview
+  vellum view --pdf notes.md      # PDF → {{pdfviewer}}
   vellum --open notes.md          # flag form of view
 
-HTML cache lives under the user cache dir (…/Caches/vellum/view on macOS),
+HTML cache lives under the user cache dir ({{cachedir}}),
 managed by the view server. Pruned on each convert: entries older than
 7 days are dropped; if total size still exceeds 50 MB, oldest entries
 are evicted until under cap.
-`)
+`))
 }
 
 func printServeViewUsage() {
-	fmt.Print(`Usage: vellum serve-view [--addr host:port]
+	fmt.Print(osText(`Usage: vellum serve-view [--addr host:port]
 
 Run the localhost daemon (foreground): Markdown view server plus
 streamable HTTP MCP at /mcp. Binds loopback only — default
@@ -412,20 +417,20 @@ URLs. An open tab watches the source over /_vellum/watch and reloads
 after the file has been quiet for a moment. A rename redirects the tab;
 a deletion leaves the rendered page up; a missing file is shown when it
 appears. Served pages include view chrome (TOC, figure
-lightbox, PDF/clipboard/Finder, live reload, editable task lists under
+lightbox, PDF/clipboard/{{filemanager}}, live reload, editable task lists under
 /_vellum/). Chrome is not written into the convert cache.
 
 MCP clients connect to http://127.0.0.1:18742/mcp (do not probe /mcp
 with bare curl — it only accepts MCP JSON-RPC). Prefer this over
 spawning vellum --mcp per session.
 
-Install as a user service via Homebrew:
+Install as a per-user background service:
 
-  brew services start vellum
+  {{service}}
 
-Or run in the foreground for debugging. Cmd-click / vellum view open
+Or run in the foreground for debugging. {{click}} / vellum view open
 URLs on this server.
-`)
+`))
 }
 
 func printInstallViewerUsage() {
@@ -792,13 +797,14 @@ Requires pandoc on PATH (https://pandoc.org/).
 }
 
 func printUsage() {
-	fmt.Print(`Usage: vellum [options] <input.md...>
+	fmt.Print(osText(`Usage: vellum [options] <input.md...>
        vellum convert --from <media> --to <media> [path|-]
        vellum --mcp
        vellum import [options] <file>
        vellum view [options] <file.md>
        vellum serve-view [--addr host:port]
-       vellum install-viewer | uninstall-viewer
+       vellum install-viewer | uninstall-viewer       (macOS)
+       vellum install-service | uninstall-service     (Windows)
 
 Document preparation — media-orthogonal conversion (file, content,
 clipboard, file_reference), Markdown viewing, and MCP server.
@@ -808,9 +814,9 @@ Options:
   --help-agent        Show this help plus the embedded agent guide
   --version           Print version number
   --mcp               Run as an MCP server on stdio (fallback; prefer
-                      brew services + HTTP at /mcp)
-  --to-clipboard      Sugar: file|stdin → clipboard (macOS)
-  --open              Alias for 'view': open via localhost view server (macOS)
+                      {{servicepkg}} + HTTP at /mcp)
+  --to-clipboard      Sugar: file|stdin → clipboard (macOS, Windows)
+  --open              Alias for 'view': open via localhost view server
   -o <path>           Output path (single input file only); a .pptx
                       extension writes a PowerPoint deck instead of PDF
   --backend <name>    Renderer backend: "weasyprint" (default) or "prince"
@@ -823,9 +829,13 @@ Subcommands:
   view                Open Markdown via the localhost view server
                       (HTML default; --pdf for PDF). See "vellum view --help".
   serve-view          Run the localhost daemon: Markdown view + HTTP MCP
-                      at /mcp (brew services)
-  install-viewer      Install Vellum Viewer.app as the default .md handler
-  uninstall-viewer    Remove Vellum Viewer.app
+                      at /mcp ({{servicepkg}})
+  install-viewer      macOS: install Vellum Viewer.app as the default .md
+                      handler
+  uninstall-viewer    macOS: remove Vellum Viewer.app
+  install-service     Windows: run serve-view at logon (per-user
+                      Scheduled Task); macOS uses brew services
+  uninstall-service   Windows: remove that Scheduled Task
 
 Examples:
   vellum report.md                       # produces report.pdf
@@ -839,7 +849,7 @@ Examples:
 
 Renderer (default WeasyPrint, optional Prince) must be on PATH for PDF
 output. pandoc must be on PATH for rich-text import and pptx output.
-`)
+`))
 }
 
 func runCLI(args []string, output, backendFlag, templateFlag string) error {
@@ -897,4 +907,76 @@ func runMCP(backendFlag string) error {
 		return err
 	}
 	return vellummcp.Serve(context.Background(), version)
+}
+
+// osText fills per-OS placeholders in help text.
+func osText(s string) string {
+	return strings.NewReplacer(
+		"{{service}}", hint.StartViewer(),
+		"{{servicepkg}}", hint.Pick("brew services", "install-service"),
+		"{{pdfviewer}}", hint.Pick("Preview", "the default PDF viewer"),
+		"{{cachedir}}", hint.Pick("…/Caches/vellum/view on macOS", `%LOCALAPPDATA%\vellum\view on Windows`),
+		"{{filemanager}}", hint.FileManager(),
+		"{{click}}", hint.Pick("Cmd-click", "Ctrl-click"),
+	).Replace(s)
+}
+
+func runInstallService(args []string) error {
+	opts := &viewer.ServiceOptions{}
+	for i := 0; i < len(args); i++ {
+		switch a := args[i]; a {
+		case "--help", "-help":
+			printInstallServiceUsage()
+			return nil
+		case "--no-start":
+			opts.NoStart = true
+		case "--addr":
+			if i+1 >= len(args) {
+				return fmt.Errorf("--addr needs a value")
+			}
+			i++
+			opts.Addr = args[i]
+		default:
+			return fmt.Errorf("unknown argument for install-service: %s", a)
+		}
+	}
+	cmdline, err := viewer.InstallService(opts)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Registered Scheduled Task %q (runs at logon):\n  %s\n", viewer.ServiceTaskName, cmdline)
+	if !opts.NoStart {
+		fmt.Println("Started. View server: " + viewer.DefaultViewOrigin())
+	}
+	fmt.Println("Re-run after moving or upgrading vellum.exe to a new path.")
+	return nil
+}
+
+func runUninstallService(args []string) error {
+	for _, a := range args {
+		if a == "--help" || a == "-help" {
+			printInstallServiceUsage()
+			return nil
+		}
+		return fmt.Errorf("uninstall-service takes no arguments")
+	}
+	if err := viewer.UninstallService(); err != nil {
+		return err
+	}
+	fmt.Printf("Removed Scheduled Task %q and stopped the view server it ran.\n", viewer.ServiceTaskName)
+	return nil
+}
+
+func printInstallServiceUsage() {
+	fmt.Print(`Usage: vellum install-service [--addr host:port] [--no-start]
+       vellum uninstall-service
+
+Windows: register a per-user Scheduled Task that runs 'vellum
+serve-view' at logon (least privilege, in your desktop session so the
+clipboard works, no time limit, restart on failure, no console
+window), and start it now unless --no-start. Re-running replaces it.
+This is the Windows counterpart of 'brew services start vellum'.
+
+On macOS use: brew services start vellum
+`)
 }

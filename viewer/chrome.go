@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/marcelocantos/vellum/internal/hint"
 )
 
 // Chrome action paths on the view server (not filesystem paths).
@@ -116,7 +118,7 @@ func chromeOpen(sourcePath string, waiting bool) string {
 		`<button type="button" class="vellum-toc-toggle-btn" data-vellum="toc-toggle" title="Hide table of contents" aria-label="Hide table of contents">«</button>` +
 		`<button type="button" data-vellum="pdf" title="Download a PDF of this document" aria-label="Download PDF">PDF` + downloadIconSVG() + `</button>` +
 		`<button type="button" data-vellum="clipboard" title="Copy the rendered document to the clipboard">Copy</button>` +
-		`<button type="button" data-vellum="reveal" title="Reveal the source file in Finder">Show in Finder</button>` +
+		`<button type="button" data-vellum="reveal" title="Reveal the source file in ` + hint.FileManager() + `">Show in ` + hint.FileManager() + `</button>` +
 		`<div class="vellum-toolbar-end">` +
 		`<span class="vellum-docname">` + html.EscapeString(name) + `</span>` +
 		`<button type="button" class="vellum-theme-btn" data-vellum="theme" title="Theme: System">◐</button>` +

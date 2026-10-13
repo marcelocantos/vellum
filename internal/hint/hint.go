@@ -36,5 +36,8 @@ func WeasyPrint() string {
 // StartViewer is the instruction for running the view server persistently.
 func StartViewer() string {
 	return Pick("brew services start vellum",
-		"vellum serve-view  (no Windows background service yet)")
+		"vellum install-service")
 }
+
+// FileManager names the platform file manager for UI labels.
+func FileManager() string { return Pick("Finder", "Explorer") }

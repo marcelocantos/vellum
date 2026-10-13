@@ -6,8 +6,10 @@
 //
 // The macOS backend uses NSPasteboard via cgo and writes RTF, HTML, and
 // plain-text representations together so paste targets (Slack, Mail,
-// TextEdit, …) receive content in their preferred format. Linux is out
-// of scope; Windows is parked (🎯T7.1). Non-macOS callers receive
+// TextEdit, …) receive content in their preferred format. The Windows
+// backend (clipboard_windows.go) writes CF_HTML, RTF and Unicode text
+// the same way, and reads PDF and CF_HDROP file lists. Linux is out
+// of scope. Callers on other platforms receive
 // [ErrUnsupported] rather than silent failure.
 package clipboard
 
@@ -19,7 +21,7 @@ import (
 )
 
 // ErrUnsupported indicates the current platform has no clipboard backend.
-var ErrUnsupported = errors.New("clipboard: not supported on " + runtime.GOOS + " yet (macOS only)")
+var ErrUnsupported = errors.New("clipboard: not supported on " + runtime.GOOS + " (macOS and Windows only)")
 
 // Payload describes the content to place on the clipboard. HTML is the
 // authoritative representation; backends derive RTF and plain text from

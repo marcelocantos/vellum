@@ -27,9 +27,20 @@ let katex;
 try {
   katex = require("katex");
 } catch(e) {
+  // Global modules live under <prefix>/lib/node_modules on Unix and
+  // <prefix>/node_modules on Windows (%APPDATA%\\npm).
+  const path = require("path");
   const prefix = execSync("npm prefix -g", {encoding: "utf8"}).trim();
-  const req = createRequire(prefix + "/lib/node_modules/katex/package.json");
-  katex = req("katex");
+  let lastErr = e;
+  for (const dir of [path.join(prefix, "lib", "node_modules"), path.join(prefix, "node_modules")]) {
+    try {
+      katex = createRequire(path.join(dir, "katex", "package.json"))("katex");
+      break;
+    } catch (e2) {
+      lastErr = e2;
+    }
+  }
+  if (!katex) throw lastErr;
 }
 `
 
