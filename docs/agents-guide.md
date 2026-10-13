@@ -68,7 +68,8 @@ must succeed before vellum is usable — do not stop after `brew install`.**
 3. **Start the daemon and register vellum as an HTTP MCP server.**
 
    ```sh
-   brew services start vellum
+   brew services start vellum      # macOS
+   vellum install-service          # Windows (per-user logon Scheduled Task)
    ```
 
    Confirm one `vellum` process is listening (do **not** use bare
@@ -171,7 +172,7 @@ orthogonal to document format.
 | `file` | Path on disk (read or write) |
 | `content` | Inline text in the request/response |
 | `clipboard` | System pasteboard rich text (RTF+HTML+plain out; RTF/HTML in) |
-| `file_reference` | Finder-style pasteboard file URLs |
+| `file_reference` | Finder pasteboard file URLs (macOS) or CF_HDROP file lists (Windows) |
 
 ### `convert` — unified media conversion
 
@@ -220,7 +221,8 @@ and `poppler` (PDF) on PATH when those paths are used.
 **Disallowed (intractable):** `to.media` of `content` or `clipboard`
 with `format` `pdf` or `pptx` (binary *out*). PDF *input* is allowed;
 pptx input is not (pandoc has no PowerPoint reader). `clipboard` and
-`file_reference` require macOS.
+`file_reference` require macOS or Windows (Windows: CF_HTML + RTF +
+Unicode text out; RTF, HTML, PDF in; CF_HDROP file lists).
 
 #### Examples
 
@@ -347,6 +349,8 @@ commit the pasteboard before return — no race window for paste.
 macOS `Write` prefers AppKit (`NSAttributedString`); if that importer
 is unavailable it falls back to pandoc HTML→RTF (structure preserved,
 CSS dropped) and the fallback reason is a soft error in `errors`.
+Windows has no CSS-aware HTML→RTF importer, so its RTF always comes
+from pandoc (route `pandoc`, no fallback reported).
 
 **Migration** from older tool names (removed):
 

@@ -6,8 +6,9 @@
 # Nothing about what "green" means lives anywhere else, so the gate can
 # always be reproduced on the machine in front of you.
 #
-# macOS is the platform. The clipboard, Finder file references, and the
-# viewer are darwin-only, so that is where the gate has to be green.
+# The gate host is macOS. Windows (arm64/amd64) is also supported and is
+# proven on the Parallels Windows 11 arm64 VM (ssh hms-vm) with the same
+# VELLUM_REQUIRE_DEPS=1 suite; see CLAUDE.md. Linux is unsupported.
 
 go ?= go
 binary = vellum
@@ -93,9 +94,11 @@ fi\'
 
 # --- release (local; gate is the preflight oracle) --------------------
 #
-#   cv release-dist   — build dist/vellum-<ver>-darwin-arm64.tar.gz (macOS-only)
+#   cv release-dist   — build dist/vellum-<ver>-darwin-arm64.tar.gz and
+#                       vellum-<ver>-windows-{arm64,amd64}.zip (no Linux)
 #   cv release-tap    — update marcelocantos/homebrew-tap (release must exist)
-#   cv release        — gate + dist + gh release create + tap + brew upgrade
+#   cv release        — gate + dist + gh release create + tap + scoop
+#                       manifest (bucket/vellum.json) + brew upgrade
 #
 # Tap update: tapper push (see tapper.yaml). GitHub upload uses gh auth.
 

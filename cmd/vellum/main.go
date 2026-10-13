@@ -683,7 +683,7 @@ tables, images, code, math, Mermaid and ::: notes carry through.
 Requires pandoc on PATH.
 
 Disallowed: --to content|clipboard with --to-format pdf or pptx.
-clipboard and file_reference require macOS.
+clipboard and file_reference require macOS or Windows.
 `)
 }
 
@@ -780,7 +780,7 @@ write GitHub-Flavoured Markdown to stdout (or to -o).
 Options:
   --help              Show this help
   --from-clipboard    Read the system clipboard's rich-text content
-                      (RTF preferred, HTML fallback). macOS only currently.
+                      (RTF preferred, HTML fallback). macOS and Windows.
   --from <fmt>        Input format override (e.g., rtf, docx, html, odt,
                       epub, latex). Defaults to pandoc's auto-detection
                       based on file extension.

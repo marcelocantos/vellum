@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Create GitHub release with dist/ assets, update the Homebrew tap, upgrade locally.
+# Create GitHub release with dist/ assets, update the Homebrew tap and the
+# scoop manifest (bucket/vellum.json), upgrade locally.
 # Run after cv gate (cv release runs gate first).
 set -euo pipefail
 source "$(dirname "$0")/release-common.sh"
@@ -41,8 +42,9 @@ done
 
 require_gh
 
-for triple in darwin-arm64; do
-	f="dist/vellum-${VERSION}-${triple}.tar.gz"
+for f in "dist/vellum-${VERSION}-darwin-arm64.tar.gz" \
+	"dist/vellum-${VERSION}-windows-arm64.zip" \
+	"dist/vellum-${VERSION}-windows-amd64.zip"; do
 	[[ -f "$f" ]] || {
 		echo "missing $f — run cv release-dist first" >&2
 		exit 1
@@ -72,12 +74,16 @@ if [[ -n "$notes_tmp" ]]; then
 fi
 
 echo "release-publish: creating ${TAG} …" >&2
-gh release create "$TAG" --title "$TAG" --notes-file "$NOTES_FILE" dist/*.tar.gz
+gh release create "$TAG" --title "$TAG" --notes-file "$NOTES_FILE" \
+	dist/*.tar.gz dist/*.zip "dist/checksums-${VERSION}.txt"
 git fetch --tags
 
 if [[ "$SKIP_TAP" == false ]]; then
 	"$(dirname "$0")/release-tap.sh" "$TAG"
 fi
+
+"$(dirname "$0")/release-scoop.sh"
+echo "release-publish: commit bucket/vellum.json (scoop manifest) after cv gate" >&2
 
 if [[ "$SKIP_BREW" == false ]]; then
 	echo "release-publish: brew upgrade …" >&2

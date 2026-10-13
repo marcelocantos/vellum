@@ -27,16 +27,17 @@ Markdown → pptx path: Mermaid preprocessor (PNG, inlined as images) → pandoc
 |---------|------|
 | `cmd/vellum/` | CLI entry point |
 | `convert/` | Markdown → HTML/PDF pipeline; unified `Run` router; Backend interface. Math and Mermaid are source preprocessors (`convert/katex.go`, `convert/mermaid.go`), not goldmark extensions. `convert/pptx.go` is the pandoc-backed PowerPoint sink and template resolution. |
-| `clipboard/` | Rich pasteboard + Finder file references (macOS). `Write` tries AppKit then pandoc HTML→RTF. |
+| `clipboard/` | Rich clipboard + file references. macOS: NSPasteboard via cgo, `Write` tries AppKit then pandoc HTML→RTF. Windows: pure-Go user32 (`clipboard_windows.go`): CF_HTML + RTF (pandoc) + Unicode text, PDF read, CF_HDROP file lists. |
 | `importer/` | Rich-text → Markdown via pandoc; PDF via Poppler |
 | `adf/` | Markdown → Confluence ADF (library only; not a `convert.Run` sink) |
 | `internal/pandoc/` | pandoc export helpers: HTML → RTF/plain (clipboard fallback) and Markdown → file (pptx); not a public API |
-| `internal/xdg/` | Per-user config directory (`$XDG_CONFIG_HOME/vellum` or `~/.config/vellum`) shared by `config/` and template lookup |
+| `internal/xdg/` | Per-user config directory (`$XDG_CONFIG_HOME/vellum`, else `~/.config/vellum`; `%APPDATA%\vellum` on Windows) shared by `config/` and template lookup |
+| `internal/fileurl/`, `internal/shim/`, `internal/hint/` | Portability helpers: drive-letter-safe `file://` URLs, running npm `.cmd` shims (mmdc) as `node <script>` on Windows, per-OS install/service hints |
 | `config/` | User configuration loaded from `~/.config/vellum/config.yaml` |
 | `mcp/` | MCP server (single `convert` tool; streamable HTTP + stdio) |
 | `embed/` | Embedded assets (CSS, HTML template, built-in pptx reference deck, KaTeX stylesheet + fonts under `katex/`, refreshed by `scripts/vendor-katex.sh`) |
 | `internal/testdeps/` | Test gate for external converters (`VELLUM_REQUIRE_DEPS`) |
-| `viewer/` | Localhost daemon (HTML view + chrome + `/mcp`); cached PDF open; macOS default .md handler |
+| `viewer/` | Localhost daemon (HTML view + chrome + `/mcp`); cached PDF open; macOS default .md handler (`install-viewer`); Windows logon Scheduled Task (`install-service`) |
 
 ### External dependencies
 
@@ -57,9 +58,16 @@ GitHub Actions. `cv gate` is the only oracle, so there is no remote
 build to reproduce: a red gate is the failure, one command away.
 `cv bullseye` adds a clean-tree check for convergence.
 
-macOS only. The clipboard, Finder file references, and the viewer are
-darwin-only, so a Linux runner would exercise a strict subset while
-implying a platform vellum does not support.
+Platforms: macOS (darwin-arm64, the gate host) and Windows (arm64 and
+amd64). Windows is proven on the Parallels "Windows 11" arm64 VM on
+Colossus (`ssh hms-vm`): before a Windows-affecting change lands, run
+`VELLUM_REQUIRE_DEPS=1 go test ./...` there with 0 skips. The Windows
+toolchain is Go, pandoc and node (winget), WeasyPrint (pip) with Pango
+and poppler from MSYS2 clangarm64 (`WEASYPRINT_DLL_DIRECTORIES`), and
+`npm install -g katex@<embed version> @mermaid-js/mermaid-cli`. Linux is
+unsupported (no clipboard, no viewer integration); don't add a Linux
+runner or release asset. Not on Windows: `install-viewer` (default .md
+handler).
 
 ## Gates
 

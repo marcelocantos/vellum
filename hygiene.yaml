@@ -51,12 +51,12 @@ items:
 
   - id: correctness.macos-gate
     dim: correctness
-    desc: Product gate runs on macOS (Colossus, locally; clipboard, file refs, and viewer are darwin-only)
+    desc: Product gate runs on macOS (Colossus, locally); Windows is proven on the VM per correctness.windows
     state: enforced
     cadence: continuous
     enforce: blocking
     tier: 2
-    evidence: {file: {path: cvfile, matches: 'macOS is the platform'}}
+    evidence: {file: {path: cvfile, matches: 'The gate host is macOS'}}
 
   - id: correctness.race
     dim: correctness
@@ -85,27 +85,39 @@ items:
     tier: 2
     evidence: {file: {path: cvfile, matches: '(?m)^!cli-contract:'}}
 
-  - id: correctness.release-darwin-only
+  - id: correctness.release-platforms
     dim: correctness
-    desc: Release builds darwin-arm64 only (vellum is macOS-only; no Linux tarballs or tap block)
+    desc: >-
+      Release builds exactly darwin-arm64 (tarball, Homebrew tap) and
+      windows-arm64 + windows-amd64 (zips, scoop bucket/vellum.json); no
+      Linux assets and no Linux block in the tap
     state: enforced
     cadence: per-release
     enforce: warning
     tier: 2
-    evidence: {absent: {file: {path: scripts/release-package.sh, matches: '(?m)^build_one linux'}}}
+    evidence: {file: {path: scripts/release-package.sh, matches: '(?m)^build_one darwin arm64 1 darwin arm64\nbuild_zip arm64\nbuild_zip amd64$'}}
+
+  - id: correctness.release-no-linux
+    dim: correctness
+    desc: No Linux release builds (Linux is unsupported)
+    state: enforced
+    cadence: per-release
+    enforce: warning
+    tier: 2
+    evidence: {absent: {file: {path: scripts/release-package.sh, matches: '(?m)^build_(one|zip) linux'}}}
 
   - id: correctness.windows
     dim: correctness
-    desc: Windows CI / port
-    state: skipped
-    cadence: continuous
-    enforce: informational
-    tier: 3
-    reason: >-
-      Product is macOS-only (clipboard, Finder file references, viewer).
-      CLAUDE.md and cvfile reject a Linux runner as implying a platform
-      vellum does not support; Windows is the same class.
-    evidence: {absent: {file: {path: scripts/release-package.sh, matches: '(?i)windows'}}}
+    desc: >-
+      Windows port (arm64 + amd64): clipboard, file references, viewer
+      service, zips. Proven by the suite with VELLUM_REQUIRE_DEPS=1 and 0
+      skips on the Parallels Windows 11 arm64 VM (ssh hms-vm); there is no
+      Windows CI, the VM run is the per-release check (see CLAUDE.md)
+    state: enforced
+    cadence: per-release
+    enforce: warning
+    tier: 2
+    evidence: {file: {path: clipboard/clipboard_windows.go, matches: 'HTML Format'}}
 
   - id: correctness.fuzzing
     dim: correctness

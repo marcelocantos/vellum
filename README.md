@@ -4,7 +4,7 @@ Document preparation MCP server — converts GitHub-flavoured Markdown to PDF vi
 
 vellum is primarily an HTTP [Model Context Protocol](https://modelcontextprotocol.io/) server (streamable HTTP at `/mcp` on the brew-service daemon), exposing both conversion directions as a single media-orthogonal `convert` tool for AI agents. It also ships a direct CLI for scripted and interactive use, and a stdio MCP fallback (`vellum --mcp`).
 
-On macOS, `vellum install-viewer` registers **Vellum Viewer** as the default `.md` handler so double-clicking Markdown opens a rendered view (HTML by default). Details: [macOS Markdown viewer](#macos-markdown-viewer).
+vellum runs on macOS (arm64) and Windows (arm64, amd64). On macOS, `vellum install-viewer` registers **Vellum Viewer** as the default `.md` handler so double-clicking Markdown opens a rendered view (HTML by default). Details: [macOS Markdown viewer](#macos-markdown-viewer).
 
 vellum is the Go-based successor to [mpe2pdf](https://github.com/marcelocantos/mpe2pdf): leaner, single-binary, MCP-first.
 
@@ -52,7 +52,17 @@ brew install marcelocantos/tap/vellum
 
    Alternatives: `go install github.com/marcelocantos/vellum/cmd/vellum@latest`,
    or a prebuilt binary from the [GitHub releases](https://github.com/marcelocantos/vellum/releases)
-   (macOS arm64).
+   (macOS arm64; Windows arm64/amd64 zips).
+
+   **Windows:** use scoop (`scoop bucket add vellum https://github.com/marcelocantos/vellum`
+   then `scoop install vellum/vellum`) or unzip `vellum-<version>-windows-<arch>.zip`
+   from the releases page onto `PATH`. Dependencies: `winget install
+   JohnMacFarlane.Pandoc OpenJS.NodeJS.LTS MSYS2.MSYS2`; in MSYS2,
+   `pacman -S mingw-w64-clang-aarch64-pango mingw-w64-clang-aarch64-poppler`
+   (`ucrt-x86_64` on x64) and put its `bin` on `PATH`; `pip install weasyprint`
+   with `WEASYPRINT_DLL_DIRECTORIES` set to that `bin`; `npm install -g katex
+   @mermaid-js/mermaid-cli`. Start the daemon with `vellum install-service`
+   (a per-user logon Scheduled Task; `vellum uninstall-service` removes it).
 
 2. **Install runtime dependencies** (WeasyPrint, node, KaTeX, mermaid-cli,
    pandoc, poppler — see [Requirements](#requirements)). The formula pulls
@@ -106,7 +116,7 @@ Options:
   --help-agent        Show help plus the embedded agent guide
   --version           Print version
   --mcp               Run as an MCP server on stdio (fallback)
-  --to-clipboard      Sugar: file|stdin → clipboard (macOS)
+  --to-clipboard      Sugar: file|stdin → clipboard (macOS, Windows)
   --open              Open via the localhost view server (alias for `view`)
   -o <path>           Output path (single input file only); a .pptx
                       extension writes a PowerPoint deck instead of PDF
@@ -238,7 +248,7 @@ Legacy batch sugar still works for Markdown → PDF:
 ```
 
 Rich-text import paths and pptx output require `pandoc` on `PATH`.
-`clipboard` and `file_reference` are macOS-only.
+`clipboard` and `file_reference` work on macOS and Windows (CF_HTML/RTF/text and CF_HDROP file lists); other platforms return a clear error.
 
 ## PowerPoint output
 
@@ -373,7 +383,7 @@ render cache that reloads in the same browser tab.
 | MCP server for agents | **Yes** — single `convert` tool | No | No | No |
 | Clipboard as a source | **Yes** — rich text in | No | No | Paste-only |
 | Clipboard as a sink | **Yes** — rich text out | No | No | Copy-as-HTML |
-| Finder file references | **Yes** (macOS) | No | No | No |
+| File references (Finder / Explorer) | **Yes** (macOS, Windows) | No | No | No |
 | Mermaid diagrams | **Built in** | Via external filter | Via plugin | Usually built in |
 | Diagram format per sink | **SVG screen / PNG print** | Manual | Manual | Fixed |
 | LaTeX math | **Built in** (KaTeX) | Yes | Varies | Yes |
