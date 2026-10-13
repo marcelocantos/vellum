@@ -19,7 +19,7 @@ Until 1.0, any of these may change between minor releases.
 
 ## Interaction surface catalogue
 
-Snapshot as of **v0.27.0** (`const version` in `cmd/vellum`). Annotations:
+Snapshot as of **v0.28.0** (`const version` in `cmd/vellum`). Annotations:
 
 - **stable** — after 1.0, breaking this promise means forking the product.
 - **needs review** — may still be refined after 1.0. A needs-review row is not a failed gate.
@@ -141,6 +141,7 @@ Package paths are under `github.com/marcelocantos/vellum/…`.
 - `func InstallViewer(opts *InstallOptions) (appPath string, err error)` — **needs review** (macOS only; v0.7.0 compiles a Cocoa document-handler binary at install time — shell-script CFBundleExecutable cannot receive Launch Services open-document Apple Events)
 - `func UninstallViewer(opts *InstallOptions) error` — **needs review** (macOS only)
 - `const BundleID, AppName` — **needs review**
+- `func InstallService(opts *ServiceOptions) (string, error)`, `func UninstallService() error`, `func ServiceStatus() (string, error)`, `type ServiceOptions`, `const ServiceTaskName` — **needs review** (Windows only: per-user logon Scheduled Task running `serve-view`; added in v0.28.0)
 
 ### CLI surface
 
@@ -185,6 +186,8 @@ Binary: `vellum`.
 | `vellum serve-view` | Run the localhost daemon: Markdown view + streamable HTTP MCP at `/mcp` (loopback only). Added in v0.14.0; MCP mount in 🎯T31. | needs review |
 | `vellum install-viewer` | Install Vellum Viewer.app as default .md handler (macOS). Added in v0.6.0. | needs review |
 | `vellum uninstall-viewer` | Remove Vellum Viewer.app. Added in v0.6.0. | needs review |
+| `vellum install-service` | Windows: register and start the per-user logon Scheduled Task for `serve-view` (`--addr`, `--no-start`). Added in v0.28.0. | needs review |
+| `vellum uninstall-service` | Windows: end and delete that task. Added in v0.28.0. | needs review |
 
 **Positional arguments**
 
