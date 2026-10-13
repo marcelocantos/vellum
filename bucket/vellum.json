@@ -1,0 +1,37 @@
+{
+    "version": "0.28.0",
+    "description": "Document preparation: Markdown to PDF/HTML/PowerPoint, rich-text import, clipboard, and a localhost Markdown viewer with MCP.",
+    "homepage": "https://github.com/marcelocantos/vellum",
+    "license": "Apache-2.0",
+    "architecture": {
+        "64bit": {
+            "url": "https://github.com/marcelocantos/vellum/releases/download/v0.28.0/vellum-0.28.0-windows-amd64.zip",
+            "hash": "b5f4e198a3137fd4a1eb6640c22eba59b8d2334784a0fe30c1b2318c5d670573"
+        },
+        "arm64": {
+            "url": "https://github.com/marcelocantos/vellum/releases/download/v0.28.0/vellum-0.28.0-windows-arm64.zip",
+            "hash": "c8fdb96f0574f2450036843a5e95b479b382bd0f01803a8f84882509ba3e2c3c"
+        }
+    },
+    "bin": "vellum.exe",
+    "suggest": {
+        "pandoc": "main/pandoc",
+        "nodejs": "main/nodejs-lts"
+    },
+    "notes": [
+        "vellum also needs WeasyPrint (pip install weasyprint, with Pango from MSYS2), poppler,",
+        "and npm install -g katex@0.16.45 @mermaid-js/mermaid-cli. Run 'vellum install-service'",
+        "to start the view server at logon."
+    ],
+    "checkver": "github",
+    "autoupdate": {
+        "architecture": {
+            "64bit": {
+                "url": "https://github.com/marcelocantos/vellum/releases/download/v$version/vellum-$version-windows-amd64.zip"
+            },
+            "arm64": {
+                "url": "https://github.com/marcelocantos/vellum/releases/download/v$version/vellum-$version-windows-arm64.zip"
+            }
+        }
+    }
+}
