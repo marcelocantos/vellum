@@ -15,6 +15,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -302,6 +303,9 @@ func urlPathToFS(p string) (string, error) {
 	if !strings.HasPrefix(u, "/") {
 		u = "/" + u
 	}
+	if runtime.GOOS == "windows" {
+		return windowsURLPathToFS(u)
+	}
 	cleaned := filepath.Clean(u)
 	if cleaned == "/" {
 		return "", fmt.Errorf("missing file path")
@@ -496,4 +500,30 @@ func ProbeViewServer(origin string) error {
 		return fmt.Errorf("view server health: %s", resp.Status)
 	}
 	return nil
+}
+
+// windowsURLPathToFS maps a view-server URL path such as /C:/docs/a.md
+// (what pathURL produces for C:\docs\a.md) back to a drive-letter path.
+// Only absolute drive paths are served; anything else is rejected so a
+// request cannot resolve relative to the server's working directory.
+func windowsURLPathToFS(u string) (string, error) {
+	rest := strings.TrimPrefix(u, "/")
+	if !hasDrivePrefix(rest) {
+		return "", fmt.Errorf("bad path %q: want /<drive>:/...", u)
+	}
+	cleaned := filepath.Clean(filepath.FromSlash(rest))
+	if len(cleaned) <= 3 { // "C:\"
+		return "", fmt.Errorf("missing file path")
+	}
+	return cleaned, nil
+}
+
+// hasDrivePrefix reports whether s starts with a drive letter and colon
+// followed by a separator, e.g. "C:/".
+func hasDrivePrefix(s string) bool {
+	if len(s) < 3 || s[1] != ':' || (s[2] != '/' && s[2] != '\\') {
+		return false
+	}
+	c := s[0]
+	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
 }

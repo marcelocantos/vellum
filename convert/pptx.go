@@ -51,7 +51,8 @@ const pptxReader = "gfm+fenced_divs+definition_lists"
 var mermaidPNGSrcRe = regexp.MustCompile(`<img src="(data:image/png;base64,[A-Za-z0-9+/=]+)"`)
 
 // TemplatesDir returns the directory bare template names resolve under:
-// $XDG_CONFIG_HOME/vellum/templates or ~/.config/vellum/templates.
+// $XDG_CONFIG_HOME/vellum/templates or ~/.config/vellum/templates
+// (%APPDATA%\vellum\templates on Windows).
 func TemplatesDir() (string, error) {
 	dir, err := xdg.ConfigDir()
 	if err != nil {

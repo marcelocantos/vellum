@@ -8,10 +8,11 @@ import (
 	"encoding/base64"
 	"fmt"
 	"os"
-	"os/exec"
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/marcelocantos/vellum/internal/shim"
 )
 
 // Mermaid image output formats for mmdc.
@@ -146,7 +147,7 @@ func renderMermaid(ctx context.Context, src string, format string) (string, erro
 		args = append(args, "-s", "2")
 	}
 
-	cmd := exec.CommandContext(ctx, "mmdc", args...)
+	cmd := shim.Command(ctx, "mmdc", args...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("mmdc: %w: %s", err, string(out))

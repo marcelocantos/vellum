@@ -14,11 +14,12 @@ package clipboard
 import (
 	"errors"
 	"regexp"
+	"runtime"
 	"strings"
 )
 
 // ErrUnsupported indicates the current platform has no clipboard backend.
-var ErrUnsupported = errors.New("clipboard: platform not supported")
+var ErrUnsupported = errors.New("clipboard: not supported on " + runtime.GOOS + " yet (macOS only)")
 
 // Payload describes the content to place on the clipboard. HTML is the
 // authoritative representation; backends derive RTF and plain text from

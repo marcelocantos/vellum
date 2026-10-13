@@ -12,6 +12,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/marcelocantos/vellum/internal/hint"
 )
 
 type weasyprintBackend struct{}
@@ -22,7 +24,7 @@ func (weasyprintBackend) Dep() Dep {
 	return Dep{
 		Name:    "weasyprint",
 		Purpose: "HTML to PDF typesetting (WeasyPrint — BSD-3)",
-		Install: "brew install weasyprint  (or: pipx install weasyprint)",
+		Install: hint.WeasyPrint(),
 	}
 }
 

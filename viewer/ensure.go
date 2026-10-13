@@ -8,10 +8,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
-	"syscall"
 	"time"
+
+	"github.com/marcelocantos/vellum/internal/hint"
 )
 
 // EnsureViewServer probes origin and, if down, starts `vellum serve-view`
@@ -28,19 +28,17 @@ func EnsureViewServer(origin string) error {
 	bin, err := resolveVellumBin()
 	if err != nil {
 		return fmt.Errorf("view server not running at %s and cannot start one: %w\n"+
-			"  Start it with: brew services start vellum\n"+
+			"  Start it with: "+hint.StartViewer()+"\n"+
 			"  Or foreground:  vellum serve-view", origin, err)
 	}
 	addr := addrFromOrigin(origin)
 	cmd := exec.Command(bin, "serve-view", "--addr", addr)
 	cmd.Stdout = nil
 	cmd.Stderr = nil
-	if runtime.GOOS != "windows" {
-		cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
-	}
+	detach(cmd)
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("starting view server: %w\n"+
-			"  Start it with: brew services start vellum\n"+
+			"  Start it with: "+hint.StartViewer()+"\n"+
 			"  Or foreground:  vellum serve-view", err)
 	}
 	// Detach: do not wait; child is session leader.
@@ -54,7 +52,7 @@ func EnsureViewServer(origin string) error {
 		time.Sleep(50 * time.Millisecond)
 	}
 	return fmt.Errorf("view server at %s did not become ready\n"+
-		"  Start it with: brew services start vellum\n"+
+		"  Start it with: "+hint.StartViewer()+"\n"+
 		"  Or foreground:  vellum serve-view", origin)
 }
 

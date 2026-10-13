@@ -35,7 +35,8 @@ type Config struct {
 }
 
 // Path returns the resolved config file path. Honors XDG_CONFIG_HOME and
-// falls back to ~/.config/vellum/config.yaml.
+// falls back to ~/.config/vellum/config.yaml (%APPDATA%\vellum\config.yaml
+// on Windows).
 func Path() (string, error) {
 	dir, err := xdg.ConfigDir()
 	if err != nil {

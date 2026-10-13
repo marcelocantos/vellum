@@ -11,6 +11,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/marcelocantos/vellum/internal/hint"
 )
 
 // Poppler tools used for PDF → page images + text (agent-slurp path).
@@ -20,14 +22,14 @@ var (
 	}{
 		Name:    "pdftoppm",
 		Purpose: "PDF page → PNG for import",
-		Install: "brew install poppler",
+		Install: hint.Poppler(),
 	}
 	PDFToTextDep = struct {
 		Name, Purpose, Install string
 	}{
 		Name:    "pdftotext",
 		Purpose: "PDF text extraction for import",
-		Install: "brew install poppler",
+		Install: hint.Poppler(),
 	}
 )
 

@@ -188,8 +188,14 @@ func (s *Server) handleReveal(w http.ResponseWriter, r *http.Request) {
 }
 
 func revealInFinder(path string) error {
-	if runtime.GOOS != "darwin" {
-		return fmt.Errorf("reveal in Finder is only supported on macOS")
+	switch runtime.GOOS {
+	case "darwin":
+	case "windows":
+		// explorer.exe exits 1 even on success, so only a start failure
+		// is an error.
+		return exec.Command("explorer", "/select,"+filepath.Clean(path)).Start()
+	default:
+		return fmt.Errorf("reveal in file manager is not supported on %s", runtime.GOOS)
 	}
 	cmd := exec.Command("open", "-R", path)
 	out, err := cmd.CombinedOutput()

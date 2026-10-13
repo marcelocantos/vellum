@@ -20,6 +20,8 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+
+	"github.com/marcelocantos/vellum/internal/hint"
 )
 
 // Binary is the executable name, and the string tests pass to
@@ -30,7 +32,7 @@ const Binary = "pandoc"
 // install command when it cannot.
 func Available() error {
 	if _, err := exec.LookPath(Binary); err != nil {
-		return fmt.Errorf("%s not found on PATH (install: brew install %s)", Binary, Binary)
+		return fmt.Errorf("%s not found on PATH (install: %s)", Binary, hint.Pandoc())
 	}
 	return nil
 }

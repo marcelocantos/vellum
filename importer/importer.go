@@ -18,6 +18,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/marcelocantos/vellum/internal/hint"
 )
 
 // PandocDep is the runtime dependency for office-like imports.
@@ -28,7 +30,7 @@ var PandocDep = struct {
 }{
 	Name:    "pandoc",
 	Purpose: "rich-text → Markdown conversion (RTF, DOCX, HTML, ODT, EPUB, LaTeX, …)",
-	Install: "brew install pandoc  (or: https://pandoc.org/installing.html)",
+	Install: hint.Pandoc(),
 }
 
 // CheckDep returns an error if pandoc is not on PATH.
