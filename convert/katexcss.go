@@ -6,12 +6,12 @@ package convert
 import (
 	"fmt"
 	"io/fs"
-	"net/url"
 	"os"
 	"path/filepath"
 	"sync"
 
 	"github.com/marcelocantos/vellum/embed"
+	"github.com/marcelocantos/vellum/internal/fileurl"
 )
 
 // katexHead returns the <head> snippet that styles KaTeX output. The
@@ -26,8 +26,7 @@ func katexHead(href string) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		u := url.URL{Scheme: "file", Path: filepath.Join(dir, embed.KaTeXCSSName)}
-		href = u.String()
+		href = fileurl.FromPath(filepath.Join(dir, embed.KaTeXCSSName))
 	}
 	return `<link rel="stylesheet" href="` + href + `">`, nil
 }

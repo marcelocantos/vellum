@@ -7,12 +7,12 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 
+	"github.com/marcelocantos/vellum/internal/fileurl"
 	"github.com/marcelocantos/vellum/internal/hint"
 )
 
@@ -51,8 +51,7 @@ func (weasyprintBackend) Render(ctx context.Context, htmlContent, outputPath, in
 	if inputDir != "" {
 		// WeasyPrint flag is --base-url (with a hyphen). url.URL handles
 		// path encoding for spaces/Unicode.
-		baseURL := url.URL{Scheme: "file", Path: inputDir + string(filepath.Separator)}
-		args = append(args, "--base-url="+baseURL.String())
+		args = append(args, "--base-url="+fileurl.FromPath(inputDir+string(filepath.Separator)))
 	}
 	if pdfaProfile != "" {
 		// WeasyPrint --pdf-variant accepts lowercase forms (e.g. pdf/a-3b).

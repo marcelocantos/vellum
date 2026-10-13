@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/marcelocantos/vellum/internal/fileurl"
 )
 
 // Result is Markdown plus any extracted media files.
@@ -61,17 +63,20 @@ func AbsolutizeMedia(md, mediaDir string) (string, []string, error) {
 			ref = ref[:i]
 		}
 		ref = strings.Trim(ref, `"'`)
-		if u, err := url.Parse(ref); err == nil && u.Scheme != "" && u.Scheme != "file" {
-			return ref // http(s) etc.
+		if filepath.VolumeName(ref) == "" { // C:\x would parse as scheme "c"
+			if u, err := url.Parse(ref); err == nil && u.Scheme != "" && u.Scheme != "file" {
+				return ref // http(s) etc.
+			}
 		}
-		if strings.HasPrefix(ref, "file://") {
-			p := strings.TrimPrefix(ref, "file://")
+		if p, ok := fileurl.ToPath(ref); ok {
 			add(p)
 			return p
 		}
 		var p string
 		if filepath.IsAbs(ref) {
-			p = ref
+			// Clean so the reference matches the recorded asset; on
+			// Windows pandoc mixes separators (C:\tmp\m/media/x.png).
+			p = filepath.Clean(ref)
 		} else {
 			// Pandoc extract-media paths are relative to CWD or include the
 			// media dir prefix; try mediaDir join first, then mediaDir/ref.

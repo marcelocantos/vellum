@@ -83,7 +83,7 @@ func TestPath_XDG(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "/tmp/somewhere/vellum/config.yaml"
+	want := filepath.Join("/tmp/somewhere", "vellum", "config.yaml")
 	if p != want {
 		t.Errorf("Path: want %q, got %q", want, p)
 	}

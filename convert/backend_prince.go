@@ -7,11 +7,12 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/marcelocantos/vellum/internal/fileurl"
 )
 
 type princeBackend struct{}
@@ -50,8 +51,7 @@ func (princeBackend) Render(ctx context.Context, htmlContent, outputPath, inputD
 	// Unicode) are correctly encoded.
 	args := []string{}
 	if inputDir != "" {
-		baseURL := url.URL{Scheme: "file", Path: inputDir + string(filepath.Separator)}
-		args = append(args, "--baseurl="+baseURL.String())
+		args = append(args, "--baseurl="+fileurl.FromPath(inputDir+string(filepath.Separator)))
 	}
 	if pdfaProfile != "" {
 		// Prince accepts the canonical form as-is (e.g. "PDF/A-3b").

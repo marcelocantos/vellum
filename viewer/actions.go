@@ -26,11 +26,12 @@ func queryAbsPath(r *http.Request) (string, error) {
 	if p == "" {
 		return "", fmt.Errorf("missing path")
 	}
-	if !strings.HasPrefix(p, "/") {
+	if !filepath.IsAbs(p) {
 		return "", fmt.Errorf("path must be absolute")
 	}
 	cleaned := filepath.Clean(p)
-	if cleaned == "/" {
+	if filepath.Dir(cleaned) == cleaned { // "/" or a bare drive root
+
 		return "", fmt.Errorf("missing file path")
 	}
 	return cleaned, nil
