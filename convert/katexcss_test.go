@@ -7,7 +7,6 @@ import (
 	"bytes"
 	"context"
 	"io/fs"
-	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,6 +15,7 @@ import (
 	"testing"
 
 	"github.com/marcelocantos/vellum/embed"
+	"github.com/marcelocantos/vellum/internal/fileurl"
 	"github.com/marcelocantos/vellum/internal/testdeps"
 )
 
@@ -105,17 +105,17 @@ func TestRender_MathLinksLocalKaTeXCSS(t *testing.T) {
 	if m == nil {
 		t.Fatalf("math HTML does not link a file:// KaTeX stylesheet:\n%s", html)
 	}
-	u, err := url.Parse(m[1])
-	if err != nil {
-		t.Fatal(err)
+	linked, ok := fileurl.ToPath(m[1])
+	if !ok {
+		t.Fatalf("not a file URL: %q", m[1])
 	}
-	if filepath.Base(u.Path) != embed.KaTeXCSSName {
-		t.Fatalf("linked %q, want %s", u.Path, embed.KaTeXCSSName)
+	if filepath.Base(linked) != embed.KaTeXCSSName {
+		t.Fatalf("linked %q, want %s", linked, embed.KaTeXCSSName)
 	}
-	if !strings.Contains(u.Path, string(filepath.Separator)+embed.KaTeXVersion+string(filepath.Separator)) {
-		t.Fatalf("linked %q is not under the %s version directory", u.Path, embed.KaTeXVersion)
+	if !strings.Contains(linked, string(filepath.Separator)+embed.KaTeXVersion+string(filepath.Separator)) {
+		t.Fatalf("linked %q is not under the %s version directory", linked, embed.KaTeXVersion)
 	}
-	onDisk, err := os.ReadFile(u.Path)
+	onDisk, err := os.ReadFile(linked)
 	if err != nil {
 		t.Fatalf("linked stylesheet is not on disk: %v", err)
 	}
@@ -124,7 +124,7 @@ func TestRender_MathLinksLocalKaTeXCSS(t *testing.T) {
 		t.Fatal("stylesheet on disk differs from the embedded one")
 	}
 	for _, m := range cssURLRe.FindAllSubmatch(onDisk, -1) {
-		font := filepath.Join(filepath.Dir(u.Path), string(m[1]))
+		font := filepath.Join(filepath.Dir(linked), string(m[1]))
 		if _, err := os.Stat(font); err != nil {
 			t.Errorf("font %s is not beside the stylesheet: %v", m[1], err)
 		}

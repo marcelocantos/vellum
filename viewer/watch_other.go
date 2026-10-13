@@ -7,16 +7,55 @@ package viewer
 
 import (
 	"os"
+	"path/filepath"
 	"time"
 )
 
-// pollWatch keeps the viewer package building off macOS. The product watches
-// with kqueue; this loop only stats.
+// pollWatch is the watcher off macOS (macOS watches with kqueue). It
+// stats on a timer; when the file vanishes it looks for the same file
+// (by identity) elsewhere in the directory so renames redirect the view
+// rather than reading as deletes.
 type pollWatch struct {
 	path      string
 	stop      <-chan struct{}
 	present   bool
 	lastStamp string
+	last      os.FileInfo
+}
+
+// statPath stats w.path and pins the file identity, so a later
+// os.SameFile still works after the path is gone (on Windows the
+// identity is otherwise read lazily from the path).
+func (w *pollWatch) statPath() (os.FileInfo, error) {
+	info, err := os.Stat(w.path)
+	if err == nil {
+		os.SameFile(info, info)
+	}
+	return info, err
+}
+
+// vanished records the loss of w.path and reports a rename when the
+// file now lives under another name in the same directory.
+func (w *pollWatch) vanished() pathNote {
+	last := w.last
+	w.present = false
+	w.lastStamp = ""
+	w.last = nil
+	if last != nil {
+		dir := filepath.Dir(w.path)
+		if entries, err := os.ReadDir(dir); err == nil {
+			for _, e := range entries {
+				cand := filepath.Join(dir, e.Name())
+				if cand == w.path || e.IsDir() {
+					continue
+				}
+				if info, err := os.Stat(cand); err == nil && os.SameFile(last, info) {
+					return pathNote{renamed: cand}
+				}
+			}
+		}
+	}
+	return pathNote{unlinked: true}
 }
 
 func openPathSource(path string, stop <-chan struct{}) (pathSource, error) {
@@ -42,9 +81,7 @@ func (w *pollWatch) reconcile() (pathNote, error) {
 		return pathNote{}, nil
 	}
 	if w.present {
-		w.present = false
-		w.lastStamp = ""
-		return pathNote{unlinked: true}, nil
+		return w.vanished(), nil
 	}
 	return pathNote{}, nil
 }
@@ -77,15 +114,14 @@ func (w *pollWatch) wait(deadline time.Time) (pathNote, bool, error) {
 }
 
 func (w *pollWatch) observe() (pathNote, bool) {
-	info, err := os.Stat(w.path)
+	info, err := w.statPath()
 	if err != nil || info.IsDir() {
 		if w.present {
-			w.present = false
-			w.lastStamp = ""
-			return pathNote{unlinked: true}, true
+			return w.vanished(), true
 		}
 		return pathNote{}, false
 	}
+	w.last = info
 	st := sourceStamp(info)
 	if !w.present {
 		w.present = true
