@@ -64,20 +64,20 @@ Package paths are under `github.com/marcelocantos/vellum/…`.
 - **Single tool** `convert` with `from`/`to` media endpoints (+ optional `files` sugar) — **needs review** (replaced the four-tool surface: old `convert_to_clipboard`, `convert_from_clipboard`, `import` removed)
 - `type Endpoint`, `FilePair`, `ConvertInput`, `ConvertOutput` — **needs review**
 
-**`clipboard`** — system-clipboard read/write (added in v0.2.0; reads added in v0.5.0; file refs in 🎯T14). macOS `Write` tries AppKit `NSAttributedString` first, then falls back to pandoc HTML→RTF (🎯T23).
+**`clipboard`** — system-clipboard read/write (added in v0.2.0; reads added in v0.5.0; file refs in 🎯T14). macOS `Write` tries AppKit `NSAttributedString` first, then falls back to pandoc HTML→RTF (🎯T23). Windows (v0.28.0) is pure-Go user32: `Write` puts CF_HTML, RTF (pandoc) and CF_UNICODETEXT on the clipboard in one transaction, reads RTF/HTML/PDF, and reads and writes CF_HDROP file lists. Linux returns `ErrUnsupported`.
 
 - `type Payload struct { HTML string }` — **needs review** (single-field today; RTF + plain text are derived; may grow explicit fields)
 - `type Route string` — **needs review** (`RouteAppKit` preferred; `RoutePandoc` fallback drops CSS, keeps structure)
 - `const RouteAppKit, RoutePandoc` — **needs review**
 - `type WriteReport struct { Route Route; Fallback string }` — **needs review** (`Fallback` is empty on the AppKit path; a non-empty value is a degraded paste that `convert.Run` surfaces as a soft error)
-- `func Write(p Payload) (WriteReport, error)` — **needs review** (macOS implementation only; non-macOS returns `ErrUnsupported`)
-- `func ReadRTF() ([]byte, error)` — **needs review** (added in v0.5.0; macOS only)
+- `func Write(p Payload) (WriteReport, error)` — **needs review** (macOS: AppKit, pandoc fallback; Windows: always `RoutePandoc`; Linux returns `ErrUnsupported`)
+- `func ReadRTF() ([]byte, error)` — **needs review** (added in v0.5.0; macOS and Windows)
 - `func ReadHTML() ([]byte, error)` — **needs review** (same)
 - `func ReadRichText() (data []byte, format string, err error)` — **needs review** (RTF preferred, HTML fallback; format is "rtf"/"html"/"")
 - `func ReadPDF() ([]byte, error)` — **needs review** (public.pdf / com.adobe.pdf; PowerPoint slide copies)
 - `func ReadImportable() (data []byte, format string, err error)` — **needs review** (RTF, then HTML, then PDF)
 - `type FileRefPayload struct { Paths []string }` — **needs review** (Finder-style file references)
-- `func WriteFileRefs(p FileRefPayload) error` — **needs review** (macOS; pasteboard-owned NSFilenamesPboardType so data survives process exit)
+- `func WriteFileRefs(p FileRefPayload) error` — **needs review** (macOS: pasteboard-owned NSFilenamesPboardType so data survives process exit; Windows: CF_HDROP)
 - `func ReadFileRefs() ([]string, error)` — **needs review**
 - `const FormatRTF, FormatHTML, FormatPDF` — **needs review**
 - `var ErrUnsupported error` — **stable**
@@ -161,7 +161,7 @@ Binary: `vellum`.
 | `--help-agent`   | Print usage + embedded agent guide, exit 0          | stable    |
 | `--version`      | Print version string to stdout, exit 0              | stable    |
 | `--mcp`          | Run as stdio MCP server (fallback; HTTP on the brew-service daemon is preferred) | stable    |
-| `--to-clipboard` | Sugar: file or stdin (`-`) → clipboard rich (macOS) | needs review |
+| `--to-clipboard` | Sugar: file or stdin (`-`) → clipboard rich (macOS, Windows) | needs review |
 | `--open`         | Open via localhost view server (alias for `view`). Added in v0.6.0; server URL behaviour in v0.14.0. | needs review |
 | `--pdf`          | With `--open`/`view`: high-fidelity PDF instead of HTML. Added in v0.6.0. | needs review |
 | `-o <path>`      | Output path (single-input only)                     | stable    |
@@ -179,7 +179,7 @@ Binary: `vellum`.
 |-------------------|------------------------------------------------------|--------------|
 | `vellum convert --from/--to` | Media-orthogonal conversion (file, content, clipboard, file_reference). Added in v0.8.0. | needs review |
 | `vellum import <file>` | Sugar: rich-text → Markdown (via `convert`). Added in v0.5.0. | needs review |
-| `vellum import --from-clipboard` | Sugar: clipboard rich → Markdown (macOS). Added in v0.5.0. | needs review |
+| `vellum import --from-clipboard` | Sugar: clipboard rich → Markdown (macOS, Windows). Added in v0.5.0. | needs review |
 | `vellum import … -o <path>` | Write the Markdown to a file instead of stdout. | needs review |
 | `vellum import … --from <fmt>` | Override pandoc format autodetection. | needs review |
 | `vellum view <file>` | Open via localhost view server (HTML → `http://127.0.0.1:18742/…`) or PDF cache file. Added in v0.6.0; server behaviour in v0.14.0. | needs review |
@@ -254,7 +254,7 @@ Removed: `convert_to_clipboard`, `convert_from_clipboard`, `import`.
 
 - **Text content**: Markdown/HTML body when `to.media=content`; otherwise a short summary. **needs review**.
 - **`isError`**: set to `true` when the conversion fails (or when a batch has no successful paths and only errors). **needs review**.
-- **Platform**: `clipboard` and `file_reference` media require macOS; other platforms return unsupported.
+- **Platform**: `clipboard` and `file_reference` media work on macOS and Windows; Linux returns unsupported.
 
 ### Markdown syntax extensions
 
@@ -322,8 +322,10 @@ dependency set itself is considered stable.
 
 These are inputs to the agent's `## 1.0 judgment`. They do not authorize the cut.
 
-- **Cross-platform coverage.** **Additive.** The release matrix currently targets
-  macOS arm64 and Linux x86_64/arm64. Windows is not tested. A Windows port can land later without revising the macOS promises.
+- **Cross-platform coverage.** **Additive.** Releases ship darwin-arm64 and
+  windows-arm64/amd64; there are no Linux builds. Windows is tested: the full
+  suite runs with `VELLUM_REQUIRE_DEPS=1` and 0 skips on the Windows 11 arm64 VM
+  (🎯T36). Paste into Word and Outlook has not been checked yet (🎯T48).
 - **Runtime dependency installer.** **Additive.** First-time setup of `mmdc` + its
   pinned Chromium is a consistent pain point. A `vellum doctor` or
   equivalent one-shot setup command can land later.
@@ -400,7 +402,7 @@ change to template resolution, or to how markdown is carved into
 slides, would break callers who depend on today's decks. Nothing now
 known requires that change.
 
-No closure concern would force a fork. Windows, a setup command, the
+No closure concern would force a fork. A setup command, the
 audit-log convention, language bindings, file RTF, EPUB, and ADF as a
 `Run` sink can land later by addition.
 
