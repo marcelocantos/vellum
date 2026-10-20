@@ -69,6 +69,36 @@ unsupported (no clipboard, no viewer integration); don't add a Linux
 runner or release asset. Not on Windows: `install-viewer` (default .md
 handler).
 
+## Release
+
+Minor releases only (no patch on top of the latest). On Colossus:
+
+1. Bump `const version` in `cmd/vellum/main.go`, the STABILITY snapshot
+   line, and add `.release-notes-v<ver>.md`; `cv gate`; push master.
+2. `cv release-dist`, then `scripts/release-publish.sh --skip-brew`
+   (GitHub release, tap via tapper, `bucket/vellum.json`). Commit the
+   scoop manifest after `cv gate`; push. (`cv release` does the same
+   but runs `brew upgrade` itself — dry-run first when other formulae
+   may upgrade.)
+3. `brew upgrade marcelocantos/tap/vellum`, then **`make verify-release`**
+   (`VERSION=` overrides the expected version; default is the latest
+   tag). Non-zero means the release is broken. It uses only the Homebrew
+   install and the supervisord program `vellum-view-release`
+   (`/opt/homebrew/bin/vellum serve-view` on 127.0.0.1:18744, separate
+   cache via a private HOME; template `supervisor/vellum-view-release.ini`).
+   It checks the installed version; restarts the release service and
+   requires the same pid after 60s plus the right MCP serverInfo
+   (`scripts/post-release-check.sh`); converts the fixtures in
+   `test/verify-release/` md→PDF/HTML/PPTX and DOCX→md with content
+   assertions; fail-fast without weasyprint; HTTP MCP tools/list and
+   convert both ways; the viewer page and offline `/_vellum/katex/`.
+   Clipboard is skipped (no guaranteed GUI session). It is not part of
+   `cv gate`.
+
+Dev and release run side by side: `vellum-view` (127.0.0.1:18742) serves
+`supervisor/run-view.sh`, which prefers the checkout's `./vellum` build;
+`vellum-view-release` serves the Homebrew binary.
+
 ## Gates
 
 profile: base

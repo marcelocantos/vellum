@@ -98,7 +98,8 @@ fi\'
 #                       vellum-<ver>-windows-{arm64,amd64}.zip (no Linux)
 #   cv release-tap    — update marcelocantos/homebrew-tap (release must exist)
 #   cv release        — gate + dist + gh release create + tap + scoop
-#                       manifest (bucket/vellum.json) + brew upgrade
+#                       manifest (bucket/vellum.json) + brew upgrade +
+#                       make verify-release (e2e on the installed release)
 #
 # Tap update: tapper push (see tapper.yaml). GitHub upload uses gh auth.
 

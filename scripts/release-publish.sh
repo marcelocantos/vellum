@@ -94,6 +94,11 @@ if [[ "$SKIP_BREW" == false ]]; then
 		echo "release-publish: expected vellum --version ${VERSION}, got ${got:-<missing>}" >&2
 		exit 1
 	fi
+	# A release that fails end-to-end on the installed binary is broken.
+	echo "release-publish: make verify-release VERSION=${VERSION} …" >&2
+	"$(dirname "$0")/verify-release.sh" "$VERSION"
+else
+	echo "release-publish: brew skipped — after brew upgrade vellum, run: make verify-release VERSION=${VERSION}" >&2
 fi
 
 echo "release-publish: ${TAG} → https://github.com/marcelocantos/vellum/releases/tag/${TAG}"
