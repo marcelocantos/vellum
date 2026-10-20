@@ -450,6 +450,17 @@ items:
     tier: 2
     evidence: {file: {path: STABILITY.md}}
 
+  - id: docs.handover-historical
+    dim: docs
+    desc: >-
+      docs/HANDOVER.md (v0.1.0 handover) opens with a historical marker so it
+      cannot pass for current architecture (ENT-003, 🎯T30.3)
+    state: enforced
+    cadence: once-must-hold
+    enforce: warning
+    tier: 2
+    evidence: {file: {path: docs/HANDOVER.md, matches: '\AStatus: historical \(2026-04-11\)'}}
+
   - id: docs.md-links
     dim: docs
     desc: Internal markdown links resolve (no dead cross-references)

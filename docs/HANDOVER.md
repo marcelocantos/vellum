@@ -1,4 +1,14 @@
-# Vellum Handover Document
+Status: historical (2026-04-11)
+
+> Frozen at v0.1.0 (`103795e`) and superseded by `CLAUDE.md` / `STABILITY.md`.
+> It describes the product as it stood then: Prince as the PDF engine, the
+> MCP server not yet built, no Go test suite. Do not implement or review
+> against it. Current sources of truth: `CLAUDE.md` (architecture and gate),
+> `STABILITY.md` (public surface), `README.md` and `docs/agents-guide.md`
+> (usage), `bullseye.yaml` (followable work). The chronology lives in
+> `docs/audit-log.md`, the release notes and git history.
+
+# Vellum Handover Document (historical, v0.1.0)
 
 Complete context for picking up vellum development. This document captures
 the product vision, architecture, decisions made, pitfalls encountered,
