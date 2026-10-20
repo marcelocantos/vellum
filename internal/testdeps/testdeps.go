@@ -13,6 +13,8 @@ package testdeps
 import (
 	"os"
 	"os/exec"
+	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -56,4 +58,27 @@ func NeedAny(t *testing.T, tools ...string) []string {
 		t.Skipf("none of %v on PATH", tools)
 	}
 	return found
+}
+
+// StubPath replaces PATH, for the rest of the test, with a fresh
+// directory holding a placeholder executable for each named tool and
+// nothing else. exec.LookPath finds the placeholders, but running one
+// fails (it is not a real program), so a test can tell "the dependency
+// check passed" apart from "a converter was executed". It returns the
+// directory.
+func StubPath(t *testing.T, tools ...string) string {
+	t.Helper()
+	dir := t.TempDir()
+	ext := ""
+	if runtime.GOOS == "windows" {
+		ext = ".exe"
+	}
+	for _, tool := range tools {
+		p := filepath.Join(dir, tool+ext)
+		if err := os.WriteFile(p, []byte("not a program\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("PATH", dir)
+	return dir
 }

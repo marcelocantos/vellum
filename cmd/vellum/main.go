@@ -142,7 +142,7 @@ func run() error {
 	}
 
 	if mcpMode {
-		return runMCP(backend)
+		return runMCP()
 	}
 
 	if openMode {
@@ -894,18 +894,13 @@ func runCLI(args []string, output, backendFlag, templateFlag string) error {
 	return err
 }
 
-func runMCP(backendFlag string) error {
-	cfg, err := config.Load()
-	if err != nil {
-		return err
-	}
-	// For the MCP server's dep check, use the configured default backend.
-	// Per-call backend overrides (set via MCP tool input) still work — the
-	// per-call value just becomes a runtime require, not a startup gate.
-	backendName := effectiveBackend(backendFlag, cfg.Backend)
-	if err := convert.CheckDeps(backendName); err != nil {
-		return err
-	}
+func runMCP() error {
+	// No startup dependency gate: every convert call goes through
+	// convert.Run, which checks the binaries that call needs before any
+	// converter runs (🎯T30.5). A server that refused to start without
+	// mmdc or WeasyPrint also refused DOCX → Markdown, which needs neither.
+	// The backend for each call comes from the tool input or the config
+	// file, as before; --backend only ever fed the old startup check.
 	return vellummcp.Serve(context.Background(), version)
 }
 

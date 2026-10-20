@@ -34,10 +34,11 @@ must succeed before vellum is usable — do not stop after `brew install`.**
    ```
 
 2. **Install the runtime dependencies.** vellum shells out to external
-   tools. The HTTP daemon starts without a PDF-backend gate (Markdown
-   view still works). `convert` reports missing tools on the call. Stdio
-   `--mcp` still checks the selected PDF backend, `node`, and `mmdc`
-   at startup. pandoc and poppler are needed only for import:
+   tools. Neither the HTTP daemon nor stdio `--mcp` gates startup on
+   them (Markdown view still works). Every conversion, CLI or MCP,
+   checks what that call needs before any converter runs: a PDF needs
+   the selected backend, `node`, and `mmdc`; pandoc is needed only for
+   rich-text import and pptx output, and poppler only for PDF import:
 
    ```sh
    # Renderer: WeasyPrint (default, BSD-3). Alternatively/additionally
@@ -135,11 +136,11 @@ must succeed before vellum is usable — do not stop after `brew install`.**
    - Check the binary: `vellum --version` should print the installed
      version.
    - Check the runtime deps: `vellum --help-agent` prints this guide.
-     The HTTP daemon does not fail-fast on PDF deps. Stdio
-     `vellum --mcp` checks the selected PDF backend plus `node` and
-     `mmdc`. CLI PDF conversion fails at exec if the backend is
-     missing. pandoc and poppler are checked only when an import
-     path needs them.
+     Neither MCP transport checks deps at startup. Each conversion
+     (CLI or MCP) fails up front, listing every missing tool with its
+     install command: a PDF checks the selected backend plus `node`
+     and `mmdc`; pandoc is checked only for rich-text import and pptx
+     output, and poppler only for PDF import.
    - Call a tool: convert a trivial one-line Markdown string with
      `convert` (`from.media=content`, `to.media=content`) or write a
      one-line `.md` file to PDF (`from.media=file`, `to.media=file`)
@@ -614,14 +615,14 @@ diagnostic.
 
 Common failure modes:
 
-- A required dependency is missing. The HTTP brew-service daemon
-  starts without a PDF-backend gate. `convert` reports missing tools
-  on the call. Stdio `vellum --mcp` still checks the selected PDF
-  backend (`weasyprint` by default, or `prince`) plus `node` and
-  `mmdc` at startup. CLI PDF conversion does not preflight those
-  binaries — a missing renderer fails at exec. pandoc is checked
-  lazily only on rich-text import and pptx output; poppler only on PDF
-  import.
+- A required dependency is missing. Neither the HTTP brew-service
+  daemon nor stdio `vellum --mcp` gates startup on deps. Each
+  conversion, CLI or MCP, checks before any converter runs: a PDF
+  needs the selected backend (`weasyprint` by default, or `prince`)
+  plus `node` and `mmdc`, and fails with `required dependency …
+  not found on PATH` rather than an exec error. pandoc is checked
+  only when rich-text import or pptx output is requested; poppler
+  only on PDF import.
   Missing tools are listed with install instructions when a check
   runs.
 - The `katex` node package is not installed globally. Fix with

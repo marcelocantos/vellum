@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+
+	"github.com/marcelocantos/vellum/internal/hint"
 )
 
 // Dep describes an external runtime dependency.
@@ -45,12 +47,31 @@ func RequiredDeps(backendName string) []Dep {
 	return deps
 }
 
+// PandocDep is pandoc as a conversion dependency. It is needed only when
+// a requested format goes through pandoc: a rich-text source (RTF, DOCX,
+// HTML, ODT, …) or a PowerPoint sink. It is not part of RequiredDeps, so
+// a Markdown → PDF or HTML user never has to install it.
+var PandocDep = Dep{
+	Name:    "pandoc",
+	Purpose: "rich-text import (RTF, DOCX, HTML, ODT, …) and PowerPoint output",
+	Install: hint.Pandoc(),
+}
+
 // CheckDeps returns an error if any required dep for the selected backend is
 // missing from PATH. The error message lists every missing dep with its
 // install instructions.
 func CheckDeps(backendName string) error {
+	return checkDeps(RequiredDeps(backendName))
+}
+
+func checkDeps(deps []Dep) error {
 	var missing []Dep
-	for _, d := range RequiredDeps(backendName) {
+	seen := map[string]bool{}
+	for _, d := range deps {
+		if seen[d.Name] {
+			continue
+		}
+		seen[d.Name] = true
 		if _, err := exec.LookPath(d.Name); err != nil {
 			missing = append(missing, d)
 		}
@@ -72,4 +93,66 @@ func CheckDeps(backendName string) error {
 		fmt.Fprintf(&b, "\n  - %s (%s)\n    install: %s", d.Name, d.Purpose, d.Install)
 	}
 	return fmt.Errorf("%s", b.String())
+}
+
+// preflight checks, before any converter runs, that the binaries the
+// planned conversion needs are on PATH, so a missing tool fails up front
+// with one message listing every gap instead of surfacing later as an
+// exec error from deep inside a backend (ENT-005, 🎯T30.5).
+//
+// A PDF sink needs RequiredDeps for the selected backend, the same set
+// MCP and the viewer have always checked. pandoc stays lazy: it is
+// demanded only when a requested format goes through it (a rich-text
+// source or a pptx sink), never for Markdown → PDF/HTML. A clipboard
+// source's format is only known once the clipboard is read, so its
+// import check stays in the importer.
+func preflight(from, to Endpoint, inputs []inputItem, backend string) error {
+	var needRenderer, needPandoc bool
+	for _, in := range inputs {
+		fromFmt := plannedSourceFormat(from, in)
+		if fromFmt != "" && !isMarkdownFormat(fromFmt) && fromFmt != FormatPDF {
+			needPandoc = true
+		}
+		if fromFmt == "" {
+			fromFmt = FormatRTF // what ingest assumes for an undetected clipboard
+		}
+		if to.Media != MediaFile && to.Media != MediaFileReference {
+			continue // text and clipboard sinks cannot carry PDF or pptx
+		}
+		switch inferToFormat(to, fromFmt) {
+		case FormatPDF:
+			needRenderer = true
+		case FormatPPTX:
+			needPandoc = true
+		}
+	}
+	var deps []Dep
+	if needRenderer {
+		deps = append(deps, RequiredDeps(backend)...)
+	}
+	if needPandoc {
+		deps = append(deps, PandocDep)
+	}
+	return checkDeps(deps)
+}
+
+// plannedSourceFormat mirrors ingest's source-format resolution without
+// reading anything. It returns "" when the format is unknowable before
+// the read (an undetected clipboard).
+func plannedSourceFormat(from Endpoint, in inputItem) string {
+	f := normalizeFormat(from.Format)
+	switch from.Media {
+	case MediaFile:
+		if f == "" {
+			f = formatFromExt(in.path)
+		}
+		if f == "" {
+			f = FormatMarkdown
+		}
+	case MediaContent:
+		if f == "" {
+			f = FormatMarkdown
+		}
+	}
+	return f
 }

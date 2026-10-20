@@ -153,6 +153,11 @@ func Run(ctx context.Context, req *Request) (*Result, error) {
 		}
 	}
 
+	// Fail fast: every binary this request needs, before any converter runs.
+	if err := preflight(from, to, inputs, opts.Backend); err != nil {
+		return nil, err
+	}
+
 	var softMsgs []string
 	for _, in := range inputs {
 		item, err := runOne(ctx, in, from, to, opts)
@@ -662,6 +667,11 @@ func runFilesSugar(ctx context.Context, req *Request) (*Result, error) {
 		ToMedia:    MediaFile,
 		FromFormat: FormatMarkdown,
 		ToFormat:   FormatPDF,
+	}
+	// One up-front check for the whole batch rather than the same
+	// missing-dependency error repeated once per file.
+	if err := CheckDeps(req.Backend); err != nil {
+		return nil, err
 	}
 	var softMsgs []string
 	for _, f := range req.Files {

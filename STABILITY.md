@@ -45,7 +45,8 @@ Package paths are under `github.com/marcelocantos/vellum/…`.
 - `const BackendWeasyPrint, BackendPrince, DefaultBackend` — **needs review** (default name may change pre-1.0)
 - `type Dep struct { Name, Purpose, Install string }` — **stable**
 - `func RequiredDeps(backendName string) []Dep` — **stable** (signature changed in v0.4.0 to take backend name)
-- `func CheckDeps(backendName string) error` — **stable** (signature changed in v0.4.0 to take backend name; MCP startup and viewer PDF call it; CLI `convert` / `Run` do not)
+- `func CheckDeps(backendName string) error` — **stable** (signature changed in v0.4.0 to take backend name; `Run` calls it before any converter runs when a request has a PDF sink, so CLI and MCP share the check (🎯T30.5); viewer PDF calls it too; stdio MCP no longer checks at startup)
+- `var PandocDep Dep` — **needs review** (added in v0.31.0; `Run` adds it to the up-front check only for rich-text sources and pptx sinks)
 
 **`convert` (router)** — media-orthogonal `Run` (🎯T14).
 

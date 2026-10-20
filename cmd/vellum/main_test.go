@@ -191,3 +191,31 @@ func TestRun_PPTXByOutputExtension(t *testing.T) {
 		t.Errorf("missing template: err = %v, want one naming it", err)
 	}
 }
+
+// TestRun_BareMarkdownFailsFastWithoutBackend is the CLI half of the
+// ENT-005 oracle (🎯T30.5): `vellum doc.md` with WeasyPrint missing
+// fails up front with the RequiredDeps wording instead of an exec error
+// from inside the backend, and writes no PDF.
+func TestRun_BareMarkdownFailsFastWithoutBackend(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	dir := t.TempDir()
+	in := filepath.Join(dir, "doc.md")
+	if err := os.WriteFile(in, []byte("Hello **world**.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	testdeps.StubPath(t, "node", "mmdc")
+
+	var err error
+	withArgs(t, []string{"vellum", in}, func() {
+		_ = captureStdout(t, func() { err = run() })
+	})
+	if err == nil || !strings.Contains(err.Error(), `required dependency "weasyprint" not found on PATH`) {
+		t.Fatalf("run err = %v, want the RequiredDeps wording for weasyprint", err)
+	}
+	if strings.Contains(err.Error(), "exec:") {
+		t.Errorf("err = %q: the backend was executed before the check", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(dir, "doc.pdf")); statErr == nil {
+		t.Error("doc.pdf was written despite the missing renderer")
+	}
+}
