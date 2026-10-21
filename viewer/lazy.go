@@ -342,5 +342,6 @@ func (s *Server) handleFragment(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		return
 	}
-	_, _ = io.WriteString(w, html)
+	// A diagram may carry its own same-page links (Mermaid `click … "#id"`).
+	_, _ = io.WriteString(w, rewriteFragmentHrefs(html, pathURL(absPath)))
 }

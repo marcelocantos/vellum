@@ -76,7 +76,8 @@ if cli doc.md -o doc.pdf && [[ -s doc.pdf ]]; then
 	m="$(has doc.pdf.txt "Verify Release Fixture" "Second Heading" tableCellOmega codeSentinel42)" || why="$why $m"
 	[[ "$imgs" -ge 1 ]] || why="$why no embedded image (mermaid PNG)"
 	pdffonts doc.pdf | grep -q KaTeX || why="$why no KaTeX font embedded"
-	if [[ -z "$why" ]]; then ok "cli md→pdf: $pages page, text, $imgs image(s) (mermaid), KaTeX fonts"
+	python3 "$HERE/pdf-anchor-check.py" doc.pdf second-heading >"$W/anchor.log" 2>&1 || why="$why $(tail -1 "$W/anchor.log")"
+	if [[ -z "$why" ]]; then ok "cli md→pdf: $pages page, text, $imgs image(s) (mermaid), KaTeX fonts, #second-heading link is internal"
 	else bad "cli md→pdf" "$why"; fi
 else bad "cli md→pdf" "$(tail -3 "$W/cli.log")"; fi
 
@@ -142,11 +143,33 @@ if r="$(mcp tools/call "$args" 2>&1)" && t="$(echo "$r" | mcptext)" && [[ "$t" =
 else bad "mcp docx→md" "${r:0:300}"; fi
 
 # --- 5. viewer on the release port ---------------------------------------
-code="$(curl -sL -o view.html -w '%{http_code}' -m 60 "http://$ADDR$W/doc.md")"
+view="$(curl -sL -o view.html -w '%{http_code} %{url_effective}' -m 60 "http://$ADDR$W/doc.md")"
+code="${view%% *}"
 if [[ "$code" == 200 ]] && m="$(has view.html "Verify Release Fixture" tableCellOmega "/_vellum/katex/")" &&
 	! grep -qE 'https?://[^"]*(jsdelivr|unpkg|cdnjs)' view.html; then
 	ok "viewer: rendered page, KaTeX linked from /_vellum/katex/, no CDN"
 else bad "viewer page" "HTTP $code ${m:-}"; fi
+
+# Same-page links must resolve (against the page's <base href>, as a
+# browser does) to the document itself, not the source directory.
+if r="$(python3 - "${view#* }" view.html <<'PY' 2>&1
+import html, re, sys, urllib.parse
+page_url, page = sys.argv[1], open(sys.argv[2], encoding="utf-8").read()
+base = html.unescape(re.search(r'<base href="([^"]*)">', page).group(1))
+want = urllib.parse.urldefrag(page_url)[0]
+for raw in re.findall(r'<a\b[^>]*\shref="([^"]*)"', page):
+    u = urllib.parse.urljoin(base, html.unescape(raw))
+    doc, frag = urllib.parse.urldefrag(u)
+    if frag == "second-heading":
+        if doc != want:
+            sys.exit(f"#second-heading resolves to {u}, not {want}")
+        print(u)
+        sys.exit(0)
+sys.exit("no link to #second-heading in the page")
+PY
+)"; then
+	ok "viewer: [the table](#second-heading) resolves to the document"
+else bad "viewer anchor" "$r"; fi
 
 css_code="$(curl -s -o katex.css -w '%{http_code}' -m 15 "http://$ADDR/_vellum/katex/katex.min.css")"
 font="$(grep -oE 'fonts/KaTeX_Main-Regular\.woff2' katex.css 2>/dev/null | head -1)"

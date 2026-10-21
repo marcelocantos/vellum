@@ -91,7 +91,8 @@ Minor releases only (no patch on top of the latest). On Colossus:
    (`scripts/post-release-check.sh`); converts the fixtures in
    `test/verify-release/` md→PDF/HTML/PPTX and DOCX→md with content
    assertions; fail-fast without weasyprint; HTTP MCP tools/list and
-   convert both ways; the viewer page and offline `/_vellum/katex/`.
+   convert both ways; the viewer page and offline `/_vellum/katex/`;
+   same-page `#anchor` links in the viewer page and the PDF.
    Clipboard is skipped (no guaranteed GUI session). It is not part of
    `cv gate`.
 

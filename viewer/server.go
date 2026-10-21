@@ -329,6 +329,10 @@ func (s *Server) serveMarkdown(w http.ResponseWriter, r *http.Request, absPath s
 	}
 	origin := requestOrigin(r)
 	page := rewriteMarkdownHrefs(string(body), absPath, origin)
+	// The <base> below points at the source directory (for relative images
+	// and links), which would also capture fragment-only hrefs: [x](#id)
+	// would navigate to the directory. Pin them to this document's URL.
+	page = rewriteFragmentHrefs(page, documentURLPath(r))
 	// Ensure <base> matches this request's origin (cache may predate a port change).
 	page = ensureBaseHref(page, origin+pathURL(filepath.Dir(absPath))+"/")
 	// First paint waits on text only: the cached page is a shell whose

@@ -1,6 +1,6 @@
 # Verify Release Fixture
 
-Plain paragraph with **bold** and *italic* text.
+Plain paragraph with **bold** and *italic* text. Jump to [the table](#second-heading).
 
 ## Second Heading
 
