@@ -399,16 +399,19 @@ already work with files and `convert`.
   scroll restore). A rename redirects the tab; a deletion leaves the
   rendered page up and reports it; a missing file stays on a waiting
   page until it appears. Served HTML is wrapped with view
-  chrome (TOC sidebar with expand/collapse and « / » toggle, PDF /
-  clipboard / Finder toolbar, dark / system / light theme with
-  dark-mode syntax highlighting, figure lightbox, editable GFM task
-  lists). Task-list boxes toggle the source on the box itself (click or
+  chrome (TOC sidebar with expand/collapse and « / » toggle, download
+  menu for PDF / Source, clipboard / Finder toolbar, dark / system /
+  light theme with dark-mode syntax highlighting, figure lightbox,
+  editable GFM task lists). The download control is an icon that opens
+  a popup: PDF downloads as before; Source opens a new tab that renders
+  the Markdown source inline (monospace, like browser view-source).
+  Task-list boxes toggle the source on the box itself (click or
   Space), not the label text. The toggle POST returns a source stamp
   that chrome adopts without a full reload, so keyboard focus stays on
   the box. An external file-change still reloads the view and restores
   scroll plus the focused checkbox. Chrome is injected per response; the convert-cache file
   stays chrome-free. Actions live under `/_vellum/` (`GET …/pdf`,
-  `POST …/clipboard`, `POST …/reveal`, `GET …/watch`,
+  `GET …/source`, `POST …/clipboard`, `POST …/reveal`, `GET …/watch`,
   `POST …/task-toggle`).
 - `vellum view <file.md>` / `vellum --open <file.md>` — open the file
   as an `http://127.0.0.1:18742/…` URL on the view server (**not**
@@ -633,6 +636,7 @@ Common failure modes:
   failure is logged to stderr (1-based diagram index), returned as a
   soft error, and surfaces in the MCP `errors` array; the CLI exits
   non-zero after writing output.
-- The PDF backend cannot fit content onto a page. This usually means
-  an oversized image, table, or Mermaid diagram — try the
-  `vellum:scale` hint.
+- A Mermaid diagram is still too tall for one PDF page after width
+  fitting. Wide tables and images scale/wrap to the printable width
+  automatically; for a dense diagram that overflows vertically, try
+  the `vellum:scale` hint.

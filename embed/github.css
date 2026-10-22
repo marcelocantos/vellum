@@ -95,21 +95,27 @@ blockquote {
 blockquote > :first-child { margin-top: 0; }
 blockquote > :last-child { margin-bottom: 0; }
 
-/* Tables */
+/* Tables — fit the printable page. GitHub's width:max-content +
+   overflow:auto scrolls in a browser; WeasyPrint/Prince clip instead,
+   so wide tables (and their trailing cells) vanish from the PDF. */
 table {
   border-spacing: 0;
   border-collapse: collapse;
   margin-top: 0;
   margin-bottom: 16px;
   display: table;
-  width: max-content;
+  width: 100%;
   max-width: 100%;
-  overflow: auto;
+  /* fixed: Prince ignores wrapping under table-layout:auto and still
+     clips trailing columns; fixed forces equal-share columns that wrap. */
+  table-layout: fixed;
 }
 
 th, td {
   padding: 6px 13px;
   border: 1px solid #d1d9e0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 th {
@@ -128,8 +134,11 @@ hr {
   border: 0;
 }
 
-/* Images */
-img { max-width: 100%; }
+/* Images — scale down to the content box; never clip at the page edge. */
+img {
+  max-width: 100%;
+  height: auto;
+}
 
 /* Footnotes */
 .footnotes { font-size: 0.875em; }
@@ -145,10 +154,22 @@ mark { background-color: #fff8c5; padding: 0.1em 0.2em; }
 /* Math (KaTeX) */
 .katex-display { margin: 1em 0; }
 
-/* Mermaid diagrams */
-.mermaid-svg { margin: 16px 0; text-align: center; }
-.mermaid-svg img { max-width: 100%; max-height: 230mm; width: auto; height: auto; }
-.mermaid-svg svg { max-width: 100%; }
+/* Mermaid diagrams — same fit rule as images (PNG for PDF, SVG for HTML). */
+.mermaid-svg {
+  margin: 16px 0;
+  text-align: center;
+  max-width: 100%;
+}
+.mermaid-svg img {
+  max-width: 100%;
+  max-height: 230mm;
+  width: auto;
+  height: auto;
+}
+.mermaid-svg svg {
+  max-width: 100%;
+  height: auto;
+}
 
 /* Print / Prince */
 @page {

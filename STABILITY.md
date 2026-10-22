@@ -132,7 +132,7 @@ Package paths are under `github.com/marcelocantos/vellum/…`.
 - `type ViewOptions struct { Format Format; Style *convert.Style; Backend string; Open func(string) error; CacheDir string; MaxBytes int64; MaxAge time.Duration; Now func() time.Time; ViewBaseURL string; SkipEnsureServer bool }` — **needs review**
 - `type Server struct { Addr string; CacheDir string; Style *convert.Style; Backend string; … }` — **needs review** (added in v0.14.0)
 - `func (*Server) ListenAndServe(ctx context.Context) error` — **needs review** (loopback-only bind)
-- `func (*Server) Handler() http.Handler` — **needs review** (Markdown GET injects chrome; `/_vellum/pdf` GET, `/_vellum/clipboard` POST, `/_vellum/reveal` POST, `/_vellum/watch` GET/WebSocket, `/_vellum/task-toggle` POST)
+- `func (*Server) Handler() http.Handler` — **needs review** (Markdown GET injects chrome; `/_vellum/pdf` GET, `/_vellum/source` GET, `/_vellum/clipboard` POST, `/_vellum/reveal` POST, `/_vellum/watch` GET/WebSocket, `/_vellum/task-toggle` POST)
 - `func ViewURL(origin, absPath string) string` — **needs review**
 - `func EnsureViewServer(origin string) error` — **needs review**
 - `func ProbeViewServer(origin string) error` — **needs review**

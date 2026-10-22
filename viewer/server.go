@@ -162,6 +162,7 @@ func (s *Server) Handler() http.Handler {
 		mux.Handle(MCPPath+"/", s.MCP)
 	}
 	mux.HandleFunc(ChromePDFPath, s.handlePDF)
+	mux.HandleFunc(ChromeSourcePath, s.handleSource)
 	mux.HandleFunc(ChromeClipboardPath, s.handleClipboard)
 	mux.HandleFunc(ChromeRevealPath, s.handleReveal)
 	mux.HandleFunc(ChromeWatchPath, s.handleWatch)

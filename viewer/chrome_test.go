@@ -45,8 +45,19 @@ func TestInjectChrome_WrapsBodyAndAddsClass(t *testing.T) {
 	if !strings.Contains(out, `<h1 id="hello">Hello</h1>`) {
 		t.Fatalf("lost body:\n%s", out)
 	}
-	if !strings.Contains(out, `data-vellum="pdf"`) || !strings.Contains(out, `data-vellum="clipboard"`) || !strings.Contains(out, `data-vellum="reveal"`) {
+	if !strings.Contains(out, `data-vellum="download"`) || !strings.Contains(out, `data-vellum="pdf"`) || !strings.Contains(out, `data-vellum="source"`) {
+		t.Fatalf("missing download menu:\n%s", out)
+	}
+	trigger := out[strings.Index(out, `data-vellum="download"`):]
+	trigger = trigger[:strings.Index(trigger, `</button>`)+len(`</button>`)]
+	if strings.Contains(trigger, "PDF") {
+		t.Fatalf("download trigger should be icon-only, got:\n%s", trigger)
+	}
+	if !strings.Contains(out, `data-vellum="clipboard"`) || !strings.Contains(out, `data-vellum="reveal"`) {
 		t.Fatalf("missing toolbar actions:\n%s", out)
+	}
+	if !strings.Contains(out, "vellum-download-menu") || !strings.Contains(out, `toggleDownloadMenu`) {
+		t.Fatalf("missing download menu chrome:\n%s", out)
 	}
 	if !strings.Contains(out, `data-vellum="theme"`) || !strings.Contains(out, "vellum-theme") {
 		t.Fatalf("missing theme toggle:\n%s", out)
@@ -140,8 +151,8 @@ func TestServer_ChromeInjectedOnServeNotInCache(t *testing.T) {
 	if !strings.Contains(html, "cache test body") {
 		t.Fatalf("missing body:\n%s", html)
 	}
-	if !strings.Contains(html, `data-vellum="pdf"`) {
-		t.Fatalf("response missing chrome:\n%s", html)
+	if !strings.Contains(html, `data-vellum="download"`) || !strings.Contains(html, `data-vellum="source"`) {
+		t.Fatalf("response missing download chrome:\n%s", html)
 	}
 	if !strings.Contains(html, `data-source="`+md+`"`) {
 		t.Fatalf("response missing source:\n%s", html)

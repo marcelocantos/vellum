@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"html"
 	"io"
 	"net/http"
 	"os"
@@ -114,6 +115,53 @@ func (s *Server) handlePDF(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Disposition", `attachment; filename="`+name+`"`)
 	w.Header().Set("Cache-Control", "no-store")
 	http.ServeFile(w, r, cachePath)
+}
+
+func (s *Server) handleSource(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	absPath, err := queryAbsPath(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	info, err := os.Stat(absPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			http.NotFound(w, r)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if info.IsDir() {
+		http.Error(w, "is a directory", http.StatusBadRequest)
+		return
+	}
+	data, err := os.ReadFile(absPath)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	name := filepath.Base(absPath)
+	title := html.EscapeString(name)
+	body := html.EscapeString(string(data))
+	page := `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">` +
+		`<meta name="viewport" content="width=device-width, initial-scale=1">` +
+		`<title>` + title + ` (source)</title>` +
+		`<style>
+html, body { margin: 0; padding: 0; background: #0d1117; color: #e6edf3; }
+body { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace; font-size: 13px; line-height: 1.5; }
+pre { margin: 0; padding: 16px 20px; white-space: pre-wrap; word-break: break-word; }
+</style></head><body><pre>` + body + `</pre></body></html>`
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	if r.Method == http.MethodHead {
+		return
+	}
+	_, _ = io.WriteString(w, page)
 }
 
 func (s *Server) handleClipboard(w http.ResponseWriter, r *http.Request) {

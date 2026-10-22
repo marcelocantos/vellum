@@ -17,6 +17,7 @@ import (
 const (
 	ChromePrefix         = "/_vellum/"
 	ChromePDFPath        = "/_vellum/pdf"
+	ChromeSourcePath     = "/_vellum/source"
 	ChromeClipboardPath  = "/_vellum/clipboard"
 	ChromeRevealPath     = "/_vellum/reveal"
 	ChromeWatchPath      = "/_vellum/watch"
@@ -116,7 +117,12 @@ func chromeOpen(sourcePath string, waiting bool) string {
 		`<div class="vellum-main">` +
 		`<header class="vellum-toolbar">` +
 		`<button type="button" class="vellum-toc-toggle-btn" data-vellum="toc-toggle" title="Hide table of contents" aria-label="Hide table of contents">«</button>` +
-		`<button type="button" data-vellum="pdf" title="Download a PDF of this document" aria-label="Download PDF">PDF` + downloadIconSVG() + `</button>` +
+		`<div class="vellum-download">` +
+		`<button type="button" class="vellum-icon-btn" data-vellum="download" title="Download" aria-label="Download" aria-haspopup="menu" aria-expanded="false" aria-controls="vellum-download-menu">` + downloadIconSVG() + `</button>` +
+		`<div class="vellum-download-menu" id="vellum-download-menu" role="menu" hidden>` +
+		`<button type="button" role="menuitem" data-vellum="pdf">PDF</button>` +
+		`<button type="button" role="menuitem" data-vellum="source">Source</button>` +
+		`</div></div>` +
 		`<button type="button" data-vellum="clipboard" title="Copy the rendered document to the clipboard">Copy</button>` +
 		`<button type="button" data-vellum="reveal" title="Reveal the source file in ` + hint.FileManager() + `">Show in ` + hint.FileManager() + `</button>` +
 		`<div class="vellum-toolbar-end">` +

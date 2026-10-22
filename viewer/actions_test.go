@@ -67,6 +67,47 @@ func TestAction_PDFDownload(t *testing.T) {
 	}
 }
 
+func TestAction_SourceView(t *testing.T) {
+	dir := t.TempDir()
+	md := filepath.Join(dir, "note.md")
+	src := "# Note\n\nHello <world> & \"friends\".\n"
+	if err := os.WriteFile(md, []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s := &Server{CacheDir: filepath.Join(dir, "cache")}
+	ts := startTestServer(t, s)
+
+	u := ts.URL + ChromeSourcePath + "?path=" + url.QueryEscape(md)
+	resp, err := http.Get(u)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	page := string(body)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status %d: %s", resp.StatusCode, page)
+	}
+	if got := resp.Header.Get("Content-Type"); !strings.Contains(got, "text/html") {
+		t.Errorf("Content-Type %q", got)
+	}
+	if strings.Contains(page, "attachment") {
+		t.Errorf("source view must not be a download")
+	}
+	if !strings.Contains(page, "<pre>") || !strings.Contains(page, "</pre>") {
+		t.Fatalf("missing preformatted source:\n%s", page)
+	}
+	if !strings.Contains(page, "Hello &lt;world&gt; &amp; &#34;friends&#34;.") {
+		t.Fatalf("source not escaped inline:\n%s", page)
+	}
+	if strings.Contains(page, "Hello <world>") {
+		t.Fatalf("raw markup leaked into source view:\n%s", page)
+	}
+	if !strings.Contains(page, "note.md (source)") {
+		t.Fatalf("missing title:\n%s", page)
+	}
+}
+
 func TestAction_ClipboardPOST(t *testing.T) {
 	dir := t.TempDir()
 	md := filepath.Join(dir, "doc.md")
