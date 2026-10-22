@@ -173,12 +173,12 @@ brew services start vellum
 Each GET converts **one** Markdown path (no link-graph crawl). Relative
 `.md`/`.markdown` links are rewritten to same-origin URLs. The served page
 adds view chrome (not written into the convert cache): a heading table of
-contents with expand/collapse and a « / » sidebar toggle, a toolbar to
-download PDF, copy the rendered document to the clipboard, or reveal the
-source in Finder, a theme control (dark / system / light, persisted in
-the browser), dark-mode article styling with syntax highlighting, and
-a full-viewport zoom/pan viewer for images and SVG (including Mermaid),
-and GFM task-list checkboxes that edit the source file after consent
+contents with expand/collapse and a « / » sidebar toggle, a download
+menu (PDF, or Source in a new tab), copy to clipboard, reveal in Finder,
+a theme control (dark / system / light, persisted in the browser),
+dark-mode article styling with syntax highlighting, and a full-viewport
+zoom/pan viewer for images and SVG (including Mermaid), and GFM
+task-list checkboxes that edit the source file after consent
 (once per session or permanently) when you click or Space the box, not
 the label text. The toggle adopts the new source stamp without reloading;
 an external file-change reload keeps keyboard focus on that box. The same process hosts
