@@ -172,7 +172,7 @@ brew services start vellum
 
 Each GET converts **one** Markdown path (no link-graph crawl). Relative
 `.md`/`.markdown` links are rewritten to same-origin URLs. The served page
-adds view chrome (not written into the convert cache): a heading table of
+adds view chrome (not written into the convert cache): a leading H1 that stays under the toolbar and shrinks as the page scrolls, a heading table of
 contents with expand/collapse and a « / » sidebar toggle, a download
 menu (PDF, or Source in a new tab), copy to clipboard, reveal in Finder,
 a theme control (dark / system / light, persisted in the browser),
