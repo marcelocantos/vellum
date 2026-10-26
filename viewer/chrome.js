@@ -686,6 +686,60 @@
     return id;
   }
 
+  // Scroll distance over which a leading h1 lerps from its resting size
+  // to the compact bar. A fixed range keeps the font size a function of
+  // scroll position, not of the height it just computed.
+  const TITLE_PIN_RANGE = 96;
+
+  function leadingTitle() {
+    if (!article) return null;
+    const nodes = article.childNodes;
+    for (let i = 0; i < nodes.length; i++) {
+      const n = nodes[i];
+      if (n.nodeType === Node.TEXT_NODE) {
+        if ((n.textContent || "").trim() === "") continue;
+        return null;
+      }
+      if (n.nodeType !== Node.ELEMENT_NODE) continue;
+      if (n.classList.contains("vellum-contents")) continue;
+      if (n.tagName === "H1") return n;
+      return null;
+    }
+    return null;
+  }
+
+  function pinLeadingTitle() {
+    const h1 = leadingTitle();
+    if (!h1 || !scrollPane) return;
+    h1.classList.add("vellum-pin-title");
+    // Content-Y where the title's top meets the scroll pane. Measured
+    // before any shrink, so a contents block above the title does not
+    // count as travel. The lerp runs over TITLE_PIN_RANGE of scroll
+    // ending at that line, which is when the title sticks.
+    const restY =
+      h1.getBoundingClientRect().top -
+      scrollPane.getBoundingClientRect().top +
+      scrollPane.scrollTop;
+    let scheduled = false;
+    function apply() {
+      const start = Math.max(0, restY - TITLE_PIN_RANGE);
+      const t = Math.max(0, Math.min(1, (scrollPane.scrollTop - start) / TITLE_PIN_RANGE));
+      h1.style.setProperty("--vellum-title-pin", t.toFixed(4));
+      if (article) article.style.setProperty("--vellum-pin-h", h1.offsetHeight + "px");
+    }
+    function schedule() {
+      if (scheduled) return;
+      scheduled = true;
+      requestAnimationFrame(function () {
+        scheduled = false;
+        apply();
+      });
+    }
+    scrollPane.addEventListener("scroll", schedule, { passive: true });
+    window.addEventListener("resize", schedule);
+    apply();
+  }
+
   function buildTOC() {
     if (!article || !tocNav || !toc) return;
     const headings = Array.prototype.slice.call(
@@ -1093,6 +1147,7 @@
 
   buildTOC();
   fillTOC();
+  pinLeadingTitle();
   restoreScroll();
   hydrateDeferred();
   focusScrollPane();

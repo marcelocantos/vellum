@@ -42,6 +42,9 @@ func TestInjectChrome_WrapsBodyAndAddsClass(t *testing.T) {
 	if !strings.Contains(out, ".vellum-scroll") {
 		t.Fatalf("missing scroll-pane CSS")
 	}
+	if !strings.Contains(out, "vellum-pin-title") || !strings.Contains(out, "pinLeadingTitle") {
+		t.Fatalf("missing leading-title pin")
+	}
 	if !strings.Contains(out, `<h1 id="hello">Hello</h1>`) {
 		t.Fatalf("lost body:\n%s", out)
 	}

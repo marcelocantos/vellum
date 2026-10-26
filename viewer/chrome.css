@@ -269,6 +269,12 @@ body.vellum-view {
   overflow: auto;
 }
 
+/* The pinned title changes height as it lerps. Scroll anchoring would
+   pull scrollTop back to cancel that, and the lerp would chase itself. */
+.vellum-scroll:has(.vellum-pin-title) {
+  overflow-anchor: none;
+}
+
 .vellum-scroll:focus {
   outline: none;
 }
@@ -358,6 +364,27 @@ body.vellum-view {
   max-width: 980px;
   margin: 0 auto;
   padding: 32px;
+}
+
+/* A leading h1 sticks under the toolbar. --vellum-title-pin runs from 0
+   (resting title) to 1 (compact bar); chrome.js sets it from scroll. */
+.vellum-article > h1.vellum-pin-title {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  text-align: left;
+  background: #fff;
+  /* Padding, not margin, so the bar's background covers everything that
+     sticks. Margin would stay transparent and let text show through it. */
+  margin-top: 0;
+  margin-bottom: calc(16px * (1 - var(--vellum-title-pin, 0)));
+  padding-top: calc(24px * (1 - var(--vellum-title-pin, 0)) + 8px * var(--vellum-title-pin, 0));
+  font-size: calc(2em + (1.15em - 2em) * var(--vellum-title-pin, 0));
+}
+
+.vellum-article:has(> h1.vellum-pin-title) :is(h2, h3, h4, h5, h6),
+.vellum-article:has(> h1.vellum-pin-title) > h1.vellum-pin-title ~ h1 {
+  scroll-margin-top: var(--vellum-pin-h, 2.5rem);
 }
 
 .vellum-article img,
@@ -594,6 +621,9 @@ body.vellum-view {
   .vellum-article {
     padding: 0;
   }
+  .vellum-article > h1.vellum-pin-title {
+    position: static;
+  }
 }
 
 /* --- Theme (after convert CSS in head; beats github.css on specificity) --- */
@@ -686,6 +716,10 @@ html[data-vellum-theme="dark"] .vellum-article {
 html[data-vellum-theme="dark"] .vellum-article h1,
 html[data-vellum-theme="dark"] .vellum-article h2 {
   border-bottom-color: #30363d;
+}
+
+html[data-vellum-theme="dark"] .vellum-article > h1.vellum-pin-title {
+  background: #0d1117;
 }
 
 html[data-vellum-theme="dark"] .vellum-article h6,
@@ -846,6 +880,10 @@ html[data-vellum-theme="dark"] .vellum-article mark {
   html[data-vellum-theme="system"] .vellum-article h1,
   html[data-vellum-theme="system"] .vellum-article h2 {
     border-bottom-color: #30363d;
+  }
+
+  html[data-vellum-theme="system"] .vellum-article > h1.vellum-pin-title {
+    background: #0d1117;
   }
 
   html[data-vellum-theme="system"] .vellum-article h6,
