@@ -7,6 +7,11 @@
 This gathers evidence for a later visual verdict; it does not claim that a
 page looks good. Keep captures outside the repository because they may include
 private page content and signed media URLs.
+
+The browser is the installed Google Chrome (Playwright's "chrome" channel)
+with Chromium's sandbox enabled. It does not use Playwright's downloaded
+browser builds, so `playwright install` is not needed; install Google Chrome
+instead.
 """
 
 import argparse
@@ -195,7 +200,9 @@ def main():
     out.mkdir(parents=True, exist_ok=True)
 
     with sync_playwright() as playwright:
-        browser = playwright.chromium.launch(headless=True)
+        # Real Chrome, sandbox on. Playwright defaults chromium_sandbox to
+        # False (it passes --no-sandbox), so turn it on explicitly.
+        browser = playwright.chromium.launch(headless=True, channel="chrome", chromium_sandbox=True)
         try:
             for name, width, height in VIEWPORTS:
                 result = capture_page(

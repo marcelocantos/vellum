@@ -42,6 +42,9 @@ file rather than merely rejecting relative media. The existing assets are
    marker, scroll through the page to trigger lazy media, wait for fonts and
    images, then capture full-page screenshots and DOM geometry. The capture
    helper is [`scripts/confluence-layout-capture.py`](../../scripts/confluence-layout-capture.py).
+   It drives the installed Google Chrome (Playwright's `chrome` channel) with
+   the Chromium sandbox on, so it needs the `playwright` Python package and
+   Google Chrome, not `playwright install`'s downloaded browsers.
    Write screenshots and measurements to a scratch directory outside the
    repository, not to `test/output` or another synced directory.
    For example, after an agent has saved a test account's Playwright storage
