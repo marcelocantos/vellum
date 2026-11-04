@@ -9,6 +9,15 @@
 # latest git tag).
 .PHONY: bullseye verify-release
 
+# macOS: cgo and the viewer applet use Apple's clang unless CC is set
+# (Homebrew llvm's clang can target an SDK the Command Line Tools lack).
+ifeq ($(shell uname -s),Darwin)
+ifeq ($(origin CC),default)
+CC = /usr/bin/clang
+endif
+export CC
+endif
+
 bullseye:
 	cv bullseye
 

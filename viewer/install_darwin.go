@@ -161,10 +161,29 @@ func writeAppBundle(appPath, vellumPath string) error {
 	return nil
 }
 
+// systemClang is Apple's clang driver, which always targets an SDK the
+// installed Command Line Tools (or Xcode) actually ship.
+const systemClang = "/usr/bin/clang"
+
+// appletCompiler picks the compiler for the Cocoa applet: $CC when set,
+// else the system clang, else whatever clang is first on PATH. A PATH
+// lookup alone would pick up Homebrew llvm's clang, which can target a
+// newer macOS SDK than the Command Line Tools provide and then fail
+// with "'Cocoa/Cocoa.h' file not found".
+func appletCompiler(getenv func(string) string, lookPath func(string) (string, error)) (string, error) {
+	if cc := strings.TrimSpace(getenv("CC")); cc != "" {
+		return lookPath(cc)
+	}
+	if p, err := lookPath(systemClang); err == nil {
+		return p, nil
+	}
+	return lookPath("clang")
+}
+
 // compileApplet builds the Cocoa document handler into outPath using
 // the system clang. Requires Xcode Command Line Tools (or full Xcode).
 func compileApplet(outPath string) error {
-	clang, err := exec.LookPath("clang")
+	clang, err := appletCompiler(os.Getenv, exec.LookPath)
 	if err != nil {
 		return fmt.Errorf("clang not found — install Xcode Command Line Tools (`xcode-select --install`) to build Vellum Viewer.app: %w", err)
 	}

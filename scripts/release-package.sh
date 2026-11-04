@@ -18,7 +18,13 @@ build_one() {
 	out="$BUILD/vellum"
 	asset="vellum-${VERSION}-${asset_os}-${asset_arch}.tar.gz"
 
-	CGO_ENABLED="$cgo" GOOS="$goos" GOARCH="$goarch" \
+	# darwin cgo builds use Apple's clang unless CC is set: Homebrew llvm's
+	# clang (often first on PATH) can target an SDK CLT does not ship.
+	local ccenv=()
+	if [[ "$goos" == darwin && -z "${CC:-}" ]]; then
+		ccenv=(CC=/usr/bin/clang)
+	fi
+	env ${ccenv[@]+"${ccenv[@]}"} CGO_ENABLED="$cgo" GOOS="$goos" GOARCH="$goarch" \
 		go build -trimpath -ldflags="-s -w" -o "$out" ./cmd/vellum
 	tar -czf "$DIST/$asset" -C "$BUILD" vellum -C "$ROOT" LICENSE README.md NOTICE
 	rm -f "$out"

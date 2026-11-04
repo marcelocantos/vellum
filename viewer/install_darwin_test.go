@@ -7,6 +7,7 @@ package viewer
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -133,5 +134,40 @@ func TestOpenA_DeliversDocument(t *testing.T) {
 	}
 	if !strings.Contains(string(got), "--open") || !strings.Contains(string(got), md) {
 		t.Fatalf("stub vellum was not called with --open and the file path.\nlog=%q\napp log may be at ~/Library/Logs/vellum-viewer.log", got)
+	}
+}
+
+func TestAppletCompiler_PrefersCCThenSystemClang(t *testing.T) {
+	found := map[string]string{
+		"/usr/bin/clang": "/usr/bin/clang",
+		"clang":          "/opt/homebrew/opt/llvm/bin/clang",
+		"my-cc":          "/opt/x/my-cc",
+	}
+	look := func(name string) (string, error) {
+		if p, ok := found[name]; ok {
+			return p, nil
+		}
+		return "", errors.New("not found")
+	}
+	env := func(cc string) func(string) string {
+		return func(k string) string {
+			if k == "CC" {
+				return cc
+			}
+			return ""
+		}
+	}
+	for _, tc := range []struct{ cc, want string }{
+		{"", "/usr/bin/clang"},    // not the PATH-first Homebrew clang
+		{"my-cc", "/opt/x/my-cc"}, // an explicit CC wins
+	} {
+		got, err := appletCompiler(env(tc.cc), look)
+		if err != nil || got != tc.want {
+			t.Errorf("CC=%q: got %q, %v; want %q", tc.cc, got, err, tc.want)
+		}
+	}
+	delete(found, "/usr/bin/clang")
+	if got, err := appletCompiler(env(""), look); err != nil || got != found["clang"] {
+		t.Errorf("no system clang: got %q, %v; want PATH clang", got, err)
 	}
 }
