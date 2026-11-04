@@ -366,6 +366,51 @@ body.vellum-view {
   padding: 32px;
 }
 
+/* Screen only: tables leave the 980px reading column. github.css keeps
+   its fixed, 100%-wide tables for the PDF, where WeasyPrint and Prince
+   clip rather than scroll; print and PDF output are unchanged. */
+@media screen {
+  .vellum-scroll {
+    container-type: inline-size;
+  }
+
+  /* Columns size to their content and wide tables scroll inside the
+     panel. Narrow tables keep their natural width. */
+  .vellum-article table {
+    display: block;
+    width: max-content;
+    max-width: 100%;
+    overflow-x: auto;
+    table-layout: auto;
+  }
+
+  /* github.css breaks cells anywhere, so no word sets a column's
+     minimum and every column shrinks to slivers. Here words stay whole:
+     long cells wrap between words, and a table whose words don't fit
+     scrolls instead. */
+  .vellum-article th,
+  .vellum-article td {
+    min-width: 4ch;
+    overflow-wrap: break-word;
+    word-break: normal;
+  }
+
+  /* A top-level table may be as wide as the panel less the article's
+     32px gutters. Up to 980px it lines up with the prose; past that it
+     grows outward on both sides, centred on the column. */
+  .vellum-article > table {
+    max-width: calc(100cqw - 64px);
+    transform: translateX(round(min(0px, 490px - 50%), 1px));
+  }
+
+  /* The pinned title's bar spans the panel, so a wide table scrolling
+     under it doesn't show either side of it. */
+  .vellum-article > h1.vellum-pin-title {
+    box-shadow: 0 0 0 100vmax var(--vellum-pin-bg, #fff);
+    clip-path: inset(0 -100vmax);
+  }
+}
+
 /* A leading h1 sticks under the toolbar. --vellum-title-pin runs from 0
    (resting title) to 1 (compact bar); chrome.js sets it from scroll. */
 .vellum-article > h1.vellum-pin-title {
@@ -720,6 +765,7 @@ html[data-vellum-theme="dark"] .vellum-article h2 {
 
 html[data-vellum-theme="dark"] .vellum-article > h1.vellum-pin-title {
   background: #0d1117;
+  --vellum-pin-bg: #0d1117;
 }
 
 html[data-vellum-theme="dark"] .vellum-article h6,
@@ -884,6 +930,7 @@ html[data-vellum-theme="dark"] .vellum-article mark {
 
   html[data-vellum-theme="system"] .vellum-article > h1.vellum-pin-title {
     background: #0d1117;
+    --vellum-pin-bg: #0d1117;
   }
 
   html[data-vellum-theme="system"] .vellum-article h6,

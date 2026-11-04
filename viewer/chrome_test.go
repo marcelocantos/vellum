@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/marcelocantos/vellum/convert"
+	"github.com/marcelocantos/vellum/embed"
 )
 
 func stubHTML(_ context.Context, _ string, _ *convert.Options) (string, []string, error) {
@@ -184,5 +185,77 @@ func TestServer_ChromeInjectedOnServeNotInCache(t *testing.T) {
 	}
 	if !strings.Contains(cacheHTML, "cache test body") {
 		t.Fatalf("cache missing convert body:\n%s", cacheHTML)
+	}
+}
+
+// mediaBlock returns the body of the first "@media <query> {" block in css
+// that contains marker, with braces balanced.
+func mediaBlock(t *testing.T, css, query, marker string) string {
+	t.Helper()
+	head := "@media " + query + " {"
+	for rest := css; ; {
+		i := strings.Index(rest, head)
+		if i < 0 {
+			t.Fatalf("no %q block containing %q", head, marker)
+		}
+		body := rest[i+len(head):]
+		depth := 1
+		for j, c := range body {
+			switch c {
+			case '{':
+				depth++
+			case '}':
+				depth--
+			}
+			if depth == 0 {
+				body = body[:j]
+				break
+			}
+		}
+		if strings.Contains(body, marker) {
+			return body
+		}
+		rest = rest[i+len(head):]
+	}
+}
+
+// Viewer tables leave the 980px reading column and size their columns to
+// content, on screen only. Prose keeps the reading width, and print keeps
+// github.css's fixed, page-wide tables, which the PDF needs.
+func TestChromeCSS_TablesBreakOutAndAutosize(t *testing.T) {
+	if !strings.Contains(chromeCSS, ".vellum-article {\n  max-width: 980px;\n  margin: 0 auto;\n  padding: 32px;\n}") {
+		t.Fatal("prose reading column changed: .vellum-article must stay max-width 980px, margin 0 auto, padding 32px")
+	}
+	screen := mediaBlock(t, chromeCSS, "screen", ".vellum-article table")
+	for _, want := range []string{
+		"container-type: inline-size",
+		"width: max-content",
+		"max-width: 100%",
+		"overflow-x: auto",
+		"table-layout: auto",
+		"overflow-wrap: break-word",
+		"word-break: normal",
+		"max-width: calc(100cqw - 64px)",
+		"translateX(round(min(0px, 490px - 50%), 1px))",
+		"clip-path: inset(0 -100vmax)",
+	} {
+		if !strings.Contains(screen, want) {
+			t.Errorf("screen table rules missing %q:\n%s", want, screen)
+		}
+	}
+	if strings.Contains(chromeCSS, "table-layout: fixed") {
+		t.Error("viewer chrome must not force fixed (even-width) table columns")
+	}
+	if strings.Contains(chromeCSS, "width: 100%;\n    table-layout") {
+		t.Error("viewer tables must not be forced to the full width")
+	}
+	if printCSS := mediaBlock(t, chromeCSS, "print", ".vellum-article"); strings.Contains(printCSS, "table") {
+		t.Errorf("print chrome must leave tables to github.css:\n%s", printCSS)
+	}
+
+	gh := embed.GitHubCSS
+	if !strings.Contains(gh, "  width: 100%;\n  max-width: 100%;\n  /* fixed:") ||
+		!strings.Contains(gh, "  table-layout: fixed;\n}") {
+		t.Error("embed/github.css table rules (PDF fit, v0.34.0) must stay as they are")
 	}
 }
