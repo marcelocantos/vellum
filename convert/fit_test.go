@@ -67,14 +67,16 @@ func TestConvert_WideArtifactsFitPage(t *testing.T) {
 				t.Fatalf("Convert: %v", err)
 			}
 			txt := filepath.Join(dir, "doc.txt")
-			if o, err := exec.Command("pdftotext", out, txt).CombinedOutput(); err != nil {
+			// Preserve cell content order: layout heuristics can interleave
+			// wrapped lines from adjacent columns on Windows fonts.
+			if o, err := exec.Command("pdftotext", "-raw", out, txt).CombinedOutput(); err != nil {
 				t.Fatalf("pdftotext: %v: %s", err, o)
 			}
 			body, err := os.ReadFile(txt)
 			if err != nil {
 				t.Fatal(err)
 			}
-			text := strings.ReplaceAll(string(body), "\n", "")
+			text := strings.NewReplacer("\r\n", "", "\n", "").Replace(string(body))
 			for _, want := range cells {
 				if !strings.Contains(text, want) {
 					t.Errorf("table cell %q truncated from PDF:\n%s", want, body)
