@@ -23,3 +23,9 @@ bullseye:
 
 verify-release:
 	./scripts/verify-release.sh $(VERSION)
+
+# Requires Playwright and Chrome; exercises the live viewer on an isolated port.
+.PHONY: test-table-headers
+test-table-headers:
+	go build -o /tmp/vellum-table-journey ./cmd/vellum
+	VELLUM_BINARY=/tmp/vellum-table-journey node scripts/table-header-journey.cjs

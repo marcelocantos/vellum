@@ -370,6 +370,12 @@ body.vellum-view {
    its fixed, 100%-wide tables for the PDF, where WeasyPrint and Prince
    clip rather than scroll; print and PDF output are unchanged. */
 @media screen {
+  .vellum-article thead {
+    position: relative;
+    z-index: 1;
+    transform: translateY(var(--vellum-table-pin, 0px));
+  }
+
   .vellum-scroll {
     container-type: inline-size;
   }

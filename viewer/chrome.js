@@ -740,6 +740,39 @@
     apply();
   }
 
+  // Tables scroll horizontally themselves, so CSS sticky would attach to
+  // that scroller instead of the document pane. Move the real header as a
+  // unit: column widths, multi-row headings and horizontal scroll stay intact.
+  if (article && scrollPane) {
+    let pending = false;
+    function pinTableHeads() {
+      pending = false;
+      const paneTop = scrollPane.getBoundingClientRect().top;
+      const title = article.querySelector(".vellum-pin-title");
+      const top = title ? Math.max(paneTop, title.getBoundingClientRect().bottom) : paneTop;
+      article.querySelectorAll("table").forEach(function (table) {
+        const head = table.tHead;
+        if (!head) return;
+        const previous = Number(head.dataset.vellumPinOffset || 0);
+        const rect = head.getBoundingClientRect();
+        const restTop = rect.top - previous;
+        const offset = Math.max(0, Math.min(top - restTop,
+          table.getBoundingClientRect().bottom - restTop - rect.height));
+        head.dataset.vellumPinOffset = offset;
+        head.style.setProperty("--vellum-table-pin", offset + "px");
+      });
+    }
+    function scheduleTableHeads() {
+      if (pending) return;
+      pending = true;
+      requestAnimationFrame(pinTableHeads);
+    }
+    scrollPane.addEventListener("scroll", scheduleTableHeads, { passive: true });
+    new ResizeObserver(scheduleTableHeads).observe(article);
+    window.addEventListener("resize", scheduleTableHeads);
+    scheduleTableHeads();
+  }
+
   function buildTOC() {
     if (!article || !tocNav || !toc) return;
     const headings = Array.prototype.slice.call(
