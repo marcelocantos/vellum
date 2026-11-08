@@ -18,7 +18,7 @@ import (
 	"github.com/marcelocantos/vellum/viewer"
 )
 
-const version = "0.37.0"
+const version = "0.38.0"
 
 func main() {
 	if err := run(); err != nil {

@@ -176,7 +176,7 @@ adds view chrome (not written into the convert cache): a leading H1 that stays u
 contents with expand/collapse and a « / » sidebar toggle, a download
 menu (PDF, or Source in a new tab), copy to clipboard, reveal in Finder,
 a theme control (dark / system / light, persisted in the browser),
-dark-mode article styling with syntax highlighting, tables that use the full panel width with columns sized to their content (wide tables scroll within the panel), and a full-viewport
+dark-mode article styling with syntax highlighting, tables that use the full panel width with columns sized to their content (wide tables scroll within the panel) and headings that stay visible beneath the pinned title until the table scrolls away, and a full-viewport
 zoom/pan viewer for images and SVG (including Mermaid), and GFM
 task-list checkboxes that edit the source file after consent
 (once per session or permanently) when you click or Space the box, not
