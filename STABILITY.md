@@ -37,7 +37,7 @@ Package paths are under `github.com/marcelocantos/vellum/…`.
 - `type SoftError struct { Messages []string }` — **needs review** (added in v0.9.0; `Convert` / `Run` wrap `soft` into this after still producing output; CLI non-zero exit / MCP `errors`)
 - `type Options struct { CSS string; HeadExtra string; KaTeXCSSHref string; Style *Style; Backend string; MermaidFormat string; Template string }` — **needs review** (`MermaidFormat` is `MermaidSVG` default or `MermaidPNG`; PDF sinks force PNG; `Template` selects the pptx reference deck, added in v0.25.0; `KaTeXCSSHref` overrides where a math document links KaTeX's stylesheet, added in v0.26.0 — empty links the copy `KaTeXAssetDir` lays out)
 - `func KaTeXAssetDir() (string, error)` — **needs review** (added in v0.26.0; the directory under `os.UserCacheDir()/vellum/katex/<version>/` holding vellum's copy of the KaTeX stylesheet and fonts, written on first use)
-- `const TemplateDefault` / `func TemplatesDir() (string, error)` — **needs review** (added in v0.25.0; `"default"` names the built-in deck; bare template names resolve under `~/.config/vellum/templates/`)
+- `const TemplateDefault` / `func TemplatesDir() (string, error)` — **needs review** (added in v0.25.0; `"default"` names pandoc's default deck; bare template names resolve under `~/.config/vellum/templates/`)
 - `const MermaidSVG, MermaidPNG` — **needs review**
 - `type Style struct { ... }` — **needs review** (14-field customisation surface; `toc` added in 🎯T38; field set likely to grow before 1.0)
 - `type Backend interface` — **needs review** (added in v0.4.0; the surface is small but extension shape may evolve)
@@ -87,7 +87,6 @@ Package paths are under `github.com/marcelocantos/vellum/…`.
 
 - `var GitHubCSS string` — **needs review** (exposed for the CLI binary's own use; may become unexported if no external consumer appears)
 - `var HTMLTemplate string` — **needs review** (same)
-- `var ReferencePPTX []byte` — **needs review** (added in v0.25.0; pinned copy of pandoc's default reference deck, 16:9)
 - `func KaTeX() fs.FS` / `var KaTeXVersion string` / `const KaTeXCSSName, KaTeXFontsDir` — **needs review** (added in v0.26.0; the vendored KaTeX stylesheet and woff2 fonts, rooted at `katex.min.css`)
 
 **`docs`** — embedded documentation.

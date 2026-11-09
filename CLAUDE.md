@@ -19,7 +19,7 @@ from media → normalise (pandoc import and/or math/mermaid preprocessors + gold
 
 Markdown → PDF path still: source preprocessors → goldmark → HTML template → WeasyPrint/Prince.
 
-Markdown → pptx path: Mermaid preprocessor (PNG, inlined as images) → pandoc gfm reader → pptx writer with `--reference-doc` = the selected template (`convert/pptx.go`). Built-in template is `embed/reference.pptx`, a pinned copy of pandoc's default.
+Markdown → pptx path: Mermaid preprocessor (PNG, inlined as images) → pandoc gfm reader → pptx writer with `--reference-doc` = the selected template (`convert/pptx.go`). An omitted or default template leaves reference selection to installed pandoc; no reference deck is bundled.
 
 ### Key packages
 
@@ -35,7 +35,7 @@ Markdown → pptx path: Mermaid preprocessor (PNG, inlined as images) → pandoc
 | `internal/fileurl/`, `internal/shim/`, `internal/hint/` | Portability helpers: drive-letter-safe `file://` URLs, running npm `.cmd` shims (mmdc) as `node <script>` on Windows, per-OS install/service hints |
 | `config/` | User configuration loaded from `~/.config/vellum/config.yaml` |
 | `mcp/` | MCP server (single `convert` tool; streamable HTTP + stdio) |
-| `embed/` | Embedded assets (CSS, HTML template, built-in pptx reference deck, KaTeX stylesheet + fonts under `katex/`, refreshed by `scripts/vendor-katex.sh`) |
+| `embed/` | Embedded assets (CSS, HTML template, KaTeX stylesheet + fonts under `katex/`, refreshed by `scripts/vendor-katex.sh`) |
 | `internal/testdeps/` | Test gate for external converters (`VELLUM_REQUIRE_DEPS`) |
 | `viewer/` | Localhost daemon (HTML view + chrome + `/mcp`); cached PDF open; macOS default .md handler (`install-viewer`); Windows logon Scheduled Task (`install-service`) |
 

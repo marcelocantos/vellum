@@ -178,7 +178,7 @@ func effectiveBackend(flag, fromConfig string) string {
 }
 
 // effectiveTemplate resolves the pptx template as: CLI flag > config >
-// built-in. Empty means the built-in deck.
+// pandoc default. Empty means pandoc's default deck.
 func effectiveTemplate(flag, fromConfig string) string {
 	if flag != "" {
 		return flag

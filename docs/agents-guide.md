@@ -263,7 +263,7 @@ File → PDF:
 }
 ```
 
-Markdown string → PowerPoint deck (built-in template):
+Markdown string → PowerPoint deck (pandoc's default template):
 
 ```json
 {
@@ -477,12 +477,12 @@ layouts and theme the output inherits.
 
 | `template` value | Meaning |
 |------------------|---------|
-| omitted / `"default"` | Built-in deck (pinned copy of pandoc's default, 16:9) |
+| omitted / `"default"` | Installed pandoc's default deck |
 | `/abs/path/brand.pptx` | That file (a `.pptx` or `.potx`) |
 | `brand` | `~/.config/vellum/templates/brand.pptx` (`$XDG_CONFIG_HOME` honoured) |
 
 Per-call `template` outranks `template:` in the user's `config.yaml`,
-which outranks the built-in. A missing template is a hard error that
+which outranks pandoc's default. A missing template is a hard error that
 names the path looked for. A usable template needs pandoc's layout
 names in its slide master (Title Slide, Section Header, Title and
 Content, Two Content, Comparison, Content with Caption, Blank); any deck

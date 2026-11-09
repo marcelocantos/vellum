@@ -28,7 +28,7 @@ type Config struct {
 	Backend string `yaml:"backend,omitempty"`
 	// Template names the default PowerPoint reference deck for pptx
 	// output: a path to a .pptx file, a bare name under
-	// ~/.config/vellum/templates/, or empty for the built-in deck.
+	// ~/.config/vellum/templates/, or empty for pandoc's default deck.
 	Template string `yaml:"template,omitempty"`
 	// Style holds default style overrides applied to every conversion.
 	Style *convert.Style `yaml:"style,omitempty"`

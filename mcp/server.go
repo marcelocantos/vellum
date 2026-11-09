@@ -40,7 +40,7 @@ type ConvertInput struct {
 	Files    []FilePair     `json:"files,omitempty" jsonschema:"legacy sugar: batch Markdown file → PDF file pairs"`
 	Style    *convert.Style `json:"style,omitempty" jsonschema:"per-call style overrides; each field overlays the corresponding config-file value"`
 	Backend  string         `json:"backend,omitempty" jsonschema:"renderer backend for this call: \"weasyprint\" (default) or \"prince\"; empty falls through to the config file"`
-	Template string         `json:"template,omitempty" jsonschema:"PowerPoint reference deck for pptx output: a .pptx path, a bare name under ~/.config/vellum/templates/, or \"default\" for the built-in deck; empty falls through to the config file"`
+	Template string         `json:"template,omitempty" jsonschema:"PowerPoint reference deck for pptx output: a .pptx path, a bare name under ~/.config/vellum/templates/, or \"default\" for pandoc's default deck; empty falls through to the config file"`
 }
 
 // ConvertOutput is the structured output schema for convert.
@@ -119,7 +119,7 @@ Examples:
 
 Formats are inferred aggressively (file extension, clipboard UTI, markdown default for content, pdf for md→file, markdown for rich→file). Optional from.format / to.format override.
 
-PowerPoint: to.path ending .pptx (or to.format pptx) writes a deck through pandoc. Headings at the slide level become slides, headings above it section slides, a YAML title block the title slide; lists, tables, images, code, math and ::: notes speaker notes carry through; Mermaid blocks become PNG pictures. Optional template picks the reference deck (a .pptx path, a bare name under ~/.config/vellum/templates/, or default for the built-in deck).
+PowerPoint: to.path ending .pptx (or to.format pptx) writes a deck through pandoc. Headings at the slide level become slides, headings above it section slides, a YAML title block the title slide; lists, tables, images, code, math and ::: notes speaker notes carry through; Mermaid blocks become PNG pictures. Optional template picks the reference deck (a .pptx path, a bare name under ~/.config/vellum/templates/, or default for pandoc's default deck).
 
 Rich import (rtf/docx/html/… via pandoc; pdf via pdftoppm+pdftotext) extracts images/page renders into a TTL cache (or media_dir) and rewrites Markdown to absolute asset paths. Clipboard import probes RTF, HTML, then PDF (e.g. PowerPoint com.adobe.pdf).
 

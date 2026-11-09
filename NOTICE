@@ -73,7 +73,6 @@ dependencies.
 - **KaTeX** stylesheet and fonts — https://katex.org/ (MIT; `embed/katex/`,
   license text at `embed/katex/LICENSE`). Embedded so math documents render
   without a network fetch; the version is in `embed/katex/VERSION`.
-- **pandoc** default `reference.pptx` — https://pandoc.org/ (`embed/reference.pptx`).
 
 ## Runtime dependencies (not linked)
 

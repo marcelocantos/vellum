@@ -15,12 +15,12 @@ import (
 	"image/png"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
 
-	"github.com/marcelocantos/vellum/embed"
 	"github.com/marcelocantos/vellum/internal/pandoc"
 	"github.com/marcelocantos/vellum/internal/testdeps"
 )
@@ -298,11 +298,16 @@ func TestPPTXMermaidBecomesPicture(t *testing.T) {
 	})
 }
 
-// withTheme returns a copy of the built-in reference deck whose theme is
+// withTheme returns a copy of the installed pandoc reference deck whose theme is
 // renamed, so a test can tell which template pandoc actually read.
 func withTheme(t *testing.T, path, themeName string) {
 	t.Helper()
-	zr, err := zip.NewReader(bytes.NewReader(embed.ReferencePPTX), int64(len(embed.ReferencePPTX)))
+	testdeps.Need(t, pandoc.Binary)
+	ref, err := exec.Command(pandoc.Binary, "--print-default-data-file", "reference.pptx").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	zr, err := zip.NewReader(bytes.NewReader(ref), int64(len(ref)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -354,11 +359,33 @@ func TestPPTXTemplateSelection(t *testing.T) {
 		return readPPTX(t, out)
 	}
 
-	t.Run("built-in by default", func(t *testing.T) {
+	t.Run("installed pandoc default", func(t *testing.T) {
+		want := filepath.Join(t.TempDir(), "pandoc.pptx")
+		if _, err := pandoc.ToFile(context.Background(), md, pptxReader, FormatPPTX, want); err != nil {
+			t.Fatal(err)
+		}
+		expected := readPPTX(t, want)
 		for _, sel := range []string{"", TemplateDefault} {
 			parts := convertWith(t, sel)
-			if !strings.Contains(parts["ppt/theme/theme1.xml"], `name="Office Theme"`) {
-				t.Errorf("template %q: theme is not the built-in deck's", sel)
+			if parts["ppt/theme/theme1.xml"] != expected["ppt/theme/theme1.xml"] {
+				t.Errorf("template %q: theme differs from installed pandoc's default", sel)
+			}
+		}
+	})
+
+	t.Run("pandoc user default", func(t *testing.T) {
+		data := t.TempDir()
+		pd := filepath.Join(data, "pandoc")
+		if err := os.MkdirAll(pd, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		withTheme(t, filepath.Join(pd, "reference.pptx"), "PandocDefaultTheme")
+		t.Setenv("XDG_DATA_HOME", data)
+		t.Setenv("APPDATA", data)
+		for _, sel := range []string{"", TemplateDefault} {
+			parts := convertWith(t, sel)
+			if !strings.Contains(parts["ppt/theme/theme1.xml"], `name="PandocDefaultTheme"`) {
+				t.Errorf("template %q: installed pandoc's user default was ignored", sel)
 			}
 		}
 	})
@@ -406,16 +433,9 @@ func TestResolveTemplateErrors(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, rerr := os.ReadFile(path)
 	cleanup()
-	if rerr != nil {
-		t.Fatal(rerr)
-	}
-	if !bytes.Equal(b, embed.ReferencePPTX) {
-		t.Error("built-in template on disk differs from the embedded bytes")
-	}
-	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
-		t.Errorf("cleanup left %s behind", path)
+	if path != "" {
+		t.Errorf("default reference = %q, want empty to defer to pandoc", path)
 	}
 }
 

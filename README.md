@@ -270,14 +270,15 @@ into slides by pandoc's rules:
   A diagram that fails to render stays on its slide as a code block and
   is reported as a soft error.
 
-Templates control the look. The binary ships a built-in reference deck
-(a pinned copy of pandoc's default, 16:9), used when nothing else is
-selected. To use another:
+Templates control the look. When nothing else is selected, the installed
+pandoc supplies its default reference deck (including its user-data overrides).
+Vellum does not bundle a reference deck; default styling can change with pandoc
+upgrades. To use another:
 
 ```sh
 vellum deck.md -o deck.pptx --template ~/decks/brand.pptx   # a path
 vellum deck.md -o deck.pptx --template brand                # ~/.config/vellum/templates/brand.pptx
-vellum deck.md -o deck.pptx --template default              # the built-in deck
+vellum deck.md -o deck.pptx --template default              # pandoc's default deck
 ```
 
 The MCP `convert` tool takes the same value as `template`, and

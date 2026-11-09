@@ -46,7 +46,7 @@ type Options struct {
 	// PDF sinks force PNG (Prince-safe labels); HTML/view keep SVG.
 	MermaidFormat string
 	// Template selects the PowerPoint reference deck for pptx output. See
-	// resolveTemplate for the accepted forms; empty is the built-in deck.
+	// resolveTemplate for the accepted forms; empty is pandoc's default deck.
 	Template string
 	// Defer skips the mmdc and KaTeX subprocesses: Render returns the page
 	// with a placeholder element per Mermaid diagram and math expression

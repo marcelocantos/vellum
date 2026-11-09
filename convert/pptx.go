@@ -11,7 +11,6 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/marcelocantos/vellum/embed"
 	"github.com/marcelocantos/vellum/internal/pandoc"
 	"github.com/marcelocantos/vellum/internal/xdg"
 )
@@ -26,7 +25,7 @@ import (
 // speaker notes. The one gap is Mermaid, which pandoc does not render;
 // the existing mmdc path fills it below (🎯T47).
 
-// TemplateDefault names the reference deck embedded in the binary.
+// TemplateDefault selects the installed pandoc's default reference deck.
 const TemplateDefault = "default"
 
 // templatesDirName is the subdirectory of the vellum config dir where
@@ -65,7 +64,7 @@ func TemplatesDir() (string, error) {
 // pandoc reads, plus a cleanup func the caller must run once pandoc has
 // finished. The selector is one of:
 //
-//   - "" or TemplateDefault: the built-in deck, written to a temp file;
+//   - "" or TemplateDefault: pandoc's default, represented by an empty path;
 //   - a path (contains a separator, or ends in .pptx/.potx): used as is,
 //     and must exist;
 //   - a bare name: <TemplatesDir>/<name>.pptx, then .potx.
@@ -73,21 +72,7 @@ func resolveTemplate(selector string) (path string, cleanup func(), err error) {
 	noop := func() {}
 	selector = strings.TrimSpace(selector)
 	if selector == "" || selector == TemplateDefault {
-		f, err := os.CreateTemp("", "vellum-reference-*.pptx")
-		if err != nil {
-			return "", noop, fmt.Errorf("convert: writing built-in pptx template: %w", err)
-		}
-		cleanup := func() { os.Remove(f.Name()) }
-		if _, err := f.Write(embed.ReferencePPTX); err != nil {
-			f.Close()
-			cleanup()
-			return "", noop, fmt.Errorf("convert: writing built-in pptx template: %w", err)
-		}
-		if err := f.Close(); err != nil {
-			cleanup()
-			return "", noop, fmt.Errorf("convert: writing built-in pptx template: %w", err)
-		}
-		return f.Name(), cleanup, nil
+		return "", noop, nil
 	}
 
 	ext := strings.ToLower(filepath.Ext(selector))
@@ -117,7 +102,7 @@ func resolveTemplate(selector string) (path string, cleanup func(), err error) {
 		}
 	}
 	return "", noop, fmt.Errorf(
-		"convert: pptx template %q not found: expected %s (or pass a path to a .pptx file; %q is the built-in deck)",
+		"convert: pptx template %q not found: expected %s (or pass a path to a .pptx file; %q is pandoc's default deck)",
 		selector, filepath.Join(dir, selector+templateExts[0]), TemplateDefault)
 }
 
@@ -140,7 +125,10 @@ func writePPTX(ctx context.Context, md, outPath, baseDir string, opts *Options) 
 	}
 	defer cleanup()
 
-	args := []string{"--reference-doc=" + refDoc}
+	var args []string
+	if refDoc != "" {
+		args = append(args, "--reference-doc="+refDoc)
+	}
 	if baseDir != "" {
 		// Relative image paths resolve against the source document, not
 		// the daemon's working directory.

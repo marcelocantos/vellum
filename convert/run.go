@@ -73,7 +73,7 @@ type Request struct {
 	Style   *Style
 	Backend string
 	// Template selects the PowerPoint reference deck for pptx sinks:
-	// empty or "default" for the built-in deck, a path to a .pptx/.potx
+	// empty or "default" for pandoc's default deck, a path to a .pptx/.potx
 	// file, or a bare name under ~/.config/vellum/templates/.
 	Template string
 	// Files, when non-empty, is sugar for a batch of file→file PDF
