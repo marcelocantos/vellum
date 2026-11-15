@@ -412,7 +412,13 @@ already work with files and `convert`.
   scroll plus the focused checkbox. Chrome is injected per response; the convert-cache file
   stays chrome-free. Actions live under `/_vellum/` (`GET …/pdf`,
   `GET …/source`, `POST …/clipboard`, `POST …/reveal`, `GET …/watch`,
-  `POST …/task-toggle`).
+  `POST …/task-toggle`, `GET`/`PUT …/edit`). Edit (or `e`) opens a
+  modal CodeMirror editor on the Markdown source, served offline from
+  `…/editor/`. `GET …/edit` returns the raw source with its stamp in
+  `X-Vellum-Stamp`; `PUT …/edit` writes the body only when that header
+  names the stamp on disk (409 with the current stamp otherwise, 428
+  without one). Both refuse requests whose Host is not loopback or whose
+  Origin / Sec-Fetch-Site is foreign.
 - `vellum view <file.md>` / `vellum --open <file.md>` — open the file
   as an `http://127.0.0.1:18742/…` URL on the view server (**not**
   `file://`). HTML default (browser, fast); pass `--pdf` for

@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 )
@@ -82,13 +83,29 @@ func toggleTaskMarker(src []byte, index int) ([]byte, error) {
 	return out, nil
 }
 
+// writeFileAtomic replaces path's contents via a temp file and rename, so
+// a reader never sees a half-written document. A symlinked path is
+// resolved first (the link stays a link), and the file keeps its mode:
+// CreateTemp makes 0600 files, which rename would otherwise install.
 func writeFileAtomic(path string, data []byte) error {
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		path = resolved
+	}
+	mode := os.FileMode(0o644)
+	if info, err := os.Stat(path); err == nil {
+		mode = info.Mode().Perm()
+	}
 	dir := filepath.Dir(path)
-	tmp, err := os.CreateTemp(dir, ".vellum-task-*.tmp")
+	tmp, err := os.CreateTemp(dir, ".vellum-write-*.tmp")
 	if err != nil {
 		return err
 	}
 	tmpName := tmp.Name()
+	if err := tmp.Chmod(mode); err != nil && runtime.GOOS != "windows" {
+		_ = tmp.Close()
+		_ = os.Remove(tmpName)
+		return err
+	}
 	if _, err := tmp.Write(data); err != nil {
 		_ = tmp.Close()
 		_ = os.Remove(tmpName)

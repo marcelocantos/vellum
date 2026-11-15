@@ -645,10 +645,167 @@ body.vellum-view {
   }
 }
 
+/* --- Editor modal ------------------------------------------------------
+   Colours are tokens on the root so one block per theme recolours it. */
+
+.vellum-editor {
+  --ved-backdrop: rgba(27, 31, 36, 0.45);
+  --ved-bg: #ffffff;
+  --ved-bar: #f6f8fa;
+  --ved-fg: #1f2328;
+  --ved-muted: #656d76;
+  --ved-border: #d1d9e0;
+  --ved-btn: #ffffff;
+  --ved-btn-hover: #f3f4f6;
+  --ved-primary: #1f883d;
+  --ved-primary-fg: #ffffff;
+  --ved-banner: #fff8c5;
+  --ved-banner-border: #d4a72c;
+  --ved-ok: #1a7f37;
+  --ved-warn: #9a6700;
+  --ved-error: #cf222e;
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  padding: 24px;
+  background: var(--ved-backdrop);
+}
+
+.vellum-editor[hidden] {
+  display: none;
+}
+
+.vellum-editor-panel {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--ved-border);
+  border-radius: 8px;
+  background: var(--ved-bg);
+  color: var(--ved-fg);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.25);
+}
+
+.vellum-editor-bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  background: var(--ved-bar);
+  border-bottom: 1px solid var(--ved-border);
+  font-size: 12px;
+}
+
+.vellum-editor-title {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.vellum-editor-state {
+  color: var(--ved-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.vellum-editor-state[data-kind="dirty"] { color: var(--ved-warn); }
+.vellum-editor-state[data-kind="saved"] { color: var(--ved-ok); }
+.vellum-editor-state[data-kind="error"] { color: var(--ved-error); }
+
+.vellum-editor-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.vellum-editor button {
+  appearance: none;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.2;
+  padding: 4px 10px;
+  border: 1px solid var(--ved-border);
+  border-radius: 6px;
+  background: var(--ved-btn);
+  color: var(--ved-fg);
+  cursor: pointer;
+}
+
+.vellum-editor button:hover:not(:disabled) {
+  background: var(--ved-btn-hover);
+}
+
+.vellum-editor button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.vellum-editor [data-vellum="ed-save"]:not(:disabled),
+.vellum-editor button.is-primary {
+  background: var(--ved-primary);
+  border-color: var(--ved-primary);
+  color: var(--ved-primary-fg);
+}
+
+.vellum-editor [data-vellum="ed-save"]:not(:disabled):hover,
+.vellum-editor button.is-primary:hover {
+  background: var(--ved-primary);
+  filter: brightness(1.08);
+}
+
+.vellum-editor-banner {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 8px 12px;
+  background: var(--ved-banner);
+  border-bottom: 1px solid var(--ved-banner-border);
+  font-size: 13px;
+}
+
+.vellum-editor-banner[hidden] {
+  display: none;
+}
+
+.vellum-editor-banner-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.vellum-editor-host {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+@media (max-width: 880px) {
+  .vellum-editor {
+    padding: 0;
+  }
+  .vellum-editor-panel {
+    border: 0;
+    border-radius: 0;
+  }
+}
+
 @media print {
   .vellum-toc,
   .vellum-toc-splitter,
   .vellum-toolbar,
+  .vellum-editor,
   .vellum-lightbox {
     display: none !important;
   }
@@ -994,5 +1151,43 @@ html[data-vellum-theme="dark"] .vellum-article mark {
   html[data-vellum-theme="system"] .vellum-article mark {
     background-color: rgba(187, 128, 9, 0.35);
     color: #e6edf3;
+  }
+}
+
+html[data-vellum-theme="dark"] .vellum-editor {
+  --ved-backdrop: rgba(1, 4, 9, 0.6);
+  --ved-bg: #0d1117;
+  --ved-bar: #161b22;
+  --ved-fg: #e6edf3;
+  --ved-muted: #8b949e;
+  --ved-border: #30363d;
+  --ved-btn: #21262d;
+  --ved-btn-hover: #30363d;
+  --ved-primary: #238636;
+  --ved-primary-fg: #ffffff;
+  --ved-banner: #272115;
+  --ved-banner-border: #9e6a03;
+  --ved-ok: #3fb950;
+  --ved-warn: #d29922;
+  --ved-error: #f85149;
+}
+
+@media (prefers-color-scheme: dark) {
+  html[data-vellum-theme="system"] .vellum-editor {
+    --ved-backdrop: rgba(1, 4, 9, 0.6);
+    --ved-bg: #0d1117;
+    --ved-bar: #161b22;
+    --ved-fg: #e6edf3;
+    --ved-muted: #8b949e;
+    --ved-border: #30363d;
+    --ved-btn: #21262d;
+    --ved-btn-hover: #30363d;
+    --ved-primary: #238636;
+    --ved-primary-fg: #ffffff;
+    --ved-banner: #272115;
+    --ved-banner-border: #9e6a03;
+    --ved-ok: #3fb950;
+    --ved-warn: #d29922;
+    --ved-error: #f85149;
   }
 }

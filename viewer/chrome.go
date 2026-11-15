@@ -100,10 +100,15 @@ func downloadIconSVG() string {
 func chromeOpen(sourcePath string, waiting bool) string {
 	name := filepath.Base(sourcePath)
 	attrs := `data-source="` + html.EscapeString(sourcePath) + `"`
+	edit := ""
 	if waiting {
 		attrs += ` data-waiting="1"`
+	} else {
+		// A waiting page has no file yet, so nothing to edit.
+		attrs += ` data-editor="` + html.EscapeString(editorEntryURL()) + `"`
+		edit = `<button type="button" data-vellum="edit" title="Edit the Markdown source (E)" aria-haspopup="dialog" aria-controls="vellum-editor">Edit</button>`
 	}
-	return `<div class="vellum-chrome" ` + attrs + `">` +
+	return `<div class="vellum-chrome" ` + attrs + `>` +
 		`<aside class="vellum-toc" id="vellum-toc">` +
 		`<div class="vellum-toc-header">` +
 		`<span class="vellum-toc-title">Contents</span>` +
@@ -123,6 +128,7 @@ func chromeOpen(sourcePath string, waiting bool) string {
 		`<button type="button" role="menuitem" data-vellum="pdf">PDF</button>` +
 		`<button type="button" role="menuitem" data-vellum="source">Source</button>` +
 		`</div></div>` +
+		edit +
 		`<button type="button" data-vellum="clipboard" title="Copy the rendered document to the clipboard">Copy</button>` +
 		`<button type="button" data-vellum="reveal" title="Reveal the source file in ` + hint.FileManager() + `">Show in ` + hint.FileManager() + `</button>` +
 		`<div class="vellum-toolbar-end">` +
@@ -151,6 +157,18 @@ func chromeClose() string {
 		`<div class="vellum-consent-actions">` +
 		`<button type="button" data-vellum="gone-dismiss">Dismiss</button>` +
 		`</div></div></div></div>` +
+		`<div class="vellum-editor" id="vellum-editor" hidden role="dialog" aria-modal="true" aria-labelledby="vellum-editor-title">` +
+		`<div class="vellum-editor-panel">` +
+		`<div class="vellum-editor-bar">` +
+		`<span class="vellum-editor-title" id="vellum-editor-title"></span>` +
+		`<span class="vellum-editor-state" id="vellum-editor-state" aria-live="polite"></span>` +
+		`<div class="vellum-editor-actions">` +
+		`<button type="button" data-vellum="ed-save" title="Save (⌘S / Ctrl+S)">Save</button>` +
+		`<button type="button" data-vellum="ed-close" title="Close the editor (Esc)">Done</button>` +
+		`</div></div>` +
+		`<div class="vellum-editor-banner" id="vellum-editor-banner" hidden role="alert"></div>` +
+		`<div class="vellum-editor-host" id="vellum-editor-host"></div>` +
+		`</div></div>` +
 		`<div class="vellum-lightbox" id="vellum-lightbox" hidden role="dialog" aria-modal="true" aria-label="Figure viewer">` +
 		`<div class="vellum-lightbox-bar">` +
 		`<div>` +

@@ -16,3 +16,6 @@ __pycache__/
 # Test artifacts
 /test/output/
 *.pdf
+
+# Editor bundle sources (the built bundle in viewer/editor/ is committed)
+/editor/node_modules/

@@ -37,7 +37,8 @@ Markdown → pptx path: Mermaid preprocessor (PNG, inlined as images) → pandoc
 | `mcp/` | MCP server (single `convert` tool; streamable HTTP + stdio) |
 | `embed/` | Embedded assets (CSS, HTML template, KaTeX stylesheet + fonts under `katex/`, refreshed by `scripts/vendor-katex.sh`) |
 | `internal/testdeps/` | Test gate for external converters (`VELLUM_REQUIRE_DEPS`) |
-| `viewer/` | Localhost daemon (HTML view + chrome + `/mcp`); cached PDF open; macOS default .md handler (`install-viewer`); Windows logon Scheduled Task (`install-service`) |
+| `viewer/` | Localhost daemon (HTML view + chrome + `/mcp`); cached PDF open; macOS default .md handler (`install-viewer`); Windows logon Scheduled Task (`install-service`). `viewer/edit.go` is the source editor's read/write endpoint and bundle server. |
+| `editor/` | npm project for the viewer's CodeMirror 6 editor. `npm ci && npm run build` writes the embedded bundle to `viewer/editor/` (commit it with the change); `make test-editor` runs the Playwright journey (`editor/journey.cjs`) against a fresh build. Not part of `cv gate`. |
 
 ### External dependencies
 

@@ -89,7 +89,8 @@ type Server struct {
 	watchOnce sync.Once
 	watches   *watchHub
 
-	// WriteFile, when non-nil, replaces atomic Markdown writes (task-toggle tests).
+	// WriteFile, when non-nil, replaces atomic Markdown writes (task-toggle
+	// and editor-save tests).
 	WriteFile func(path string, data []byte) error
 }
 
@@ -167,6 +168,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc(ChromeRevealPath, s.handleReveal)
 	mux.HandleFunc(ChromeWatchPath, s.handleWatch)
 	mux.HandleFunc(ChromeTaskTogglePath, s.handleTaskToggle)
+	mux.HandleFunc(ChromeEditPath, s.handleEdit)
+	mux.HandleFunc(ChromeEditorPrefix, s.handleEditorAsset)
 	mux.HandleFunc(ChromeFragmentPath, s.handleFragment)
 	mux.HandleFunc(ChromeFaviconPath, s.handleFavicon)
 	mux.Handle(ChromeKaTeXPrefix, http.StripPrefix(ChromeKaTeXPrefix, http.FileServerFS(embed.KaTeX())))

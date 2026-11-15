@@ -81,6 +81,10 @@
   const content = document.getElementById("vellum-lightbox-content");
   const hint = document.getElementById("vellum-lightbox-hint");
 
+  // The open editor's handle (see the Editor section); declared here
+  // because applyTheme runs during start-up and recolours it.
+  let ed = null;
+
   const THEME_KEY = "vellum-theme";
   const THEME_MODES = ["dark", "system", "light"];
   const THEME_ICON = { dark: "\u263E", system: "\u25D0", light: "\u2600" };
@@ -126,6 +130,12 @@
       localStorage.setItem(THEME_KEY, mode);
     } catch (e) {}
     updateThemeButton(mode);
+    if (ed) ed.setDark(effectiveDark());
+  }
+
+  function effectiveDark() {
+    const mode = document.documentElement.dataset.vellumTheme || "system";
+    return mode === "dark" || (mode === "system" && systemPrefersDark());
   }
 
   function initTheme() {
@@ -138,6 +148,7 @@
     try {
       window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", function () {
         updateThemeButton(document.documentElement.dataset.vellumTheme || "system");
+        if (ed) ed.setDark(effectiveDark());
       });
     } catch (e) {}
   }
@@ -225,6 +236,7 @@
   function scheduleFocusScrollPane() {
     window.setTimeout(function () {
       if (lightbox && !lightbox.hidden) return;
+      if (editorIsOpen()) return;
       if (!scrollPane) return;
       const active = document.activeElement;
       if (active === scrollPane || scrollPane.contains(active)) return;
@@ -235,6 +247,7 @@
   if (scrollPane) {
     scrollPane.addEventListener("focusout", function () {
       if (lightbox && !lightbox.hidden) return;
+      if (editorIsOpen()) return;
       scheduleFocusScrollPane();
     });
   }
@@ -523,6 +536,10 @@
           loadStamp = stamp;
           return;
         }
+        if (editorIsOpen()) {
+          editorNoticeStamp(stamp);
+          return;
+        }
         if (stamp === loadStamp) return;
         if (toggleInFlight > 0) {
           adoptStamp(stamp);
@@ -591,6 +608,10 @@
         return;
       }
       if (action === "download") {
+        return;
+      }
+      if (action === "edit") {
+        openEditor();
         return;
       }
       if (action === "pdf") {
@@ -1177,6 +1198,396 @@
       }
     });
   }
+
+  // --- Editor ---------------------------------------------------------
+  // A modal CodeMirror editor over the Markdown source. The bundle
+  // (/_vellum/editor/) loads on first use. Saves are PUTs naming the
+  // stamp the buffer was read at; the server answers 409 when the disk
+  // moved on, and the user chooses to overwrite or reload. While the
+  // editor is open the page does not live-reload; closing it reloads
+  // once if anything was written, scrolled to the section the cursor
+  // was in.
+  const editorRoot = document.getElementById("vellum-editor");
+  const editorHost = document.getElementById("vellum-editor-host");
+  const editorBanner = document.getElementById("vellum-editor-banner");
+  const editorStateEl = document.getElementById("vellum-editor-state");
+  const editorTitle = document.getElementById("vellum-editor-title");
+  const editorSaveBtn = editorRoot ? editorRoot.querySelector('[data-vellum="ed-save"]') : null;
+  const editorSrc = chrome.getAttribute("data-editor") || "";
+  const editBtn = chrome.querySelector('[data-vellum="edit"]');
+  const STAMP_HEADER = "X-Vellum-Stamp";
+  let editorModule = null;
+  let edStamp = "";
+  let edSaving = 0;
+  let edOpenLine = 1;
+  let viewStale = false;
+
+  function editorIsOpen() {
+    return Boolean(editorRoot && !editorRoot.hidden);
+  }
+
+  function editURL() {
+    return "/_vellum/edit?path=" + encodeURIComponent(source);
+  }
+
+  function fetchSource() {
+    return fetch(editURL(), { cache: "no-store" }).then(function (resp) {
+      return resp.text().then(function (text) {
+        if (!resp.ok) throw new Error(text.trim() || resp.statusText);
+        return { text: text, stamp: resp.headers.get(STAMP_HEADER) || "" };
+      });
+    });
+  }
+
+  function setEditorState(msg, kind) {
+    if (!editorStateEl) return;
+    editorStateEl.textContent = msg || "";
+    editorStateEl.dataset.kind = kind || "";
+  }
+
+  function showEditorBanner(message, actions) {
+    if (!editorBanner) return;
+    const text = document.createElement("span");
+    text.textContent = message;
+    const row = document.createElement("span");
+    row.className = "vellum-editor-banner-actions";
+    actions.forEach(function (a) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.textContent = a.label;
+      if (a.primary) b.className = "is-primary";
+      b.addEventListener("click", a.run);
+      row.appendChild(b);
+    });
+    editorBanner.replaceChildren(text, row);
+    editorBanner.hidden = false;
+    const first = row.querySelector("button");
+    if (first) first.focus();
+  }
+
+  function hideEditorBanner() {
+    if (!editorBanner) return;
+    editorBanner.hidden = true;
+    editorBanner.replaceChildren();
+  }
+
+  function onEditorDirty(dirty) {
+    if (editorSaveBtn) editorSaveBtn.disabled = !dirty;
+    if (dirty) setEditorState("Unsaved changes", "dirty");
+    else if (editorStateEl && editorStateEl.dataset.kind === "dirty") setEditorState("", "");
+  }
+
+  // Heading text as both the article and the source can produce it, so a
+  // rendered heading and its "## ..." line compare equal.
+  function normHeading(s) {
+    return String(s || "")
+      .replace(/<[^>]+>/g, "")
+      .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
+      .replace(/[*_`~\\]/g, "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .toLowerCase();
+  }
+
+  // ATX headings in Markdown source, outside fenced code: [{line, norm}].
+  function sourceHeadings(text) {
+    const out = [];
+    const lines = String(text).split(/\r\n|\r|\n/);
+    let fence = "";
+    for (let i = 0; i < lines.length; i++) {
+      const f = lines[i].match(/^ {0,3}(`{3,}|~{3,})/);
+      if (f) {
+        if (!fence) fence = f[1];
+        else if (f[1].charAt(0) === fence.charAt(0) && f[1].length >= fence.length) fence = "";
+        continue;
+      }
+      if (fence) continue;
+      const m = lines[i].match(/^ {0,3}#{1,6}(?:[ \t]+(.*?))?(?:[ \t]+#+)?[ \t]*$/);
+      if (m) out.push({ line: i + 1, norm: normHeading(m[1] || "") });
+    }
+    return out;
+  }
+
+  // The nth (0-based) rendered heading with this text, or null.
+  function articleHeadingFor(norm, nth) {
+    const hs = articleHeadings();
+    let k = 0;
+    for (let i = 0; i < hs.length; i++) {
+      if (normHeading(hs[i].textContent) !== norm) continue;
+      if (k === nth) return hs[i];
+      k++;
+    }
+    return null;
+  }
+
+  // Where the view is, as {norm, nth}: the heading at the top of the pane.
+  function viewHeading() {
+    const pos = captureScroll();
+    if (!pos || !pos.id) return null;
+    const el = document.getElementById(pos.id);
+    if (!el) return null;
+    const norm = normHeading(el.textContent);
+    const hs = articleHeadings();
+    let nth = 0;
+    for (let i = 0; i < hs.length && hs[i] !== el; i++) {
+      if (normHeading(hs[i].textContent) === norm) nth++;
+    }
+    return { norm: norm, nth: nth };
+  }
+
+  function sourceLineFor(text, where) {
+    if (!where) return 1;
+    let k = 0;
+    const hs = sourceHeadings(text);
+    for (let i = 0; i < hs.length; i++) {
+      if (hs[i].norm !== where.norm) continue;
+      if (k === where.nth) return hs[i].line;
+      k++;
+    }
+    return 1;
+  }
+
+  // The section containing a source line, as {norm, nth}.
+  function headingAtLine(text, line) {
+    const hs = sourceHeadings(text);
+    let hit = -1;
+    for (let i = 0; i < hs.length && hs[i].line <= line; i++) hit = i;
+    if (hit < 0) return null;
+    let nth = 0;
+    for (let i = 0; i < hit; i++) if (hs[i].norm === hs[hit].norm) nth++;
+    return { norm: hs[hit].norm, nth: nth };
+  }
+
+  function openEditor() {
+    if (!editorRoot || !editorHost || !editorSrc || editorIsOpen()) return;
+    setDownloadMenuOpen(false);
+    const where = viewHeading();
+    editorRoot.hidden = false;
+    if (editBtn) editBtn.setAttribute("aria-expanded", "true");
+    if (editorTitle) editorTitle.textContent = source.split(/[\\/]/).pop();
+    if (editorSaveBtn) editorSaveBtn.disabled = true;
+    hideEditorBanner();
+    setEditorState("Loading…", "");
+    if (!editorModule) editorModule = import(editorSrc);
+    Promise.all([editorModule, fetchSource()])
+      .then(function (r) {
+        if (!editorIsOpen() || ed) return;
+        const mod = r[0];
+        const src = r[1];
+        edStamp = src.stamp;
+        ed = mod.createEditor({
+          parent: editorHost,
+          doc: src.text,
+          dark: effectiveDark(),
+          onSave: saveEditor,
+          onClose: closeEditor,
+          onDirty: onEditorDirty,
+        });
+        edOpenLine = sourceLineFor(src.text, where);
+        ed.gotoLine(edOpenLine);
+        setEditorState("", "");
+        ed.focus();
+      })
+      .catch(function (err) {
+        // A failed import is cached by the browser per URL; forget the
+        // promise so the next attempt retries.
+        editorModule = null;
+        setEditorState("", "");
+        showEditorBanner("Could not open the editor: " + (err && err.message ? err.message : err), [
+          { label: "Close", run: finishCloseEditor },
+        ]);
+      });
+  }
+
+  function saveEditor() {
+    if (!ed) return Promise.resolve(false);
+    if (edSaving) return Promise.resolve(false);
+    const handle = ed;
+    const snap = handle.snapshot();
+    const headers = { "Content-Type": "text/markdown; charset=utf-8" };
+    headers[STAMP_HEADER] = edStamp;
+    edSaving++;
+    setEditorState("Saving…", "");
+    return fetch(editURL(), { method: "PUT", headers: headers, body: handle.getText() })
+      .then(function (resp) {
+        return resp.text().then(function (body) {
+          const stamp = resp.headers.get(STAMP_HEADER) || "";
+          if (resp.status === 409) {
+            setEditorState("Not saved", "error");
+            editorConflict(stamp, "The file changed on disk since you opened it.");
+            return false;
+          }
+          if (!resp.ok) throw new Error(body.trim() || resp.statusText);
+          edStamp = stamp;
+          viewStale = true;
+          if (ed === handle) {
+            handle.markSaved(snap);
+            hideEditorBanner();
+            if (!handle.isDirty()) setEditorState("Saved", "saved");
+          }
+          return true;
+        });
+      })
+      .catch(function (err) {
+        setEditorState("Save failed: " + (err && err.message ? err.message : err), "error");
+        return false;
+      })
+      .finally(function () {
+        edSaving--;
+      });
+  }
+
+  function reloadEditorFromDisk() {
+    if (!ed) return;
+    const handle = ed;
+    fetchSource()
+      .then(function (src) {
+        if (ed !== handle) return;
+        handle.setText(src.text);
+        edStamp = src.stamp;
+        hideEditorBanner();
+        setEditorState("Reloaded from disk", "saved");
+        handle.focus();
+      })
+      .catch(function (err) {
+        setEditorState("Reload failed: " + (err && err.message ? err.message : err), "error");
+      });
+  }
+
+  function editorConflict(diskStamp, message) {
+    showEditorBanner(message, [
+      {
+        label: "Overwrite",
+        run: function () {
+          edStamp = diskStamp;
+          saveEditor();
+        },
+      },
+      { label: "Reload from disk", run: reloadEditorFromDisk },
+      {
+        label: "Keep editing",
+        run: function () {
+          hideEditorBanner();
+          if (ed) ed.focus();
+        },
+      },
+    ]);
+  }
+
+  // A stamp from the watch socket while the editor is open.
+  function editorNoticeStamp(stamp) {
+    if (stamp !== loadStamp) viewStale = true;
+    if (!ed || edSaving || stamp === edStamp) return;
+    // Our own save's stamp can arrive before the PUT answers; edSaving
+    // covers that. Anything else is an outside write: follow it when
+    // there is nothing to lose, otherwise ask.
+    if (!ed.isDirty()) {
+      reloadEditorFromDisk();
+      return;
+    }
+    editorConflict(stamp, "The file changed on disk.");
+  }
+
+  function closeEditor() {
+    if (!editorIsOpen()) return;
+    if (ed && ed.isDirty()) {
+      showEditorBanner("You have unsaved changes.", [
+        {
+          label: "Save and close",
+          primary: true,
+          run: function () {
+            saveEditor().then(function (ok) {
+              if (ok) finishCloseEditor();
+            });
+          },
+        },
+        { label: "Discard", run: finishCloseEditor },
+        {
+          label: "Keep editing",
+          run: function () {
+            hideEditorBanner();
+            if (ed) ed.focus();
+          },
+        },
+      ]);
+      return;
+    }
+    finishCloseEditor();
+  }
+
+  function finishCloseEditor() {
+    if (!editorRoot) return;
+    let where = null;
+    if (ed) {
+      const line = ed.cursorLine();
+      if (line !== edOpenLine) where = headingAtLine(ed.getText(), line);
+      ed.destroy();
+      ed = null;
+    }
+    hideEditorBanner();
+    setEditorState("", "");
+    editorRoot.hidden = true;
+    if (editBtn) editBtn.setAttribute("aria-expanded", "false");
+    const target = where ? articleHeadingFor(where.norm, where.nth) : null;
+    if (viewStale) {
+      viewStale = false;
+      persistScroll();
+      if (target && target.id) {
+        try {
+          sessionStorage.setItem(SCROLL_KEY, JSON.stringify({ id: target.id, offset: 0 }));
+        } catch (e) {}
+      }
+      location.reload();
+      return;
+    }
+    if (target && scrollPane) {
+      scrollPane.scrollTop += target.getBoundingClientRect().top - scrollPane.getBoundingClientRect().top;
+    }
+    focusScrollPane();
+  }
+
+  if (editorRoot) {
+    editorRoot.addEventListener("click", function (ev) {
+      const t = ev.target;
+      if (!(t instanceof Element)) return;
+      const btn = t.closest("[data-vellum]");
+      if (!btn || !editorRoot.contains(btn)) return;
+      const action = btn.getAttribute("data-vellum");
+      if (action === "ed-save") saveEditor();
+      if (action === "ed-close") closeEditor();
+    });
+    // Escape inside CodeMirror is handled by its keymap; this covers
+    // focus on the bar or banner.
+    editorRoot.addEventListener("keydown", function (ev) {
+      if (ev.key === "Escape" && !(ev.target instanceof Element && ev.target.closest(".cm-editor"))) {
+        ev.preventDefault();
+        closeEditor();
+      }
+      if ((ev.metaKey || ev.ctrlKey) && !ev.altKey && (ev.key === "s" || ev.key === "S")) {
+        ev.preventDefault();
+        saveEditor();
+      }
+    });
+  }
+
+  window.addEventListener("beforeunload", function (ev) {
+    if (ed && ed.isDirty()) {
+      ev.preventDefault();
+      ev.returnValue = "";
+    }
+  });
+
+  // "e" opens the editor from the page, like GitHub's "." for its editor.
+  document.addEventListener("keydown", function (ev) {
+    if (ev.key !== "e" && ev.key !== "E") return;
+    if (ev.metaKey || ev.ctrlKey || ev.altKey || ev.defaultPrevented) return;
+    if (!editorSrc || editorIsOpen()) return;
+    if ((lightbox && !lightbox.hidden) || (consentEl && !consentEl.hidden)) return;
+    const t = ev.target;
+    if (t instanceof Element && t.closest("input, textarea, select, [contenteditable]")) return;
+    ev.preventDefault();
+    openEditor();
+  });
 
   buildTOC();
   fillTOC();

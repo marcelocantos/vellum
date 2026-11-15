@@ -25,7 +25,13 @@ verify-release:
 	./scripts/verify-release.sh $(VERSION)
 
 # Requires Playwright and Chrome; exercises the live viewer on an isolated port.
-.PHONY: test-table-headers
+.PHONY: test-table-headers test-editor
 test-table-headers:
 	go build -o /tmp/vellum-table-journey ./cmd/vellum
 	VELLUM_BINARY=/tmp/vellum-table-journey node scripts/table-header-journey.cjs
+
+# Requires `npm ci` in editor/ and Chrome; drives the source editor end to
+# end (open, save, outside edits, conflict, close, theme, layout, offline).
+test-editor:
+	go build -o /tmp/vellum-editor-journey ./cmd/vellum
+	VELLUM_BINARY=/tmp/vellum-editor-journey node editor/journey.cjs

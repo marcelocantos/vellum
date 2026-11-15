@@ -181,7 +181,18 @@ zoom/pan viewer for images and SVG (including Mermaid), and GFM
 task-list checkboxes that edit the source file after consent
 (once per session or permanently) when you click or Space the box, not
 the label text. The toggle adopts the new source stamp without reloading;
-an external file-change reload keeps keyboard focus on that box. The same process hosts
+an external file-change reload keeps keyboard focus on that box. **Edit**
+(or the `e` key) opens the Markdown source in a modal CodeMirror 6
+editor: GFM syntax highlighting with fenced code highlighted in its own
+language, list continuation, search and replace, folding and multiple
+cursors, in the viewer's light or dark theme. It opens at the section
+the view is showing; ⌘S / Ctrl+S saves. A save names the version it
+edited, so a change made on disk meanwhile is never overwritten
+silently: a clean buffer follows the outside edit, and a dirty one asks
+whether to overwrite or reload. Esc or Done closes it, asking first
+about unsaved changes, and the view refreshes at the section the cursor
+was in. The editor is embedded in the binary and loads nothing from the
+network. The same process hosts
 streamable HTTP MCP at `/mcp`. The server binds loopback only (override
 with `--addr` / `VELLUM_VIEW_ADDR`). Cache health: entries older than 7
 days are dropped, then oldest entries are evicted until total size is
