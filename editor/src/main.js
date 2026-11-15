@@ -292,7 +292,8 @@ export function createEditor(opts) {
       });
       // Snap the cursor back to its visual line start once wrapping is laid out.
       requestAnimationFrame(function () {
-        if (view.state.selection.main.head !== pos) return;
+        const main = view.state.selection.main;
+        if (!main.empty || main.head !== pos) return;
         view.dispatch({ selection: view.moveToLineBoundary(EditorSelection.cursor(pos), false) });
       });
     },
@@ -305,6 +306,17 @@ export function createEditor(opts) {
       const number = view.state.doc.lineAt(block.from).number;
       const frac = block.height > 0 ? (h - block.top) / block.height : 0;
       return number + Math.max(0, Math.min(0.999, frac));
+    },
+    // Select [from, to) (offsets into the buffer, "\n" line endings),
+    // scrolling only if it is not already in view.
+    select: function (from, to) {
+      const len = view.state.doc.length;
+      const a = Math.max(0, Math.min(len, from));
+      const b = Math.max(a, Math.min(len, to));
+      view.dispatch({
+        selection: EditorSelection.single(a, b),
+        effects: EditorView.scrollIntoView(EditorSelection.range(a, b), { y: "nearest", yMargin: 24 }),
+      });
     },
     lineCount: function () {
       return view.state.doc.lines;

@@ -188,7 +188,10 @@ language, list continuation, search and replace, folding and multiple
 cursors, in the viewer's light or dark theme. It opens scrolled to what
 the page was showing at the top (rendered blocks carry their source
 lines, and positions in between are interpolated, so this holds inside
-code blocks and long paragraphs too); ⌘S / Ctrl+S saves. A save names the version it
+code blocks and long paragraphs too). Text selected on the page is
+selected in the source, matched word for word through the Markdown
+around it (emphasis, link URLs, entities, tags, list and task markers);
+⌘S / Ctrl+S saves. A save names the version it
 edited, so a change made on disk meanwhile is never overwritten
 silently: a clean buffer follows the outside edit, and a dirty one asks
 whether to overwrite or reload. Esc or Done closes it, asking first

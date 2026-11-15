@@ -1365,9 +1365,176 @@
     scrollPane.scrollTop = y - pinnedTitleInset();
   }
 
+  // Carrying a page selection into the editor. The page shows rendered
+  // text, the source has Markdown around it (emphasis marks, link URLs,
+  // tags, entities, list and task markers, fences), so the selection is
+  // matched by its words, in order, allowing anything between them that
+  // renders as nothing or as punctuation. The search runs near the
+  // source lines of the blocks the selection starts and ends in. Only
+  // the first and last few words are matched: that keeps the regex
+  // cheap, and lets a selection run through rendered math, whose text is
+  // not in the source.
+  const SEL_WORD_RE = /[\p{L}\p{N}_]+/gu;
+  const SEL_EDGE_WORDS = 8;
+  // Lines searched around a tagged block's span, and around a position
+  // interpolated for an untagged one (fenced code, diagrams).
+  const SEL_TAGGED_MARGIN = 2;
+  const SEL_MAPPED_MARGIN = 12;
+  const SEL_MAX_CANDIDATES = 200;
+  // How long a selection captured when the Edit button is pressed stays
+  // usable, in case the click itself disturbs the page selection.
+  const SEL_PRESS_TTL_MS = 2000;
+  const SEL_GAP =
+    "(?:" +
+    [
+      "&#?\\w+;", // entity
+      "!\\[[^\\]\\n]*\\]\\([^)\\n]*\\)", // image (alt text is not selectable)
+      "\\]\\([^)\\n]*\\)", // the URL half of a link
+      "<[^>\\n]*>", // inline HTML tag
+      "\\[[ xX]\\][ \\t]", // task marker
+      "\\n[ \\t>]*\\d+[.)][ \\t]+", // ordered list marker
+      "\\n[ \\t>]*(?:`{3,}|~{3,})[^\\n]*", // code fence line
+      "[^\\p{L}\\p{N}_]", // any other non-word character
+    ].join("|") +
+    ")*?";
+  let pressedSelection = null;
+
+  function selectionPattern(words) {
+    return new RegExp(
+      words
+        .map(function (w) {
+          return w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        })
+        .join(SEL_GAP),
+      "gu"
+    );
+  }
+
+  // One end of the page selection: its tagged block's source span and the
+  // number of words before the point within that block, or failing a
+  // tagged block, its y in scroll-content coordinates.
+  function selectionEdge(node, offset) {
+    const el = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
+    const block = el ? el.closest("[data-source-line]") : null;
+    if (block && article.contains(block)) {
+      const before = document.createRange();
+      before.setStart(block, 0);
+      before.setEnd(node, offset);
+      return {
+        first: parseInt(block.getAttribute("data-source-line"), 10) || 0,
+        last: parseInt(block.getAttribute("data-source-end"), 10) || 0,
+        wordsBefore: (before.toString().match(SEL_WORD_RE) || []).length,
+      };
+    }
+    const point = document.createRange();
+    point.setStart(node, offset);
+    point.collapse(true);
+    let rect = point.getBoundingClientRect();
+    if (!rect.top && !rect.height && el) rect = el.getBoundingClientRect();
+    const origin = scrollPane.getBoundingClientRect().top - scrollPane.scrollTop;
+    return { first: 0, last: 0, wordsBefore: -1, y: rect.top - origin };
+  }
+
+  function captureViewSelection() {
+    if (!article || !scrollPane || !window.getSelection) return null;
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return null;
+    const range = sel.getRangeAt(0);
+    if (!article.contains(range.commonAncestorContainer)) return null;
+    const words = range.toString().match(SEL_WORD_RE);
+    if (!words) return null;
+    return {
+      words: words,
+      start: selectionEdge(range.startContainer, range.startOffset),
+      end: selectionEdge(range.endContainer, range.endOffset),
+      at: Date.now(),
+    };
+  }
+
+  // The source range [from, to) for a captured selection, as offsets into
+  // text with "\n" line endings (the editor's buffer), or null.
+  function findSourceSelection(text, cap, totalLines) {
+    const src = String(text).replace(/\r\n?/g, "\n");
+    const lineStarts = [0];
+    for (let i = 0; i < src.length; i++) if (src.charCodeAt(i) === 10) lineStarts.push(i + 1);
+    const lineOffset = function (n) {
+      return lineStarts[Math.max(1, Math.min(lineStarts.length, n)) - 1];
+    };
+    const lineEnd = function (n) {
+      return n >= lineStarts.length ? src.length : lineStarts[Math.max(1, n)];
+    };
+    const lineOf = function (offset) {
+      let lo = 0;
+      let hi = lineStarts.length - 1;
+      while (lo < hi) {
+        const mid = (lo + hi + 1) >> 1;
+        if (lineStarts[mid] <= offset) lo = mid;
+        else hi = mid - 1;
+      }
+      return lo + 1;
+    };
+    let anchors = null;
+    function span(edge) {
+      if (edge.first > 0) {
+        return { from: edge.first - SEL_TAGGED_MARGIN, to: Math.max(edge.last, edge.first) + SEL_TAGGED_MARGIN, at: edge.first };
+      }
+      if (!anchors) anchors = sourceAnchors(totalLines);
+      const line = Math.floor(mapAnchors(anchors, edge.y, "y", "line"));
+      return { from: line - SEL_MAPPED_MARGIN, to: line + SEL_MAPPED_MARGIN, at: line };
+    }
+    // The candidate closest to the edge: by words before it within the
+    // block when the block is tagged, else by line.
+    function best(re, from, to, edge, at, useEnd) {
+      let pick = null;
+      let pickScore = Infinity;
+      re.lastIndex = from;
+      for (let n = 0; n < SEL_MAX_CANDIDATES; n++) {
+        const m = re.exec(src);
+        if (!m || m.index >= to) break;
+        const hit = { from: m.index, to: m.index + m[0].length };
+        const point = useEnd ? hit.to : hit.from;
+        const score =
+          edge && edge.wordsBefore >= 0
+            ? Math.abs((src.slice(lineOffset(edge.first), point).match(SEL_WORD_RE) || []).length - edge.wordsBefore)
+            : Math.abs(lineOf(point) - at);
+        if (score < pickScore) {
+          pick = hit;
+          pickScore = score;
+        }
+        if (m[0].length === 0) re.lastIndex++;
+      }
+      return pick;
+    }
+    const s = span(cap.start);
+    const headRe = selectionPattern(cap.words.slice(0, SEL_EDGE_WORDS));
+    const head =
+      best(headRe, lineOffset(s.from), lineEnd(s.to), cap.start, s.at, false) ||
+      best(headRe, 0, src.length, null, s.at, false);
+    if (!head) return null;
+    if (cap.words.length <= SEL_EDGE_WORDS) return head;
+    const e = span(cap.end);
+    const tailRe = selectionPattern(cap.words.slice(-SEL_EDGE_WORDS));
+    let tail = best(tailRe, Math.max(head.from, lineOffset(e.from)), lineEnd(e.to), cap.end, e.at, true);
+    if (!tail || tail.to < head.to) tail = best(tailRe, head.from, src.length, null, e.at, true);
+    if (!tail || tail.to < head.to) return head;
+    return { from: head.from, to: tail.to };
+  }
+
+  if (editBtn) {
+    editBtn.addEventListener("pointerdown", function () {
+      pressedSelection = captureViewSelection();
+    });
+  }
+
   function openEditor() {
     if (!editorRoot || !editorHost || !editorSrc || editorIsOpen()) return;
     setDownloadMenuOpen(false);
+    // Read before the modal takes focus.
+    let selection = captureViewSelection();
+    if (!selection && pressedSelection && Date.now() - pressedSelection.at < SEL_PRESS_TTL_MS) {
+      selection = pressedSelection;
+    }
+    pressedSelection = null;
     editorRoot.hidden = false;
     if (editBtn) editBtn.setAttribute("aria-expanded", "true");
     if (editorTitle) editorTitle.textContent = source.split(/[\\/]/).pop();
@@ -1389,7 +1556,10 @@
           onClose: closeEditor,
           onDirty: onEditorDirty,
         });
-        ed.scrollToLine(viewSourceLine(src.text.split(/\r\n|\r|\n/).length));
+        const totalLines = src.text.split(/\r\n|\r|\n/).length;
+        ed.scrollToLine(viewSourceLine(totalLines));
+        const found = selection ? findSourceSelection(src.text, selection, totalLines) : null;
+        if (found) ed.select(found.from, found.to);
         // Where the editor settled (after the cursor snaps to its visual
         // line). A close from here, unmoved, returns the page to exactly
         // where it was instead of mapping back: the two sides wrap at

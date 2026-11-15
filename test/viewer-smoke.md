@@ -4,7 +4,7 @@ Use this file to check live reload and editable task lists.
 
 1. Leave this tab open.
 2. Toggle a checkbox below by clicking the box or tabbing to it and pressing Space (not the text). First click asks for consent (this session or always). The source on disk should flip `[ ]` ↔ `[x]`. The toggle itself should stay in place without a full reload. An external save may reload; keyboard focus must return to the same box. Clicking the label text must not toggle.
-3. Press **Edit** (or `e`). The editor should open showing what the page showed at the top (scroll partway into a paragraph or code block first), in the page's theme. Esc without scrolling should put the page back exactly where it was. Scroll the editor elsewhere, add a line, press ⌘S, then Esc: the view should refresh with the line, showing what the editor showed at the top. With unsaved changes, Esc should ask before closing.
+3. Press **Edit** (or `e`). The editor should open showing what the page showed at the top (scroll partway into a paragraph or code block first), in the page's theme. Select a phrase that spans **bold** text or a link first and it should arrive selected in the source. Esc without scrolling should put the page back exactly where it was (the first Esc clears an editor selection). Scroll the editor elsewhere, add a line, press ⌘S, then Esc: the view should refresh with the line, showing what the editor showed at the top. With unsaved changes, Esc should ask before closing.
 4. Scroll to **Deep section**, then edit this file in an editor (change the line below) and save. The tab should update and stay near that heading.
 
 Edit me for live reload: `unchanged`.

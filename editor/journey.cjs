@@ -29,7 +29,11 @@ function fixture() {
   const code = Array.from({ length: 60 }, (_, i) => "code line " + i).join("\n");
   const words = Array.from({ length: 400 }, (_, i) => "w" + i).join(" ");
   return (
-    "# Editor journey\n\nIntro.\n\n## Section A\n\n" + filler("A") +
+    "# Editor journey\n\nIntro.\n\n## Section A\n\n" +
+    "Mixed **bold** and [a link](https://example.com/x \"t\") with `code`, an &amp; entity, " +
+    "\u201cquotes\u201d and <em>html</em> end.\n\n" +
+    "the cat and the dog and the bird\n\n- [x] done task\n- [ ] open task\n\n" +
+    filler("A") +
     "\n```text\n" + code + "\n```\n\n" + words + "\n\n" +
     "## Section B\n\n- first item\n- second item\n\n```go\nfunc main() {\n\tprintln(\"hi\")\n}\n```\n\n" +
     filler("B") + "\n## Section C\n\nEnd.\n"
@@ -109,6 +113,56 @@ function near(a, b) {
 function show(p) {
   return typeof p === "string" ? p : p.first === p.last ? p.first : p.first + "…" + p.last;
 }
+
+// Select in the page from the nth occurrence of startText (counted
+// within the first text node containing hint) through the next endText,
+// scrolled into view as a reader would have it.
+function selectInView(page, hint, startText, nth, endText) {
+  return page.evaluate(([hint, startText, nth, endText]) => {
+    const walker = document.createTreeWalker(document.querySelector(".vellum-article"), NodeFilter.SHOW_TEXT);
+    const nodes = [];
+    let n;
+    while ((n = walker.nextNode())) nodes.push(n);
+    const at = nodes.findIndex((node) => node.textContent.includes(hint));
+    if (at < 0) return false;
+    let i = -1;
+    for (let k = 0; k <= nth; k++) {
+      i = nodes[at].textContent.indexOf(startText, i + 1);
+      if (i < 0) return false;
+    }
+    let end = null;
+    for (let k = at; k < nodes.length && !end; k++) {
+      const j = nodes[k].textContent.indexOf(endText, k === at ? i : 0);
+      if (j >= 0) end = { node: nodes[k], offset: j + endText.length };
+    }
+    if (!end) return false;
+    const r = document.createRange();
+    r.setStart(nodes[at], i);
+    r.setEnd(end.node, end.offset);
+    const pane = document.querySelector(".vellum-scroll");
+    pane.scrollTop += r.getBoundingClientRect().top - pane.getBoundingClientRect().top - 200;
+    getSelection().removeAllRanges();
+    getSelection().addRange(r);
+    return true;
+  }, [hint, startText, nth, endText]);
+}
+
+// The editor's selection: its text and the text before it on its line.
+function editorSelection(page) {
+  return page.evaluate(() => {
+    const s = getSelection();
+    if (!s.rangeCount) return null;
+    const r = s.getRangeAt(0);
+    const line = (r.startContainer.nodeType === Node.TEXT_NODE ? r.startContainer.parentElement : r.startContainer).closest(".cm-line");
+    if (!line) return null;
+    const before = document.createRange();
+    before.setStart(line, 0);
+    before.setEnd(r.startContainer, r.startOffset);
+    return { text: s.toString(), before: before.toString(), line: line.textContent };
+  });
+}
+
+const squash = (x) => String(x).replace(/\s+/g, "");
 
 // Scroll the page so token sits at the top of what the reader sees.
 function scrollViewTo(page, token) {
@@ -199,6 +253,8 @@ async function waitFor(fn, msg, ms = 5000) {
 
     const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
     const page = await context.newPage();
+    // Fail a stuck step quickly rather than after Playwright's 30s.
+    page.setDefaultTimeout(10000);
     const errors = [];
     const foreign = [];
     page.on("pageerror", (e) => errors.push(String(e)));
@@ -221,9 +277,14 @@ async function waitFor(fn, msg, ms = 5000) {
       await waitFor(() => page.evaluate(() => document.activeElement && document.activeElement.classList.contains("cm-content")), "editor focus");
       await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
     };
+    // The first Escape clears an editor selection (CodeMirror's own
+    // binding); a bare Escape closes.
     const closeEditor = async () => {
-      await page.keyboard.press("Escape");
-      await page.waitForSelector(".vellum-editor", { state: "hidden" });
+      for (let i = 0; i < 2; i++) {
+        await page.keyboard.press("Escape");
+        if (await page.locator(".vellum-editor").isHidden()) return;
+      }
+      await page.waitForSelector(".vellum-editor", { state: "hidden", timeout: 2000 });
     };
     for (const token of ["Paragraph A12", "code line 30", "w200", "Paragraph B25", "Paragraph A37"]) {
       check(await scrollViewTo(page, token), "fixture lacks " + token);
@@ -254,6 +315,45 @@ async function waitFor(fn, msg, ms = 5000) {
     }
     await closeEditor();
     check(await page.evaluate(() => window.__journeyMarker === 1), "a clean close reloaded the page");
+
+    // A page selection becomes the same text selected in the source,
+    // through Markdown syntax, link URLs, entities, tags, task and list
+    // markers, a repeated word, a fenced block and a long multi-block run.
+    const selectionCases = [
+      {
+        sel: ["bold", "bold", 0, "end"],
+        want: 'bold** and [a link](https://example.com/x "t") with `code`, an &amp; entity, \u201cquotes\u201d and <em>html</em> end',
+      },
+      { sel: ["the cat", "the", 1, "the"], want: "the", before: "the cat and " },
+      { sel: ["the cat", "dog and the", 0, "bird"], want: "dog and the bird" },
+      { sel: ["code line 30", "line 30", 0, "line 30"], want: "line 30", line: "code line 30" },
+      { sel: ["done task", "done", 0, "open"], want: "done task\n- [ ] open" },
+      {
+        sel: ["Paragraph A3 ", "filler", 0, "A6"],
+        want: "filler prose.\n\nParagraph A4 of filler prose.\n\nParagraph A5 of filler prose.\n\nParagraph A6",
+      },
+    ];
+    for (const [i, c] of selectionCases.entries()) {
+      check(await selectInView(page, ...c.sel), "could not select " + c.sel.join(" / "));
+      // Alternate the two ways in: the toolbar button and the e key.
+      if (i % 2 === 0) await page.click('[data-vellum="edit"]');
+      else await page.keyboard.press("e");
+      await page.waitForSelector(".vellum-editor:not([hidden]) .cm-editor");
+      await waitFor(async () => {
+        const got = await editorSelection(page);
+        return got && got.text.length > 0;
+      }, "editor selection for " + c.want);
+      const got = await editorSelection(page);
+      check(squash(got.text) === squash(c.want), "editor selected " + JSON.stringify(got.text) + ", want " + JSON.stringify(c.want));
+      if (c.before !== undefined) check(got.before === c.before, "selected the wrong occurrence: before " + JSON.stringify(got.before));
+      if (c.line !== undefined) check(got.line === c.line, "selected on line " + JSON.stringify(got.line));
+      await closeEditor();
+    }
+    // No page selection: the editor opens with a bare cursor.
+    await page.evaluate(() => getSelection().removeAllRanges());
+    await openEditor();
+    check((await editorSelection(page)).text === "", "editor opened with a selection nobody made");
+    await closeEditor();
 
     // The rest works around Section B.
     await page.evaluate(() => {
@@ -383,7 +483,7 @@ async function waitFor(fn, msg, ms = 5000) {
 
     check(errors.length === 0, "page errors: " + errors.join("; "));
     check(foreign.length === 0, "network requests off the view server: " + foreign.join(", "));
-    console.log("PASS: scroll position both ways (paragraphs, fenced block, wrapped line, top, after reload), highlighting, list continuation, save, follow disk, conflict overwrite, refresh on close, dark, layout, discard, phone, offline");
+    console.log("PASS: page selection carried into the editor, scroll position both ways (paragraphs, fenced block, wrapped line, top, after reload), highlighting, list continuation, save, follow disk, conflict overwrite, refresh on close, dark, layout, discard, phone, offline");
   } finally {
     await browser.close();
     server.kill();

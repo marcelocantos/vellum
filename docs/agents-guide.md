@@ -414,7 +414,8 @@ already work with files and `convert`.
   `GET …/source`, `POST …/clipboard`, `POST …/reveal`, `GET …/watch`,
   `POST …/task-toggle`, `GET`/`PUT …/edit`). Edit (or `e`) opens a
   modal CodeMirror editor on the Markdown source, served offline from
-  `…/editor/`, scrolled to what the page showed; closing it scrolls the
+  `…/editor/`, scrolled to what the page showed and with any page
+  selection selected in the source; closing it scrolls the
   page to what the editor showed (view HTML tags blocks with
   `data-source-line` / `data-source-end`). `GET …/edit` returns the raw source with its stamp in
   `X-Vellum-Stamp`; `PUT …/edit` writes the body only when that header
