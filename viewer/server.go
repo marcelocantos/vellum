@@ -173,6 +173,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc(ChromeEditorPrefix, s.handleEditorAsset)
 	mux.HandleFunc(ChromeFragmentPath, s.handleFragment)
 	mux.HandleFunc(ChromeFaviconPath, s.handleFavicon)
+	mux.HandleFunc(ChromeFileManagerIconPath, s.handleFileManagerIcon)
 	mux.Handle(ChromeKaTeXPrefix, http.StripPrefix(ChromeKaTeXPrefix, http.FileServerFS(embed.KaTeX())))
 	mux.HandleFunc(FaviconICOPath, s.handleFavicon)
 	mux.HandleFunc("/", s.handlePath)

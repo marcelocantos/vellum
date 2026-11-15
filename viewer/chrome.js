@@ -678,7 +678,12 @@
             });
           })
           .then(function () {
-            setStatus(action === "clipboard" ? "Copied to clipboard" : "Revealed in Finder", true);
+            setStatus(
+              action === "clipboard"
+                ? "Copied to clipboard"
+                : "Revealed in " + (btn.getAttribute("data-file-manager") || "the file manager"),
+              true
+            );
           })
           .catch(function (err) {
             setStatus(err.message || String(err), false);

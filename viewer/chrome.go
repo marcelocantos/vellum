@@ -93,6 +93,14 @@ func chromeScriptTag() string {
 	return "<script>\n" + chromeJS + "\n</script>\n"
 }
 
+func pencilIconSVG() string {
+	return `<svg class="vellum-icon" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.17 6.81a2.83 2.83 0 0 0-4-4L3.84 16.17a2 2 0 0 0-.5.83l-1.32 4.35a.5.5 0 0 0 .62.62l4.35-1.32a2 2 0 0 0 .83-.5Z"/><path d="m15 5 4 4"/></svg>`
+}
+
+func copyIconSVG() string {
+	return `<svg class="vellum-icon" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>`
+}
+
 func downloadIconSVG() string {
 	return `<svg class="vellum-icon" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>`
 }
@@ -106,7 +114,7 @@ func chromeOpen(sourcePath string, waiting bool) string {
 	} else {
 		// A waiting page has no file yet, so nothing to edit.
 		attrs += ` data-editor="` + html.EscapeString(editorEntryURL()) + `"`
-		edit = `<button type="button" data-vellum="edit" title="Edit the Markdown source (E)" aria-haspopup="dialog" aria-controls="vellum-editor">Edit</button>`
+		edit = `<button type="button" class="vellum-icon-btn" data-vellum="edit" title="Edit the Markdown source (E)" aria-label="Edit the Markdown source" aria-haspopup="dialog" aria-controls="vellum-editor">` + pencilIconSVG() + `</button>`
 	}
 	return `<div class="vellum-chrome" ` + attrs + `>` +
 		`<aside class="vellum-toc" id="vellum-toc">` +
@@ -129,8 +137,9 @@ func chromeOpen(sourcePath string, waiting bool) string {
 		`<button type="button" role="menuitem" data-vellum="source">Source</button>` +
 		`</div></div>` +
 		edit +
-		`<button type="button" data-vellum="clipboard" title="Copy the rendered document to the clipboard">Copy</button>` +
-		`<button type="button" data-vellum="reveal" title="Reveal the source file in ` + hint.FileManager() + `">Show in ` + hint.FileManager() + `</button>` +
+		`<button type="button" class="vellum-icon-btn" data-vellum="clipboard" title="Copy the rendered document to the clipboard" aria-label="Copy the rendered document to the clipboard">` + copyIconSVG() + `</button>` +
+		`<button type="button" class="vellum-icon-btn" data-vellum="reveal" data-file-manager="` + hint.FileManager() + `" title="Show in ` + hint.FileManager() + `" aria-label="Show in ` + hint.FileManager() + `">` +
+		`<img class="vellum-icon vellum-fm-icon" src="` + ChromeFileManagerIconPath + `" width="16" height="16" alt=""></button>` +
 		`<div class="vellum-toolbar-end">` +
 		`<span class="vellum-docname">` + html.EscapeString(name) + `</span>` +
 		`<button type="button" class="vellum-theme-btn" data-vellum="theme" title="Theme: System">◐</button>` +

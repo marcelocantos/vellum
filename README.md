@@ -174,14 +174,16 @@ Each GET converts **one** Markdown path (no link-graph crawl). Relative
 `.md`/`.markdown` links are rewritten to same-origin URLs. The served page
 adds view chrome (not written into the convert cache): a leading H1 that stays under the toolbar and shrinks as the page scrolls, a heading table of
 contents with expand/collapse and a « / » sidebar toggle, a download
-menu (PDF, or Source in a new tab), copy to clipboard, reveal in Finder,
+menu (PDF, or Source in a new tab), copy to clipboard, reveal in Finder
+(icon buttons; the reveal button shows Finder's own icon, or a folder on
+Windows),
 a theme control (dark / system / light, persisted in the browser),
 dark-mode article styling with syntax highlighting, tables that use the full panel width with columns sized to their content (wide tables scroll within the panel) and headings that stay visible beneath the pinned title until the table scrolls away, and a full-viewport
 zoom/pan viewer for images and SVG (including Mermaid), and GFM
 task-list checkboxes that edit the source file after consent
 (once per session or permanently) when you click or Space the box, not
 the label text. The toggle adopts the new source stamp without reloading;
-an external file-change reload keeps keyboard focus on that box. **Edit**
+an external file-change reload keeps keyboard focus on that box. The pencil
 (or the `e` key) opens the Markdown source in a modal CodeMirror 6
 editor: GFM syntax highlighting with fenced code highlighted in its own
 language, list continuation, search and replace, folding and multiple

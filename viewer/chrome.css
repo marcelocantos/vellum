@@ -116,6 +116,15 @@ body.vellum-view {
   display: block;
 }
 
+/* The file manager's own icon is a full-colour app icon, which reads
+   small at the line icons' 14px; draw it at 16px but take only 14px of
+   height so its button lines up with the others. */
+.vellum-icon-btn .vellum-fm-icon {
+  width: 16px;
+  height: 16px;
+  margin: -1px 0;
+}
+
 .vellum-toolbar .vellum-toc-toggle-btn {
   margin-right: 20px;
   min-width: auto;

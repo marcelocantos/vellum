@@ -412,7 +412,7 @@ already work with files and `convert`.
   scroll plus the focused checkbox. Chrome is injected per response; the convert-cache file
   stays chrome-free. Actions live under `/_vellum/` (`GET …/pdf`,
   `GET …/source`, `POST …/clipboard`, `POST …/reveal`, `GET …/watch`,
-  `POST …/task-toggle`, `GET`/`PUT …/edit`). Edit (or `e`) opens a
+  `POST …/task-toggle`, `GET`/`PUT …/edit`). The pencil button (or `e`) opens a
   modal CodeMirror editor on the Markdown source, served offline from
   `…/editor/`, scrolled to what the page showed and with any page
   selection selected in the source; closing it scrolls the
