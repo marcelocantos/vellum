@@ -46,7 +46,10 @@ const palette = {
     gutterBg: "#f6f8fa",
     gutterFg: "#8c959f",
     border: "#d1d9e0",
-    activeLine: "#f6f8fa",
+    // The active line is drawn over the selection layer, so it must be
+    // translucent or it hides the selection on the cursor's line.
+    activeLine: "rgba(208, 215, 222, 0.25)",
+    activeGutter: "#f6f8fa",
     selection: "#b6d7ff",
     cursor: "#1f2328",
     match: "#fff8c5",
@@ -71,7 +74,8 @@ const palette = {
     gutterBg: "#0d1117",
     gutterFg: "#6e7681",
     border: "#30363d",
-    activeLine: "#161b22",
+    activeLine: "rgba(110, 118, 129, 0.1)",
+    activeGutter: "#161b22",
     selection: "#264f78",
     cursor: "#e6edf3",
     match: "#3a3420",
@@ -106,7 +110,7 @@ function themeFor(dark) {
         { backgroundColor: c.selection },
       ".cm-activeLine": { backgroundColor: c.activeLine },
       ".cm-gutters": { backgroundColor: c.gutterBg, color: c.gutterFg, borderRight: "1px solid " + c.border },
-      ".cm-activeLineGutter": { backgroundColor: c.activeLine, color: c.fg },
+      ".cm-activeLineGutter": { backgroundColor: c.activeGutter, color: c.fg },
       ".cm-selectionMatch": { backgroundColor: c.match },
       ".cm-searchMatch": { backgroundColor: c.match, outline: "1px solid " + c.border },
       ".cm-searchMatch.cm-searchMatch-selected": { backgroundColor: c.selection },
@@ -115,7 +119,7 @@ function themeFor(dark) {
       ".cm-panels input, .cm-panels button": { font: "inherit", fontSize: "12px" },
       ".cm-textfield": { backgroundColor: c.bg, color: c.fg, border: "1px solid " + c.border, borderRadius: "4px" },
       ".cm-button": { backgroundImage: "none", backgroundColor: c.bg, color: c.fg, border: "1px solid " + c.border, borderRadius: "4px" },
-      ".cm-foldPlaceholder": { backgroundColor: c.activeLine, border: "1px solid " + c.border, color: c.gutterFg },
+      ".cm-foldPlaceholder": { backgroundColor: c.activeGutter, border: "1px solid " + c.border, color: c.gutterFg },
     },
     { dark: dark }
   );

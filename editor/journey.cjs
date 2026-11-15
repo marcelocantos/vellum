@@ -164,6 +164,47 @@ function editorSelection(page) {
 
 const squash = (x) => String(x).replace(/\s+/g, "");
 
+// The rendered colour of one pixel, from a 1x1 screenshot. A single-pixel
+// PNG row has no neighbours, so every filter type leaves it raw.
+async function pixelAt(page, x, y) {
+  const png = await page.screenshot({ clip: { x: x, y: y, width: 1, height: 1 } });
+  const chunks = [];
+  let colorType = 0;
+  for (let at = 8; at < png.length; ) {
+    const len = png.readUInt32BE(at);
+    const type = png.toString("ascii", at + 4, at + 8);
+    if (type === "IHDR") colorType = png[at + 8 + 9];
+    if (type === "IDAT") chunks.push(png.subarray(at + 8, at + 8 + len));
+    at += 12 + len;
+  }
+  const raw = require("node:zlib").inflateSync(Buffer.concat(chunks));
+  check(colorType === 2 || colorType === 6, "unexpected PNG colour type " + colorType);
+  return [raw[1], raw[2], raw[3]];
+}
+
+// Where to look for the selection highlight on the line holding the
+// cursor: just above the ink of the character before the head.
+function headProbePoint(page) {
+  return page.evaluate(async () => {
+    // Let the editor finish scrolling the selection into view.
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    const s = getSelection();
+    if (!s.rangeCount || s.isCollapsed || !s.focusOffset) return null;
+    const r = document.createRange();
+    r.setStart(s.focusNode, s.focusOffset - 1);
+    r.setEnd(s.focusNode, s.focusOffset);
+    const rect = r.getBoundingClientRect();
+    const x = Math.round(rect.left + rect.width / 2);
+    const y = Math.round(rect.top + 1);
+    if (x < 0 || y < 0 || x >= innerWidth || y >= innerHeight) return { offscreen: true, x: x, y: y };
+    return { x: x, y: y };
+  });
+}
+
+// Light theme selection colour (editor/src/main.js palette.light.selection).
+const SELECTION_RGB = [0xb6, 0xd7, 0xff];
+const SELECTION_SLACK = 40;
+
 // Scroll the page so token sits at the top of what the reader sees.
 function scrollViewTo(page, token) {
   return page.evaluate((token) => {
@@ -347,6 +388,15 @@ async function waitFor(fn, msg, ms = 5000) {
       check(squash(got.text) === squash(c.want), "editor selected " + JSON.stringify(got.text) + ", want " + JSON.stringify(c.want));
       if (c.before !== undefined) check(got.before === c.before, "selected the wrong occurrence: before " + JSON.stringify(got.before));
       if (c.line !== undefined) check(got.line === c.line, "selected on line " + JSON.stringify(got.line));
+      // The highlight must show on the cursor's own line too, where the
+      // active-line background is drawn.
+      const at = await headProbePoint(page);
+      check(at && !at.offscreen, "selection head not on screen to probe: " + JSON.stringify(at));
+      const rgb = await pixelAt(page, at.x, at.y);
+      check(
+        rgb.every((v, k) => Math.abs(v - SELECTION_RGB[k]) <= SELECTION_SLACK),
+        "selection not visible on the cursor's line: pixel rgb(" + rgb + ") at " + JSON.stringify(at) + " for " + JSON.stringify(c.want)
+      );
       await closeEditor();
     }
     // No page selection: the editor opens with a bare cursor.
