@@ -19,7 +19,7 @@ Until 1.0, any of these may change between minor releases.
 
 ## Interaction surface catalogue
 
-Snapshot as of **v0.39.0** (`const version` in `cmd/vellum`). Annotations:
+Snapshot as of **v0.40.0** (`const version` in `cmd/vellum`). Annotations:
 
 - **stable** — after 1.0, breaking this promise means forking the product.
 - **needs review** — may still be refined after 1.0. A needs-review row is not a failed gate.
@@ -131,9 +131,10 @@ Package paths are under `github.com/marcelocantos/vellum/…`.
 - `type ViewOptions struct { Format Format; Style *convert.Style; Backend string; Open func(string) error; CacheDir string; MaxBytes int64; MaxAge time.Duration; Now func() time.Time; ViewBaseURL string; SkipEnsureServer bool }` — **needs review**
 - `type Server struct { Addr string; CacheDir string; Style *convert.Style; Backend string; … }` — **needs review** (added in v0.14.0)
 - `func (*Server) ListenAndServe(ctx context.Context) error` — **needs review** (loopback-only bind)
-- `func (*Server) Handler() http.Handler` — **needs review** (Markdown GET injects chrome; `/_vellum/pdf` GET, `/_vellum/clipboard` POST, `/_vellum/reveal` POST, `/_vellum/watch` GET/WebSocket, `/_vellum/task-toggle` POST, `/_vellum/edit` GET/PUT, `/_vellum/editor/` GET)
+- `func (*Server) Handler() http.Handler` — **needs review** (Markdown GET injects chrome; `/_vellum/pdf` GET, `/_vellum/clipboard` POST, `/_vellum/reveal` POST, `/_vellum/watch` GET/WebSocket, `/_vellum/task-toggle` POST, `/_vellum/edit` GET/PUT, `/_vellum/editor/` GET, `/_vellum/file-manager-icon` GET)
 - `const SourceLineAttr, SourceEndAttr` (package `convert`) — **needs review** (`data-source-line` / `data-source-end`: a block's first and last source lines, 1-based)
 - `const ChromeEditPath, ChromeEditorPrefix, EditorEntry, StampHeader` — **needs review** (editor endpoint, bundle prefix, entry module, stamp header)
+- `const ChromeFileManagerIconPath` — **needs review** (the reveal button's icon: the Finder icon as PNG on macOS, a folder SVG elsewhere)
 - `func ViewURL(origin, absPath string) string` — **needs review**
 - `func EnsureViewServer(origin string) error` — **needs review**
 - `func ProbeViewServer(origin string) error` — **needs review**
