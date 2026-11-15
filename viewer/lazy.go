@@ -286,6 +286,8 @@ func (s *Server) fragmentHTML(ctx context.Context, absPath, id string) (string, 
 // every deferred fragment resolved (from the fragment cache or a fresh
 // render). It is what the clipboard carries. soft lists fragments that
 // failed to render and were replaced by their source fallback.
+var sourceLineAttrRe = regexp.MustCompile(` (?:` + convert.SourceLineAttr + `|` + convert.SourceEndAttr + `)="\d+"`)
+
 func (s *Server) completeHTML(ctx context.Context, absPath string) (html string, soft []string, err error) {
 	shell, err := s.cachedHTML(ctx, absPath)
 	if err != nil {
@@ -301,7 +303,8 @@ func (s *Server) completeHTML(ctx context.Context, absPath string) (html string,
 		return "", nil, err
 	}
 	html, soft = convert.ResolveFragments(string(shell), results)
-	return html, soft, nil
+	// Scroll-mapping attributes are for the live page, not a paste.
+	return sourceLineAttrRe.ReplaceAllString(html, ""), soft, nil
 }
 
 // handleFragment serves one deferred fragment for ?path=…&id=…. Ids are

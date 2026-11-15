@@ -185,13 +185,16 @@ an external file-change reload keeps keyboard focus on that box. **Edit**
 (or the `e` key) opens the Markdown source in a modal CodeMirror 6
 editor: GFM syntax highlighting with fenced code highlighted in its own
 language, list continuation, search and replace, folding and multiple
-cursors, in the viewer's light or dark theme. It opens at the section
-the view is showing; ⌘S / Ctrl+S saves. A save names the version it
+cursors, in the viewer's light or dark theme. It opens scrolled to what
+the page was showing at the top (rendered blocks carry their source
+lines, and positions in between are interpolated, so this holds inside
+code blocks and long paragraphs too); ⌘S / Ctrl+S saves. A save names the version it
 edited, so a change made on disk meanwhile is never overwritten
 silently: a clean buffer follows the outside edit, and a dirty one asks
 whether to overwrite or reload. Esc or Done closes it, asking first
-about unsaved changes, and the view refreshes at the section the cursor
-was in. The editor is embedded in the binary and loads nothing from the
+about unsaved changes. The page then shows what the editor was showing,
+refreshed if anything was saved, or exactly where it was if the editor
+was not scrolled. The editor is embedded in the binary and loads nothing from the
 network. The same process hosts
 streamable HTTP MCP at `/mcp`. The server binds loopback only (override
 with `--addr` / `VELLUM_VIEW_ADDR`). Cache health: entries older than 7

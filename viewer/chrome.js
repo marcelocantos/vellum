@@ -369,6 +369,11 @@
       sessionStorage.removeItem(SCROLL_KEY);
     } catch (e) {}
     function apply() {
+      if (typeof pos.sourceLine === "number") {
+        scrollViewToSourceLine(pos.sourceLine, pos.sourceLines || 0);
+        restoreFocus(pos.focus);
+        return;
+      }
       const max = Math.max(0, scrollPane.scrollHeight - scrollPane.clientHeight);
       if (pos.id && article) {
         const el = document.getElementById(pos.id);
@@ -1219,8 +1224,8 @@
   let editorModule = null;
   let edStamp = "";
   let edSaving = 0;
-  let edOpenLine = 1;
   let viewStale = false;
+  let edOpened = null;
 
   function editorIsOpen() {
     return Boolean(editorRoot && !editorRoot.hidden);
@@ -1277,91 +1282,92 @@
     else if (editorStateEl && editorStateEl.dataset.kind === "dirty") setEditorState("", "");
   }
 
-  // Heading text as both the article and the source can produce it, so a
-  // rendered heading and its "## ..." line compare equal.
-  function normHeading(s) {
-    return String(s || "")
-      .replace(/<[^>]+>/g, "")
-      .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
-      .replace(/[*_`~\\]/g, "")
-      .replace(/\s+/g, " ")
-      .trim()
-      .toLowerCase();
-  }
-
-  // ATX headings in Markdown source, outside fenced code: [{line, norm}].
-  function sourceHeadings(text) {
-    const out = [];
-    const lines = String(text).split(/\r\n|\r|\n/);
-    let fence = "";
-    for (let i = 0; i < lines.length; i++) {
-      const f = lines[i].match(/^ {0,3}(`{3,}|~{3,})/);
-      if (f) {
-        if (!fence) fence = f[1];
-        else if (f[1].charAt(0) === fence.charAt(0) && f[1].length >= fence.length) fence = "";
-        continue;
-      }
-      if (fence) continue;
-      const m = lines[i].match(/^ {0,3}#{1,6}(?:[ \t]+(.*?))?(?:[ \t]+#+)?[ \t]*$/);
-      if (m) out.push({ line: i + 1, norm: normHeading(m[1] || "") });
+  // Scroll mapping between the page and the source. The server tags
+  // rendered blocks with data-source-line and data-source-end (the
+  // block's first and last source lines). A block's top is at its first
+  // line and its bottom at the start of the line after its last; between
+  // those points position is interpolated linearly in both directions.
+  // That also covers untagged blocks (fenced code, diagrams, math), the
+  // blank lines between blocks, and long wrapped paragraphs.
+  //
+  // Anchors are [{y, line}] in scroll-content coordinates, sorted by y,
+  // with line non-decreasing (a point that would go backwards is
+  // dropped). Skipped: footnotes (rendered at the end, defined
+  // anywhere), the generated contents block, the pinned title and table
+  // internals (both move while sticky).
+  function sourceAnchors(totalLines) {
+    const pts = [{ y: 0, line: 1 }];
+    if (article && scrollPane) {
+      const origin = scrollPane.getBoundingClientRect().top - scrollPane.scrollTop;
+      article.querySelectorAll("[data-source-line]").forEach(function (el) {
+        if (el.closest(".footnotes, .vellum-contents, .vellum-pin-title")) return;
+        const table = el.closest("table");
+        if (table && table !== el) return;
+        const first = parseInt(el.getAttribute("data-source-line"), 10);
+        const last = parseInt(el.getAttribute("data-source-end"), 10);
+        if (!(first > 0)) return;
+        const r = el.getBoundingClientRect();
+        if (!r.height) return;
+        pts.push({ y: r.top - origin, line: first });
+        if (last >= first) pts.push({ y: r.bottom - origin, line: last + 1 });
+      });
+      pts.push({ y: scrollPane.scrollHeight, line: Math.max(totalLines, 1) + 1 });
     }
+    pts.sort(function (a, b) {
+      return a.y - b.y || a.line - b.line;
+    });
+    const out = [];
+    pts.forEach(function (p) {
+      if (out.length && p.line < out[out.length - 1].line) return;
+      out.push(p);
+    });
     return out;
   }
 
-  // The nth (0-based) rendered heading with this text, or null.
-  function articleHeadingFor(norm, nth) {
-    const hs = articleHeadings();
-    let k = 0;
-    for (let i = 0; i < hs.length; i++) {
-      if (normHeading(hs[i].textContent) !== norm) continue;
-      if (k === nth) return hs[i];
-      k++;
+  function mapAnchors(anchors, value, from, to) {
+    for (let i = anchors.length - 1; i >= 0; i--) {
+      const a = anchors[i];
+      if (a[from] > value) continue;
+      const b = anchors[i + 1];
+      if (!b || b[from] === a[from]) return a[to];
+      return a[to] + ((value - a[from]) / (b[from] - a[from])) * (b[to] - a[to]);
     }
-    return null;
+    return anchors[0][to];
   }
 
-  // Where the view is, as {norm, nth}: the heading at the top of the pane.
-  function viewHeading() {
-    const pos = captureScroll();
-    if (!pos || !pos.id) return null;
-    const el = document.getElementById(pos.id);
-    if (!el) return null;
-    const norm = normHeading(el.textContent);
-    const hs = articleHeadings();
-    let nth = 0;
-    for (let i = 0; i < hs.length && hs[i] !== el; i++) {
-      if (normHeading(hs[i].textContent) === norm) nth++;
-    }
-    return { norm: norm, nth: nth };
+  // Height of the pinned title over the top of the pane; content under
+  // it is not what the reader is looking at.
+  function pinnedTitleInset() {
+    if (!article || !scrollPane) return 0;
+    const title = article.querySelector(".vellum-pin-title");
+    if (!title) return 0;
+    return Math.max(0, title.getBoundingClientRect().bottom - scrollPane.getBoundingClientRect().top);
   }
 
-  function sourceLineFor(text, where) {
-    if (!where) return 1;
-    let k = 0;
-    const hs = sourceHeadings(text);
-    for (let i = 0; i < hs.length; i++) {
-      if (hs[i].norm !== where.norm) continue;
-      if (k === where.nth) return hs[i].line;
-      k++;
-    }
-    return 1;
+  // The (fractional) source line at the top of what the reader sees.
+  function viewSourceLine(totalLines) {
+    if (!scrollPane || scrollPane.scrollTop < 1) return 1;
+    const y = scrollPane.scrollTop + pinnedTitleInset();
+    return mapAnchors(sourceAnchors(totalLines), y, "y", "line");
   }
 
-  // The section containing a source line, as {norm, nth}.
-  function headingAtLine(text, line) {
-    const hs = sourceHeadings(text);
-    let hit = -1;
-    for (let i = 0; i < hs.length && hs[i].line <= line; i++) hit = i;
-    if (hit < 0) return null;
-    let nth = 0;
-    for (let i = 0; i < hit; i++) if (hs[i].norm === hs[hit].norm) nth++;
-    return { norm: hs[hit].norm, nth: nth };
+  // Scroll the page so source line (fractional) is at the top of what
+  // the reader sees. Two passes: the pinned title's height depends on
+  // the scroll position.
+  function scrollViewToSourceLine(line, totalLines) {
+    if (!scrollPane) return;
+    if (!(line > 1)) {
+      scrollPane.scrollTop = 0;
+      return;
+    }
+    const y = mapAnchors(sourceAnchors(totalLines), line, "line", "y");
+    scrollPane.scrollTop = y;
+    scrollPane.scrollTop = y - pinnedTitleInset();
   }
 
   function openEditor() {
     if (!editorRoot || !editorHost || !editorSrc || editorIsOpen()) return;
     setDownloadMenuOpen(false);
-    const where = viewHeading();
     editorRoot.hidden = false;
     if (editBtn) editBtn.setAttribute("aria-expanded", "true");
     if (editorTitle) editorTitle.textContent = source.split(/[\\/]/).pop();
@@ -1383,8 +1389,18 @@
           onClose: closeEditor,
           onDirty: onEditorDirty,
         });
-        edOpenLine = sourceLineFor(src.text, where);
-        ed.gotoLine(edOpenLine);
+        ed.scrollToLine(viewSourceLine(src.text.split(/\r\n|\r|\n/).length));
+        // Where the editor settled (after the cursor snaps to its visual
+        // line). A close from here, unmoved, returns the page to exactly
+        // where it was instead of mapping back: the two sides wrap at
+        // different widths, so a round trip would drift by a line.
+        const handle = ed;
+        const pageTop = scrollPane ? scrollPane.scrollTop : 0;
+        requestAnimationFrame(function () {
+          requestAnimationFrame(function () {
+            if (ed === handle) edOpened = { line: handle.topLine(), pageTop: pageTop };
+          });
+        });
         setEditorState("", "");
         ed.focus();
       })
@@ -1517,32 +1533,35 @@
 
   function finishCloseEditor() {
     if (!editorRoot) return;
-    let where = null;
+    // The editor's scroll position, measured while it is still laid out,
+    // becomes the page's.
+    let at = null;
+    let unmoved = false;
     if (ed) {
-      const line = ed.cursorLine();
-      if (line !== edOpenLine) where = headingAtLine(ed.getText(), line);
+      at = { line: ed.topLine(), lines: ed.lineCount() };
+      unmoved = Boolean(edOpened) && Math.abs(at.line - edOpened.line) < 0.01;
       ed.destroy();
       ed = null;
     }
+    const opened = edOpened;
+    edOpened = null;
     hideEditorBanner();
     setEditorState("", "");
     editorRoot.hidden = true;
     if (editBtn) editBtn.setAttribute("aria-expanded", "false");
-    const target = where ? articleHeadingFor(where.norm, where.nth) : null;
     if (viewStale) {
       viewStale = false;
       persistScroll();
-      if (target && target.id) {
+      if (at) {
         try {
-          sessionStorage.setItem(SCROLL_KEY, JSON.stringify({ id: target.id, offset: 0 }));
+          sessionStorage.setItem(SCROLL_KEY, JSON.stringify({ sourceLine: at.line, sourceLines: at.lines }));
         } catch (e) {}
       }
       location.reload();
       return;
     }
-    if (target && scrollPane) {
-      scrollPane.scrollTop += target.getBoundingClientRect().top - scrollPane.getBoundingClientRect().top;
-    }
+    if (unmoved && scrollPane) scrollPane.scrollTop = opened.pageTop;
+    else if (at) scrollViewToSourceLine(at.line, at.lines);
     focusScrollPane();
   }
 

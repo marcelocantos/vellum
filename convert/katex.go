@@ -89,11 +89,14 @@ func newMathPreprocessor() *mathPreprocessor {
 	return &mathPreprocessor{}
 }
 
-func (m *mathPreprocessor) placeholder(expr string, display bool) string {
+// placeholder records expr and returns its stand-in. The comment spans
+// as many lines as the source it replaces (lines), so every block after
+// it keeps its source line number (see SourceLineAttr).
+func (m *mathPreprocessor) placeholder(expr string, display bool, lines int) string {
 	idx := len(m.exprs)
 	m.exprs = append(m.exprs, mathExpr{Expr: expr, DisplayMode: display})
 	// Use a format that goldmark will treat as raw HTML and pass through.
-	p := fmt.Sprintf("<!--MATH:%d-->", idx)
+	p := fmt.Sprintf("<!--MATH:%d%s-->", idx, strings.Repeat("\n", lines))
 	m.placeholders = append(m.placeholders, p)
 	return p
 }
@@ -122,7 +125,7 @@ func (m *mathPreprocessor) Extract(src string) string {
 		if len(inner) < 2 {
 			return match
 		}
-		return m.placeholder(strings.TrimSpace(inner[1]), true)
+		return m.placeholder(strings.TrimSpace(inner[1]), true, lineCount(match))
 	})
 
 	// Inline math ($...$).
@@ -131,7 +134,7 @@ func (m *mathPreprocessor) Extract(src string) string {
 		if len(inner) < 2 {
 			return match
 		}
-		return m.placeholder(strings.TrimSpace(inner[1]), false)
+		return m.placeholder(strings.TrimSpace(inner[1]), false, 0)
 	})
 
 	// Restore code blocks.

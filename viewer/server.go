@@ -133,6 +133,7 @@ func (s *Server) convertOptions() *convert.Options {
 		Style:        s.Style,
 		Backend:      s.Backend,
 		Defer:        true,
+		SourceLines:  true,
 		KaTeXCSSHref: ChromeKaTeXPrefix + embed.KaTeXCSSName,
 	}
 }

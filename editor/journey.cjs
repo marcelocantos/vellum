@@ -20,13 +20,148 @@ const { spawn } = require("node:child_process");
 const ADDR = "127.0.0.1:19851";
 const ORIGIN = "http://" + ADDR;
 
+// Every scroll probe lands on a numbered token, so a position in the page
+// and one in the editor compare by number: filler paragraphs (A0…, B0…),
+// lines of an untagged fenced block, and words of one long wrapped line.
 function fixture() {
-  const filler = Array.from({ length: 40 }, (_, i) => "Paragraph " + i + " of filler prose.\n").join("\n");
+  const filler = (tag) =>
+    Array.from({ length: 40 }, (_, i) => "Paragraph " + tag + i + " of filler prose.\n").join("\n");
+  const code = Array.from({ length: 60 }, (_, i) => "code line " + i).join("\n");
+  const words = Array.from({ length: 400 }, (_, i) => "w" + i).join(" ");
   return (
-    "# Editor journey\n\nIntro.\n\n## Section A\n\n" + filler +
-    "\n## Section B\n\n- first item\n- second item\n\n```go\nfunc main() {\n\tprintln(\"hi\")\n}\n```\n\n" +
-    filler + "\n## Section C\n\nEnd.\n"
+    "# Editor journey\n\nIntro.\n\n## Section A\n\n" + filler("A") +
+    "\n```text\n" + code + "\n```\n\n" + words + "\n\n" +
+    "## Section B\n\n- first item\n- second item\n\n```go\nfunc main() {\n\tprintln(\"hi\")\n}\n```\n\n" +
+    filler("B") + "\n## Section C\n\nEnd.\n"
   );
+}
+
+// Slack in source lines (words, for the long line) between what the two
+// sides show at the top.
+const TOLERANCE = { Paragraph: 1, code: 3, w: 8 };
+
+// The first and last numbered tokens on the top visual line of what the
+// reader sees: in the page (below the pinned title) or in the editor. A
+// wrapped line breaks at different words on each side, so positions
+// compare as ranges.
+function probe(page, where) {
+  return page.evaluate((where) => {
+    function tokenAt(x, y) {
+      const r = document.caretRangeFromPoint(x, y);
+      if (!r || r.startContainer.nodeType !== Node.TEXT_NODE) return "";
+      const text = r.startContainer.textContent;
+      const off = r.startOffset;
+      let best = "";
+      let bestDist = Infinity;
+      for (const m of text.matchAll(/Paragraph [AB]\d+|code line \d+|\bw\d+/g)) {
+        const end = m.index + m[0].length;
+        const d = off < m.index ? m.index - off : off > end ? off - end : 0;
+        if (d < bestDist) {
+          best = m[0];
+          bestDist = d;
+        }
+      }
+      return best;
+    }
+    let top, left, right;
+    if (where === "view") {
+      const pane = document.querySelector(".vellum-scroll").getBoundingClientRect();
+      const title = document.querySelector(".vellum-pin-title");
+      const p = document.querySelector(".vellum-article p").getBoundingClientRect();
+      top = title ? Math.max(pane.top, title.getBoundingClientRect().bottom) : pane.top;
+      left = p.left + 24;
+      right = p.right - 4;
+    } else {
+      const content = document.querySelector(".cm-content").getBoundingClientRect();
+      top = document.querySelector(".cm-scroller").getBoundingClientRect().top;
+      left = content.left + 24;
+      right = content.right - 24;
+    }
+    // Step past blank lines and margins to the first line with a token.
+    for (let dy = 2; dy < 120; dy += 4) {
+      const first = tokenAt(left, top + dy);
+      if (first) return { first: first, last: tokenAt(right, top + dy) || first };
+    }
+    return { first: "", last: "" };
+  }, where);
+}
+
+function parseToken(tok) {
+  const m = String(tok).match(/^(Paragraph|code|w)\D*?([AB]?)(\d+)$/);
+  return m ? { kind: m[1], group: m[2], n: Number(m[3]) } : null;
+}
+
+// a and b are probe results or bare tokens; they are near when their
+// ranges overlap within the kind's tolerance.
+function near(a, b) {
+  const range = (x) => (typeof x === "string" ? { first: x, last: x } : x);
+  const ra = range(a);
+  const rb = range(b);
+  const a0 = parseToken(ra.first);
+  const a1 = parseToken(ra.last) || a0;
+  const b0 = parseToken(rb.first);
+  const b1 = parseToken(rb.last) || b0;
+  if (!a0 || !b0 || a0.kind !== b0.kind || a0.group !== b0.group) return false;
+  const tol = TOLERANCE[a0.kind];
+  return a0.n - tol <= b1.n && b0.n - tol <= a1.n;
+}
+
+function show(p) {
+  return typeof p === "string" ? p : p.first === p.last ? p.first : p.first + "…" + p.last;
+}
+
+// Scroll the page so token sits at the top of what the reader sees.
+function scrollViewTo(page, token) {
+  return page.evaluate((token) => {
+    const pane = document.querySelector(".vellum-scroll");
+    const walker = document.createTreeWalker(document.querySelector(".vellum-article"), NodeFilter.SHOW_TEXT);
+    const re = new RegExp("(^|\\W)" + token + "(?!\\d)");
+    let node;
+    while ((node = walker.nextNode())) {
+      const m = node.textContent.match(re);
+      if (!m) continue;
+      const range = document.createRange();
+      const at = m.index + m[1].length;
+      range.setStart(node, at);
+      range.setEnd(node, at + token.length);
+      for (let pass = 0; pass < 2; pass++) {
+        const title = document.querySelector(".vellum-pin-title");
+        const paneTop = pane.getBoundingClientRect().top;
+        const top = title ? Math.max(paneTop, title.getBoundingClientRect().bottom) : paneTop;
+        pane.scrollTop += range.getBoundingClientRect().top - top - 1;
+      }
+      return true;
+    }
+    return false;
+  }, token);
+}
+
+// Scroll the editor so token's line is at its top.
+function scrollEditorTo(page, token) {
+  return page.evaluate(async (token) => {
+    const sc = document.querySelector(".cm-scroller");
+    sc.scrollTop = 0;
+    await new Promise((r) => requestAnimationFrame(r));
+    for (let i = 0; i < 200; i++) {
+      const line = [...document.querySelectorAll(".cm-line")].find((l) => new RegExp("(^|\\W)" + token + "(?!\\d)").test(l.textContent));
+      if (line) {
+        // Heights of lines not yet drawn are estimates; settle in passes.
+        for (let pass = 0; pass < 5; pass++) {
+          const l = [...document.querySelectorAll(".cm-line")].find((e) => new RegExp("(^|\\W)" + token + "(?!\\d)").test(e.textContent));
+          if (!l) break;
+          const delta = l.getBoundingClientRect().top - sc.getBoundingClientRect().top;
+          if (Math.abs(delta) < 1) return true;
+          sc.scrollTop += delta;
+          await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+        }
+        return true;
+      }
+      // CodeMirror renders only near the viewport; walk down to find it.
+      sc.scrollTop += sc.clientHeight / 2;
+      await new Promise((r) => requestAnimationFrame(r));
+    }
+    return false;
+  }, token);
 }
 
 function check(cond, msg) {
@@ -76,17 +211,57 @@ async function waitFor(fn, msg, ms = 5000) {
     await page.waitForSelector(".vellum-article h2");
     await page.evaluate(() => (window.__journeyMarker = 1));
 
-    // Scroll the view to Section B; the editor should open there.
+    // Scroll position carries both ways: the editor opens showing what
+    // the page showed, and closing (clean, no reload) puts the page where
+    // the editor was. Cases: filler paragraphs, inside an untagged fenced
+    // block, partway through one long wrapped line, the top.
+    const openEditor = async () => {
+      await page.keyboard.press("e");
+      await page.waitForSelector(".vellum-editor:not([hidden]) .cm-editor");
+      await waitFor(() => page.evaluate(() => document.activeElement && document.activeElement.classList.contains("cm-content")), "editor focus");
+      await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+    };
+    const closeEditor = async () => {
+      await page.keyboard.press("Escape");
+      await page.waitForSelector(".vellum-editor", { state: "hidden" });
+    };
+    for (const token of ["Paragraph A12", "code line 30", "w200", "Paragraph B25", "Paragraph A37"]) {
+      check(await scrollViewTo(page, token), "fixture lacks " + token);
+      const seen = await probe(page, "view");
+      check(near(seen, token), "page probe " + show(seen) + " after scrolling to " + token);
+      await openEditor();
+      const got = await probe(page, "editor");
+      check(near(got, seen), "editor opened at " + show(got) + ", page showed " + show(seen));
+      await closeEditor();
+      const back = await probe(page, "view");
+      check(near(back, seen), "page came back at " + show(back) + ", was " + show(seen));
+    }
+    await page.evaluate(() => (document.querySelector(".vellum-scroll").scrollTop = 0));
+    await openEditor();
+    check(
+      await page.evaluate(() => document.querySelector(".cm-scroller").scrollTop === 0),
+      "editor not at the top for a page at the top"
+    );
+    // Editor → page: move in the editor, close, and the page follows.
+    for (const token of ["Paragraph B10", "code line 45"]) {
+      check(await scrollEditorTo(page, token), "editor lacks " + token);
+      const seen = await probe(page, "editor");
+      check(near(seen, token), "editor probe " + show(seen) + " after scrolling to " + token);
+      await closeEditor();
+      const got = await probe(page, "view");
+      check(near(got, seen), "page landed at " + show(got) + ", editor showed " + show(seen));
+      await openEditor();
+    }
+    await closeEditor();
+    check(await page.evaluate(() => window.__journeyMarker === 1), "a clean close reloaded the page");
+
+    // The rest works around Section B.
     await page.evaluate(() => {
       const pane = document.querySelector(".vellum-scroll");
       const h = [...document.querySelectorAll(".vellum-article h2")].find((e) => e.textContent === "Section B");
       pane.scrollTop += h.getBoundingClientRect().top - pane.getBoundingClientRect().top;
     });
-    await page.keyboard.press("e");
-    await page.waitForSelector(".vellum-editor:not([hidden]) .cm-editor");
-    await waitFor(() => page.evaluate(() => document.activeElement && document.activeElement.classList.contains("cm-content")), "editor focus");
-    const active = await page.locator(".cm-activeLine").innerText();
-    check(active === "## Section B", "editor opened at " + JSON.stringify(active) + ", want the view's section");
+    await openEditor();
 
     // Fenced Go is highlighted by its lazily loaded language chunk.
     await waitFor(
@@ -144,11 +319,17 @@ async function waitFor(fn, msg, ms = 5000) {
     const disk = fs.readFileSync(file, "utf8");
     check(disk.includes("Intro. Mine.") && !disk.includes("Theirs"), "overwrite did not win: " + disk.slice(0, 60));
 
+    // Closing after a save reloads the page at the editor's position.
+    check(await scrollEditorTo(page, "Paragraph B12"), "editor lacks Paragraph B18");
+    const lastSeen = await probe(page, "editor");
     await page.locator('[data-vellum="ed-close"]').click();
     await page.waitForFunction(() => !window.__journeyMarker, null, { timeout: 5000 }).catch(() => {});
     await page.waitForSelector(".vellum-article h2");
     check(await page.evaluate(() => !window.__journeyMarker), "closing after a save did not refresh the view");
     check((await page.locator(".vellum-article").innerText()).includes("third item"), "view does not show the saved text");
+    await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+    const reloadedAt = await probe(page, "view");
+    check(near(reloadedAt, lastSeen), "reloaded page at " + show(reloadedAt) + ", editor showed " + show(lastSeen));
 
     await page.keyboard.press("e");
     await page.waitForSelector(".vellum-editor:not([hidden]) .cm-editor");
@@ -202,7 +383,7 @@ async function waitFor(fn, msg, ms = 5000) {
 
     check(errors.length === 0, "page errors: " + errors.join("; "));
     check(foreign.length === 0, "network requests off the view server: " + foreign.join(", "));
-    console.log("PASS: open at section, highlighting, list continuation, save, follow disk, conflict overwrite, refresh on close, dark, layout, discard, phone, offline");
+    console.log("PASS: scroll position both ways (paragraphs, fenced block, wrapped line, top, after reload), highlighting, list continuation, save, follow disk, conflict overwrite, refresh on close, dark, layout, discard, phone, offline");
   } finally {
     await browser.close();
     server.kill();

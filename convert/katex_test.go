@@ -6,13 +6,21 @@ package convert
 import (
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 )
 
 // placeholderRe matches the HTML comment placeholders injected by the math
-// preprocessor, e.g. <!--MATH:0-->.
-var placeholderRe = regexp.MustCompile(`<!--MATH:(\d+)-->`)
+// preprocessor, e.g. <!--MATH:0-->. A block placeholder carries one
+// newline per source line it replaced (see lineCount).
+var placeholderRe = regexp.MustCompile(`<!--MATH:(\d+)\n*-->`)
+
+// hasPlaceholder reports whether out holds placeholder i of kind (MATH or
+// MERMAID), with or without its line padding.
+func hasPlaceholder(out, kind string, i int) bool {
+	return regexp.MustCompile(`<!--` + kind + `:` + strconv.Itoa(i) + `\n*-->`).MatchString(out)
+}
 
 func TestMathPreprocessor_InlineMath(t *testing.T) {
 	m := newMathPreprocessor()
@@ -27,7 +35,7 @@ func TestMathPreprocessor_InlineMath(t *testing.T) {
 	if got := m.exprs[0].Expr; got != "x^2 + y^2 = z^2" {
 		t.Errorf("expression = %q, want %q", got, "x^2 + y^2 = z^2")
 	}
-	if !strings.Contains(out, "<!--MATH:0-->") {
+	if !hasPlaceholder(out, "MATH", 0) {
 		t.Errorf("output missing placeholder: %q", out)
 	}
 	if strings.Contains(out, "$") {
@@ -49,7 +57,7 @@ func TestMathPreprocessor_BlockMath(t *testing.T) {
 	if got := m.exprs[0].Expr; got != "a = b + c" {
 		t.Errorf("expression = %q, want %q", got, "a = b + c")
 	}
-	if !strings.Contains(out, "<!--MATH:0-->") {
+	if !hasPlaceholder(out, "MATH", 0) {
 		t.Errorf("output missing placeholder: %q", out)
 	}
 }
@@ -75,7 +83,7 @@ func TestMathPreprocessor_MultilineMatrix(t *testing.T) {
 	if !strings.Contains(m.exprs[0].Expr, `\\`) {
 		t.Errorf("row separators lost: %q", m.exprs[0].Expr)
 	}
-	if !strings.Contains(out, "<!--MATH:0-->") {
+	if !hasPlaceholder(out, "MATH", 0) {
 		t.Errorf("output missing placeholder: %q", out)
 	}
 }

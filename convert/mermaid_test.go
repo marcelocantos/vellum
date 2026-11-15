@@ -15,7 +15,7 @@ import (
 	"time"
 )
 
-var mermaidPlaceholderRe = regexp.MustCompile(`<!--MERMAID:(\d+)-->`)
+var mermaidPlaceholderRe = regexp.MustCompile(`<!--MERMAID:(\d+)\n*-->`)
 
 func TestMermaidPreprocessor_SimpleBlock(t *testing.T) {
 	p := newMermaidPreprocessor(MermaidSVG)
@@ -31,7 +31,7 @@ func TestMermaidPreprocessor_SimpleBlock(t *testing.T) {
 	if p.diagrams[0].scale != 1.0 {
 		t.Errorf("scale = %v, want 1.0 (default)", p.diagrams[0].scale)
 	}
-	if !strings.Contains(out, "<!--MERMAID:0-->") {
+	if !hasPlaceholder(out, "MERMAID", 0) {
 		t.Errorf("output missing placeholder: %q", out)
 	}
 	if strings.Contains(out, "```mermaid") {
@@ -53,7 +53,7 @@ func TestMermaidPreprocessor_ScaleHint(t *testing.T) {
 	if want := "graph LR\n  X --> Y"; p.diagrams[0].source != want {
 		t.Errorf("source = %q, want %q", p.diagrams[0].source, want)
 	}
-	if !strings.Contains(out, "<!--MERMAID:0-->") {
+	if !hasPlaceholder(out, "MERMAID", 0) {
 		t.Errorf("output missing placeholder: %q", out)
 	}
 	// The hint comment is part of the match, so it should be gone from out.
@@ -130,7 +130,7 @@ func TestMermaidPreprocessor_MultipleBlocksInOrder(t *testing.T) {
 		t.Fatalf("placeholder count = %d, want %d; out=%q", len(matches), len(wantPlaceholders), out)
 	}
 	for i, want := range wantPlaceholders {
-		if matches[i] != want {
+		if strings.ReplaceAll(matches[i], "\n", "") != want {
 			t.Errorf("placeholder[%d] = %q, want %q", i, matches[i], want)
 		}
 	}

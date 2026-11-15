@@ -7,7 +7,7 @@
 // cursors. chrome.js imports this module the first time Edit is pressed
 // and talks to it only through createEditor's handle.
 
-import { Compartment, EditorState, Prec, Text } from "@codemirror/state";
+import { Compartment, EditorSelection, EditorState, Prec, Text } from "@codemirror/state";
 import {
   EditorView,
   crosshairCursor,
@@ -275,17 +275,39 @@ export function createEditor(opts) {
     setDark: function (dark) {
       view.dispatch({ effects: theme.reconfigure(themeFor(Boolean(dark))) });
     },
-    // Put the cursor at the start of 1-based line n, scrolled near the top.
-    gotoLine: function (n) {
-      const line = view.state.doc.line(Math.max(1, Math.min(view.state.doc.lines, n)));
+    // Scroll so source line x (1-based, fractional: 12.5 is halfway
+    // through line 12, which matters for long wrapped lines) is at the top,
+    // with the cursor at the start of the first visual line shown.
+    scrollToLine: function (x) {
+      const doc = view.state.doc;
+      const n = Math.max(1, Math.min(doc.lines, Math.floor(x) || 1));
+      const line = doc.line(n);
+      const frac = Math.max(0, Math.min(1, x - n));
+      const pos = line.from + Math.round(frac * line.length);
+      // The first line scrolls to the very top, above the content padding.
+      const margin = pos === 0 ? 32 : 0;
       view.dispatch({
-        selection: { anchor: line.from },
-        effects: EditorView.scrollIntoView(line.from, { y: "start", yMargin: 48 }),
+        selection: { anchor: pos },
+        effects: EditorView.scrollIntoView(pos, { y: "start", yMargin: margin }),
+      });
+      // Snap the cursor back to its visual line start once wrapping is laid out.
+      requestAnimationFrame(function () {
+        if (view.state.selection.main.head !== pos) return;
+        view.dispatch({ selection: view.moveToLineBoundary(EditorSelection.cursor(pos), false) });
       });
     },
-    // 1-based line of the main cursor.
-    cursorLine: function () {
-      return view.state.doc.lineAt(view.state.selection.main.head).number;
+    // The source line (fractional, as scrollToLine takes it) at the top
+    // of the editor's viewport.
+    topLine: function () {
+      const h = view.scrollDOM.getBoundingClientRect().top - view.documentTop;
+      if (h <= 0) return 1;
+      const block = view.lineBlockAtHeight(h);
+      const number = view.state.doc.lineAt(block.from).number;
+      const frac = block.height > 0 ? (h - block.top) / block.height : 0;
+      return number + Math.max(0, Math.min(0.999, frac));
+    },
+    lineCount: function () {
+      return view.state.doc.lines;
     },
     focus: function () {
       view.focus();

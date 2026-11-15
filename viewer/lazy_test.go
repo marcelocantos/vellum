@@ -174,12 +174,12 @@ func TestServer_ShellFirstThenFragmentsOnDemand(t *testing.T) {
 		t.Fatalf("page must not carry rendered fragments:\n%s", page)
 	}
 	for _, want := range []string{
-		`<p>before <span class="vellum-deferred vellum-deferred-math" data-vellum-fragment="` + inline.ID + `">x^2</span> and</p>`,
+		`>before <span class="vellum-deferred vellum-deferred-math" data-vellum-fragment="` + inline.ID + `">x^2</span> and</p>`,
 		`<div class="katex-display"><span class="vellum-deferred vellum-deferred-math" data-vellum-fragment="` + display.ID + `">a = b</span></div>`,
 		`<div class="mermaid-svg"><div class="vellum-deferred vellum-deferred-mermaid" data-vellum-fragment="` + diagram.ID + `" role="img" aria-label="Diagram, loading"><pre>graph TD`,
 		`<div class="mermaid-svg" style="max-width: 50%"><div class="vellum-deferred vellum-deferred-mermaid" data-vellum-fragment="` + diagram.ID + `"`,
 		`<img src="pic.png" alt="pic" loading="lazy" decoding="async">`,
-		`<p>after</p>`,
+		`>after</p>`,
 		`katex.min.css`,
 		"hydrateDeferred()",
 	} {

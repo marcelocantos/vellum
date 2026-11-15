@@ -74,7 +74,8 @@ func (m *mermaidPreprocessor) Extract(src string) string {
 			source: strings.TrimSpace(inner[2]),
 			scale:  scale,
 		})
-		p := fmt.Sprintf("<!--MERMAID:%d-->", idx)
+		// As long as the block it replaces, so later source lines hold.
+		p := fmt.Sprintf("<!--MERMAID:%d%s-->", idx, strings.Repeat("\n", lineCount(match)))
 		m.placeholders = append(m.placeholders, p)
 		return p
 	})

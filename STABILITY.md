@@ -35,7 +35,7 @@ Package paths are under `github.com/marcelocantos/vellum/…`.
 - `func RenderFile(ctx context.Context, inputPath string, opts *Options) (html string, soft []string, err error)` — **needs review** (second return is non-fatal Mermaid diagnostics; not `*SoftError`)
 - `func Render(ctx context.Context, src []byte, opts *Options) (html string, soft []string, err error)` — **needs review** (same)
 - `type SoftError struct { Messages []string }` — **needs review** (added in v0.9.0; `Convert` / `Run` wrap `soft` into this after still producing output; CLI non-zero exit / MCP `errors`)
-- `type Options struct { CSS string; HeadExtra string; KaTeXCSSHref string; Style *Style; Backend string; MermaidFormat string; Template string }` — **needs review** (`MermaidFormat` is `MermaidSVG` default or `MermaidPNG`; PDF sinks force PNG; `Template` selects the pptx reference deck, added in v0.25.0; `KaTeXCSSHref` overrides where a math document links KaTeX's stylesheet, added in v0.26.0 — empty links the copy `KaTeXAssetDir` lays out)
+- `type Options struct { CSS string; HeadExtra string; KaTeXCSSHref string; Style *Style; Backend string; MermaidFormat string; Template string; Defer bool; SourceLines bool }` — **needs review** (`SourceLines` tags rendered blocks with `SourceLineAttr` / `SourceEndAttr` for the viewer's scroll mapping; `MermaidFormat` is `MermaidSVG` default or `MermaidPNG`; PDF sinks force PNG; `Template` selects the pptx reference deck, added in v0.25.0; `KaTeXCSSHref` overrides where a math document links KaTeX's stylesheet, added in v0.26.0 — empty links the copy `KaTeXAssetDir` lays out)
 - `func KaTeXAssetDir() (string, error)` — **needs review** (added in v0.26.0; the directory under `os.UserCacheDir()/vellum/katex/<version>/` holding vellum's copy of the KaTeX stylesheet and fonts, written on first use)
 - `const TemplateDefault` / `func TemplatesDir() (string, error)` — **needs review** (added in v0.25.0; `"default"` names pandoc's default deck; bare template names resolve under `~/.config/vellum/templates/`)
 - `const MermaidSVG, MermaidPNG` — **needs review**
@@ -132,6 +132,7 @@ Package paths are under `github.com/marcelocantos/vellum/…`.
 - `type Server struct { Addr string; CacheDir string; Style *convert.Style; Backend string; … }` — **needs review** (added in v0.14.0)
 - `func (*Server) ListenAndServe(ctx context.Context) error` — **needs review** (loopback-only bind)
 - `func (*Server) Handler() http.Handler` — **needs review** (Markdown GET injects chrome; `/_vellum/pdf` GET, `/_vellum/source` GET, `/_vellum/clipboard` POST, `/_vellum/reveal` POST, `/_vellum/watch` GET/WebSocket, `/_vellum/task-toggle` POST, `/_vellum/edit` GET/PUT, `/_vellum/editor/` GET)
+- `const SourceLineAttr, SourceEndAttr` (package `convert`) — **needs review** (`data-source-line` / `data-source-end`: a block's first and last source lines, 1-based)
 - `const ChromeEditPath, ChromeEditorPrefix, EditorEntry, StampHeader` — **needs review** (editor endpoint, bundle prefix, entry module, stamp header)
 - `func ViewURL(origin, absPath string) string` — **needs review**
 - `func EnsureViewServer(origin string) error` — **needs review**

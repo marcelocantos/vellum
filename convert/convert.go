@@ -21,6 +21,7 @@ import (
 	"github.com/yuin/goldmark/extension"
 	"github.com/yuin/goldmark/parser"
 	"github.com/yuin/goldmark/renderer/html"
+	"github.com/yuin/goldmark/util"
 
 	"github.com/marcelocantos/vellum/embed"
 )
@@ -54,6 +55,9 @@ type Options struct {
 	// serving fragments on demand. The view server uses it so first paint
 	// never waits on a diagram.
 	Defer bool
+	// SourceLines puts SourceLineAttr on rendered blocks (the view server
+	// maps scroll positions between the page and the source editor).
+	SourceLines bool
 }
 
 var htmlTmpl = template.Must(template.New("page").Parse(embed.HTMLTemplate))
@@ -75,6 +79,7 @@ var md = goldmark.New(
 	),
 	goldmark.WithParserOptions(
 		parser.WithAutoHeadingID(),
+		parser.WithASTTransformers(util.Prioritized(sourceLineTransformer{}, sourceLinesPriority)),
 	),
 	goldmark.WithRendererOptions(
 		html.WithUnsafe(),
@@ -172,7 +177,7 @@ func Render(ctx context.Context, src []byte, opts *Options) (html string, soft [
 	processed := math.Extract(string(src))
 	processed = mermaid.Extract(processed)
 
-	htmlContent, title, err := renderMarkdown([]byte(processed))
+	htmlContent, title, err := renderMarkdown([]byte(processed), opts != nil && opts.SourceLines)
 	if err != nil {
 		return "", nil, fmt.Errorf("rendering markdown: %w", err)
 	}
@@ -251,8 +256,11 @@ func Render(ctx context.Context, src []byte, opts *Options) (html string, soft [
 	return fullHTML, soft, nil
 }
 
-func renderMarkdown(src []byte) (htmlContent string, title string, err error) {
+func renderMarkdown(src []byte, sourceLines bool) (htmlContent string, title string, err error) {
 	pctx := parser.NewContext()
+	if sourceLines {
+		pctx.Set(sourceLinesKey, true)
+	}
 	var buf bytes.Buffer
 	if err := md.Convert(src, &buf, parser.WithContext(pctx)); err != nil {
 		return "", "", err
