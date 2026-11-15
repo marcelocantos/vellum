@@ -32,6 +32,9 @@ test-table-headers:
 
 # Requires `npm ci` in editor/ and Chrome; drives the source editor end to
 # end (open, save, outside edits, conflict, close, theme, layout, offline).
+# Rebuilds the embedded bundle first, so the journey never tests a stale one;
+# commit viewer/editor/ when it changes.
 test-editor:
+	cd editor && npm run build
 	go build -o /tmp/vellum-editor-journey ./cmd/vellum
 	VELLUM_BINARY=/tmp/vellum-editor-journey node editor/journey.cjs

@@ -1709,9 +1709,11 @@
       if (action === "ed-close") closeEditor();
     });
     // Escape inside CodeMirror is handled by its keymap; this covers
-    // focus on the bar or banner.
+    // focus on the bar or banner. A key CodeMirror handled is already
+    // default-prevented, and its target may be gone (the search panel's
+    // field, removed as Escape closed the panel), so test that first.
     editorRoot.addEventListener("keydown", function (ev) {
-      if (ev.key === "Escape" && !(ev.target instanceof Element && ev.target.closest(".cm-editor"))) {
+      if (ev.key === "Escape" && !ev.defaultPrevented && !(ev.target instanceof Element && ev.target.closest(".cm-editor"))) {
         ev.preventDefault();
         closeEditor();
       }

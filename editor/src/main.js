@@ -31,7 +31,7 @@ import {
 } from "@codemirror/language";
 import { languages } from "@codemirror/language-data";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
-import { highlightSelectionMatches, searchKeymap } from "@codemirror/search";
+import { highlightSelectionMatches, searchKeymap, searchPanelOpen } from "@codemirror/search";
 import { closeBrackets, closeBracketsKeymap } from "@codemirror/autocomplete";
 import { tags as t } from "@lezer/highlight";
 
@@ -151,7 +151,7 @@ function themeFor(dark) {
 
 // createEditor mounts an editor into opts.parent. Callbacks:
 //   onSave()          Mod-s
-//   onClose()         Escape when nothing inside the editor wants it
+//   onClose()         Escape, unless the search panel is open
 //   onDirty(dirty)    the buffer started or stopped differing from the
 //                     last text passed to markSaved / setText
 export function createEditor(opts) {
@@ -177,13 +177,15 @@ export function createEditor(opts) {
       },
     },
   ]);
-  // Lowest precedence: the search panel, a multi-cursor selection and
-  // the like consume Escape first; only a bare Escape closes the editor.
-  const escapeKey = Prec.lowest(
+  // Escape closes the editor, whatever is selected: CodeMirror's own
+  // binding would first collapse the selection, which reads as Escape
+  // doing nothing. The open search panel still takes it to close itself.
+  const escapeKey = Prec.highest(
     keymap.of([
       {
         key: "Escape",
-        run: function () {
+        run: function (view) {
+          if (searchPanelOpen(view.state)) return false;
           if (opts.onClose) opts.onClose();
           return true;
         },

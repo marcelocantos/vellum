@@ -343,13 +343,8 @@ async function waitFor(fn, msg, ms = 5000) {
       await waitFor(() => page.evaluate(() => document.activeElement && document.activeElement.classList.contains("cm-content")), "editor focus");
       await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
     };
-    // The first Escape clears an editor selection (CodeMirror's own
-    // binding); a bare Escape closes.
     const closeEditor = async () => {
-      for (let i = 0; i < 2; i++) {
-        await page.keyboard.press("Escape");
-        if (await page.locator(".vellum-editor").isHidden()) return;
-      }
+      await page.keyboard.press("Escape");
       await page.waitForSelector(".vellum-editor", { state: "hidden", timeout: 2000 });
     };
     for (const token of ["Paragraph A12", "code line 30", "w200", "Paragraph B25", "Paragraph A37"]) {
@@ -422,12 +417,19 @@ async function waitFor(fn, msg, ms = 5000) {
         rgb.every((v, k) => Math.abs(v - SELECTION_RGB[k]) <= SELECTION_SLACK),
         "selection not visible on the cursor's line: pixel rgb(" + rgb + ") at " + JSON.stringify(at) + " for " + JSON.stringify(c.want)
       );
+      // One Escape closes the editor even with text selected.
       await closeEditor();
     }
     // No page selection: the editor opens with a bare cursor.
     await page.evaluate(() => getSelection().removeAllRanges());
     await openEditor();
     check((await editorSelection(page)).text === "", "editor opened with a selection nobody made");
+    // With the search panel open, Escape closes the panel, not the editor.
+    await page.keyboard.press(mod + "+f");
+    await page.waitForSelector(".cm-search");
+    await page.keyboard.press("Escape");
+    await page.waitForSelector(".cm-search", { state: "detached", timeout: 2000 });
+    check(await page.locator(".vellum-editor").isVisible(), "Escape in the search panel closed the editor");
     await closeEditor();
 
     // The rest works around Section B.
