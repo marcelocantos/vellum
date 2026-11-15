@@ -116,10 +116,10 @@ body.vellum-view {
   display: block;
 }
 
-/* The file manager's own icon is a full-colour app icon, which reads
-   small at the line icons' 14px; draw it at 16px but take only 14px of
-   height so its button lines up with the others. */
-.vellum-icon-btn .vellum-fm-icon {
+/* Icons that need more room than the 14px line icons (the file
+   manager's full-colour app icon, the lettered PDF page) draw at 16px
+   but take only 14px of height, so their buttons line up. */
+.vellum-icon-btn .vellum-icon-lg {
   width: 16px;
   height: 16px;
   margin: -1px 0;
@@ -131,49 +131,6 @@ body.vellum-view {
   font-size: 14px;
   line-height: 1;
 }
-
-.vellum-download {
-  position: relative;
-  display: inline-flex;
-}
-
-.vellum-download-menu {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
-  z-index: 6;
-  min-width: 7rem;
-  padding: 4px;
-  background: #fff;
-  border: 1px solid #d1d9e0;
-  border-radius: 6px;
-  box-shadow: 0 4px 16px rgba(31, 35, 40, 0.12);
-}
-
-.vellum-download-menu[hidden] {
-  display: none !important;
-}
-
-.vellum-download-menu button {
-  display: block;
-  width: 100%;
-  text-align: left;
-  padding: 6px 10px;
-  border: 0;
-  border-radius: 4px;
-  background: transparent;
-  color: #1f2328;
-  font: inherit;
-  font-size: 12px;
-  cursor: pointer;
-}
-
-.vellum-download-menu button:hover,
-.vellum-download-menu button:focus-visible {
-  background: #f3f4f6;
-  outline: none;
-}
-
 .vellum-toc-actions button:hover,
 .vellum-toolbar button:hover {
   background: #f3f4f6;
@@ -884,22 +841,6 @@ html[data-vellum-theme="dark"] .vellum-toolbar button {
   border-color: #30363d;
   color: #e6edf3;
 }
-
-html[data-vellum-theme="dark"] .vellum-download-menu {
-  background: #161b22;
-  border-color: #30363d;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
-}
-
-html[data-vellum-theme="dark"] .vellum-download-menu button {
-  color: #e6edf3;
-}
-
-html[data-vellum-theme="dark"] .vellum-download-menu button:hover,
-html[data-vellum-theme="dark"] .vellum-download-menu button:focus-visible {
-  background: #30363d;
-}
-
 html[data-vellum-theme="dark"] .vellum-toc-actions button:hover,
 html[data-vellum-theme="dark"] .vellum-toolbar button:hover {
   background: #30363d;
@@ -1050,20 +991,8 @@ html[data-vellum-theme="dark"] .vellum-article mark {
     color: #e6edf3;
   }
 
-  html[data-vellum-theme="system"] .vellum-download-menu {
-    background: #161b22;
-    border-color: #30363d;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
-  }
 
-  html[data-vellum-theme="system"] .vellum-download-menu button {
-    color: #e6edf3;
-  }
 
-  html[data-vellum-theme="system"] .vellum-download-menu button:hover,
-  html[data-vellum-theme="system"] .vellum-download-menu button:focus-visible {
-    background: #30363d;
-  }
 
   html[data-vellum-theme="system"] .vellum-toc-actions button:hover,
   html[data-vellum-theme="system"] .vellum-toolbar button:hover {

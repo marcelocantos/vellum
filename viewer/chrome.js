@@ -573,38 +573,6 @@
     connect();
   }
 
-  const downloadRoot = chrome.querySelector(".vellum-download");
-  const downloadBtn = chrome.querySelector('[data-vellum="download"]');
-  const downloadMenu = document.getElementById("vellum-download-menu");
-
-  function setDownloadMenuOpen(open) {
-    if (!downloadMenu || !downloadBtn) return;
-    downloadMenu.hidden = !open;
-    downloadBtn.setAttribute("aria-expanded", open ? "true" : "false");
-  }
-
-  function toggleDownloadMenu() {
-    if (!downloadMenu) return;
-    setDownloadMenuOpen(!!downloadMenu.hidden);
-  }
-
-  if (downloadBtn) {
-    downloadBtn.addEventListener("click", function (ev) {
-      ev.stopPropagation();
-      toggleDownloadMenu();
-    });
-  }
-
-  document.addEventListener("click", function (ev) {
-    if (!downloadRoot || !downloadMenu || downloadMenu.hidden) return;
-    if (downloadRoot.contains(ev.target)) return;
-    setDownloadMenuOpen(false);
-  });
-
-  document.addEventListener("keydown", function (ev) {
-    if (ev.key === "Escape") setDownloadMenuOpen(false);
-  });
-
   chrome.querySelectorAll("[data-vellum]").forEach(function (btn) {
     btn.addEventListener("click", function () {
       const action = btn.getAttribute("data-vellum");
@@ -612,21 +580,12 @@
         applyTheme(nextTheme(document.documentElement.dataset.vellumTheme || "system"));
         return;
       }
-      if (action === "download") {
-        return;
-      }
       if (action === "edit") {
         openEditor();
         return;
       }
       if (action === "pdf") {
-        setDownloadMenuOpen(false);
         window.location.assign(actionURL("pdf"));
-        return;
-      }
-      if (action === "source") {
-        setDownloadMenuOpen(false);
-        window.open(actionURL("source"), "_blank", "noopener");
         return;
       }
       if (action === "toc-toggle") {
@@ -1533,7 +1492,6 @@
 
   function openEditor() {
     if (!editorRoot || !editorHost || !editorSrc || editorIsOpen()) return;
-    setDownloadMenuOpen(false);
     // Read before the modal takes focus.
     let selection = captureViewSelection();
     if (!selection && pressedSelection && Date.now() - pressedSelection.at < SEL_PRESS_TTL_MS) {

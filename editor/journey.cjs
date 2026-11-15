@@ -308,16 +308,15 @@ async function waitFor(fn, msg, ms = 5000) {
     await page.waitForSelector(".vellum-article h2");
     await page.evaluate(() => (window.__journeyMarker = 1));
 
-    // Toolbar: Edit, Copy and reveal are icon buttons that line up with
-    // the download icon button; the reveal icon (Finder's, on macOS)
-    // actually loads.
+    // Toolbar: PDF, Edit, Copy and reveal are icon buttons that line up;
+    // the reveal icon (Finder's, on macOS) actually loads.
     await page.waitForFunction(() => {
       const img = document.querySelector(".vellum-fm-icon");
       return img && img.complete;
     });
     const bar = await page.evaluate(() => {
       const box = (a) => document.querySelector('[data-vellum="' + a + '"]').getBoundingClientRect();
-      const ref = box("download");
+      const ref = box("pdf");
       const img = document.querySelector(".vellum-fm-icon");
       return {
         icon: img.naturalWidth,
@@ -329,7 +328,7 @@ async function waitFor(fn, msg, ms = 5000) {
     });
     check(bar.icon >= 16, "reveal icon did not load: naturalWidth " + bar.icon);
     for (const b of bar.buttons) {
-      check(b.dh <= 1 && b.dy <= 1, b.a + " button misaligned with the download button: " + JSON.stringify(b));
+      check(b.dh <= 1 && b.dy <= 1, b.a + " button misaligned with the PDF button: " + JSON.stringify(b));
       check(b.text === "" && b.w < 48, b.a + " button is not icon-only: " + JSON.stringify(b));
     }
     if (shots) await page.screenshot({ path: path.join(shots, "toolbar-light.png"), clip: { x: 0, y: 0, width: 700, height: 48 } });

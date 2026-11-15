@@ -17,7 +17,6 @@ import (
 const (
 	ChromePrefix         = "/_vellum/"
 	ChromePDFPath        = "/_vellum/pdf"
-	ChromeSourcePath     = "/_vellum/source"
 	ChromeClipboardPath  = "/_vellum/clipboard"
 	ChromeRevealPath     = "/_vellum/reveal"
 	ChromeWatchPath      = "/_vellum/watch"
@@ -101,8 +100,11 @@ func copyIconSVG() string {
 	return `<svg class="vellum-icon" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>`
 }
 
-func downloadIconSVG() string {
-	return `<svg class="vellum-icon" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>`
+// pdfIconSVG is a page with "PDF" lettered across it: the generic PDF
+// glyph, not Adobe's mark. The page's stroke is masked out behind the
+// letters so they read at toolbar size.
+func pdfIconSVG() string {
+	return `<svg class="vellum-icon vellum-icon-lg" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><defs><mask id="vellum-pdf-gap" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24"><rect x="0" y="0" width="24" height="24" fill="#fff"/><rect x="0" y="11.5" width="24" height="8" fill="#000"/></mask></defs><g mask="url(#vellum-pdf-gap)"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></g><text x="12" y="18.6" text-anchor="middle" textLength="23" lengthAdjust="spacingAndGlyphs" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="8.6" font-weight="800" fill="currentColor" stroke="none">PDF</text></svg>`
 }
 
 func chromeOpen(sourcePath string, waiting bool) string {
@@ -130,16 +132,11 @@ func chromeOpen(sourcePath string, waiting bool) string {
 		`<div class="vellum-main">` +
 		`<header class="vellum-toolbar">` +
 		`<button type="button" class="vellum-toc-toggle-btn" data-vellum="toc-toggle" title="Hide table of contents" aria-label="Hide table of contents">«</button>` +
-		`<div class="vellum-download">` +
-		`<button type="button" class="vellum-icon-btn" data-vellum="download" title="Download" aria-label="Download" aria-haspopup="menu" aria-expanded="false" aria-controls="vellum-download-menu">` + downloadIconSVG() + `</button>` +
-		`<div class="vellum-download-menu" id="vellum-download-menu" role="menu" hidden>` +
-		`<button type="button" role="menuitem" data-vellum="pdf">PDF</button>` +
-		`<button type="button" role="menuitem" data-vellum="source">Source</button>` +
-		`</div></div>` +
+		`<button type="button" class="vellum-icon-btn" data-vellum="pdf" title="Download as PDF" aria-label="Download as PDF">` + pdfIconSVG() + `</button>` +
 		edit +
 		`<button type="button" class="vellum-icon-btn" data-vellum="clipboard" title="Copy the rendered document to the clipboard" aria-label="Copy the rendered document to the clipboard">` + copyIconSVG() + `</button>` +
 		`<button type="button" class="vellum-icon-btn" data-vellum="reveal" data-file-manager="` + hint.FileManager() + `" title="Show in ` + hint.FileManager() + `" aria-label="Show in ` + hint.FileManager() + `">` +
-		`<img class="vellum-icon vellum-fm-icon" src="` + ChromeFileManagerIconPath + `" width="16" height="16" alt=""></button>` +
+		`<img class="vellum-icon vellum-icon-lg vellum-fm-icon" src="` + ChromeFileManagerIconPath + `" width="16" height="16" alt=""></button>` +
 		`<div class="vellum-toolbar-end">` +
 		`<span class="vellum-docname">` + html.EscapeString(name) + `</span>` +
 		`<button type="button" class="vellum-theme-btn" data-vellum="theme" title="Theme: System">◐</button>` +

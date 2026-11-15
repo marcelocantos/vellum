@@ -131,7 +131,7 @@ Package paths are under `github.com/marcelocantos/vellum/…`.
 - `type ViewOptions struct { Format Format; Style *convert.Style; Backend string; Open func(string) error; CacheDir string; MaxBytes int64; MaxAge time.Duration; Now func() time.Time; ViewBaseURL string; SkipEnsureServer bool }` — **needs review**
 - `type Server struct { Addr string; CacheDir string; Style *convert.Style; Backend string; … }` — **needs review** (added in v0.14.0)
 - `func (*Server) ListenAndServe(ctx context.Context) error` — **needs review** (loopback-only bind)
-- `func (*Server) Handler() http.Handler` — **needs review** (Markdown GET injects chrome; `/_vellum/pdf` GET, `/_vellum/source` GET, `/_vellum/clipboard` POST, `/_vellum/reveal` POST, `/_vellum/watch` GET/WebSocket, `/_vellum/task-toggle` POST, `/_vellum/edit` GET/PUT, `/_vellum/editor/` GET)
+- `func (*Server) Handler() http.Handler` — **needs review** (Markdown GET injects chrome; `/_vellum/pdf` GET, `/_vellum/clipboard` POST, `/_vellum/reveal` POST, `/_vellum/watch` GET/WebSocket, `/_vellum/task-toggle` POST, `/_vellum/edit` GET/PUT, `/_vellum/editor/` GET)
 - `const SourceLineAttr, SourceEndAttr` (package `convert`) — **needs review** (`data-source-line` / `data-source-end`: a block's first and last source lines, 1-based)
 - `const ChromeEditPath, ChromeEditorPrefix, EditorEntry, StampHeader` — **needs review** (editor endpoint, bundle prefix, entry module, stamp header)
 - `func ViewURL(origin, absPath string) string` — **needs review**

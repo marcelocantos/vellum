@@ -173,9 +173,9 @@ brew services start vellum
 Each GET converts **one** Markdown path (no link-graph crawl). Relative
 `.md`/`.markdown` links are rewritten to same-origin URLs. The served page
 adds view chrome (not written into the convert cache): a leading H1 that stays under the toolbar and shrinks as the page scrolls, a heading table of
-contents with expand/collapse and a « / » sidebar toggle, a download
-menu (PDF, or Source in a new tab), copy to clipboard, reveal in Finder
-(icon buttons; the reveal button shows Finder's own icon, or a folder on
+contents with expand/collapse and a « / » sidebar toggle, icon buttons
+to download a PDF, edit the source, copy to clipboard and reveal in
+Finder (the reveal button shows Finder's own icon, or a folder on
 Windows),
 a theme control (dark / system / light, persisted in the browser),
 dark-mode article styling with syntax highlighting, tables that use the full panel width with columns sized to their content (wide tables scroll within the panel) and headings that stay visible beneath the pinned title until the table scrolls away, and a full-viewport
