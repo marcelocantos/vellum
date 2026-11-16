@@ -236,7 +236,10 @@ func TestChromeCSS_TablesBreakOutAndAutosize(t *testing.T) {
 		"overflow-wrap: break-word",
 		"word-break: normal",
 		"max-width: calc(100cqw - 64px)",
-		"translateX(round(min(0px, 490px - 50%), 1px))",
+		"min-width: 100%",
+		"translateX(round(max(0px, 50% - 490px), 1px))",
+		"direction: rtl",
+		"direction: ltr",
 		"clip-path: inset(0 -100vmax)",
 	} {
 		if !strings.Contains(screen, want) {

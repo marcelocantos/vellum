@@ -25,10 +25,17 @@ verify-release:
 	./scripts/verify-release.sh $(VERSION)
 
 # Requires Playwright and Chrome; exercises the live viewer on an isolated port.
-.PHONY: test-table-headers test-editor
+.PHONY: test-table-headers test-table-layout test-editor
 test-table-headers:
 	go build -o /tmp/vellum-table-journey ./cmd/vellum
-	VELLUM_BINARY=/tmp/vellum-table-journey node scripts/table-header-journey.cjs
+	NODE_PATH=editor/node_modules VELLUM_BINARY=/tmp/vellum-table-journey node scripts/table-header-journey.cjs
+
+# Requires `npm ci` in editor/, Chrome, and Playwright's Firefox
+# (`cd editor && npx playwright install firefox`). Firefox is the browser
+# that shows a table pushing the page into sideways scroll.
+test-table-layout:
+	go build -o /tmp/vellum-table-layout-journey ./cmd/vellum
+	VELLUM_BINARY=/tmp/vellum-table-layout-journey node scripts/table-layout-journey.cjs
 
 # Requires `npm ci` in editor/ and Chrome; drives the source editor end to
 # end (open, save, outside edits, conflict, close, theme, layout, offline).

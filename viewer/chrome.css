@@ -369,10 +369,29 @@ body.vellum-view {
 
   /* A top-level table may be as wide as the panel less the article's
      32px gutters. Up to 980px it lines up with the prose; past that it
-     grows outward on both sides, centred on the column. */
+     grows outward on both sides, centred on the column.
+
+     The untransformed box must not stick out to the right: Firefox counts
+     it as scrollable overflow even though the transform moves the table
+     back, and the whole page then scrolls sideways. So a wide table is
+     laid out flush with the column's right edge, overhanging the left
+     (which never scrolls), and shifted right by half the overhang. Laying
+     it out from the right needs an rtl containing block; the article's
+     children all switch back to ltr. min-width keeps a narrow table's box
+     at the column's width, so its rows still start at the column's left
+     edge. */
+  .vellum-article {
+    direction: rtl;
+  }
+
+  .vellum-article > * {
+    direction: ltr;
+  }
+
   .vellum-article > table {
+    min-width: 100%;
     max-width: calc(100cqw - 64px);
-    transform: translateX(round(min(0px, 490px - 50%), 1px));
+    transform: translateX(round(max(0px, 50% - 490px), 1px));
   }
 
   /* The pinned title's bar spans the panel, so a wide table scrolling
