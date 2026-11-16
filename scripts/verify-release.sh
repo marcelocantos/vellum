@@ -4,8 +4,8 @@
 # is a broken release.
 #
 # Uses only the Homebrew install: /opt/homebrew/bin/vellum (its
-# vellum-bin for the fail-fast check, see below) and the supervisord
-# program vellum-view-release (127.0.0.1:18744). Never ./vellum.
+# vellum-bin for the fail-fast check, see below) and the LaunchAgent
+# com.marcelocantos.vellum-view-release (127.0.0.1:18744). Never ./vellum.
 #
 # usage: scripts/verify-release.sh [expected-version]
 #   expected-version: default $VERSION, else the latest git tag (v stripped).

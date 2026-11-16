@@ -84,9 +84,11 @@ Minor releases only (no patch on top of the latest). On Colossus:
 3. `brew upgrade marcelocantos/tap/vellum`, then **`make verify-release`**
    (`VERSION=` overrides the expected version; default is the latest
    tag). Non-zero means the release is broken. It uses only the Homebrew
-   install and the supervisord program `vellum-view-release`
+   install and the LaunchAgent `com.marcelocantos.vellum-view-release`
    (`/opt/homebrew/bin/vellum serve-view` on 127.0.0.1:18744, separate
-   cache via a private HOME; template `supervisor/vellum-view-release.ini`).
+   cache via a private HOME; template
+   `launchd/com.marcelocantos.vellum-view-release.plist`, installed by
+   `launchd/install.sh vellum-view-release`).
    It checks the installed version; restarts the release service and
    requires the same pid after 60s plus the right MCP serverInfo
    (`scripts/post-release-check.sh`); converts the fixtures in
@@ -97,9 +99,14 @@ Minor releases only (no patch on top of the latest). On Colossus:
    Clipboard is skipped (no guaranteed GUI session). It is not part of
    `cv gate`.
 
-Dev and release run side by side: `vellum-view` (127.0.0.1:18742) serves
-`supervisor/run-view.sh`, which prefers the checkout's `./vellum` build;
-`vellum-view-release` serves the Homebrew binary.
+Dev and release run side by side as LaunchAgents: `vellum-view`
+(127.0.0.1:18742, `launchd/install.sh`) runs `launchd/run-view.sh`, which
+prefers the checkout's `./vellum` build; `vellum-view-release` serves the
+Homebrew binary. Restart with
+`launchctl kickstart -k gui/$(id -u)/com.marcelocantos.<program>`, check
+with `launchctl print gui/$(id -u)/com.marcelocantos.<program>` (or
+`svc restart|status <program>`); logs are
+`~/.local/var/log/<program>.log`.
 
 ## Gates
 

@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- launchd/install.sh vellum-view-release renders this into ~/Library/LaunchAgents, replacing the HOME and USER placeholders. -->
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.marcelocantos.vellum-view-release</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/opt/homebrew/bin/vellum</string>
+		<string>serve-view</string>
+		<string>--addr</string>
+		<string>127.0.0.1:18744</string>
+	</array>
+	<key>WorkingDirectory</key>
+	<string>@HOME@/.local/state/vellum-release</string>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>HOME</key>
+		<string>@HOME@/.local/state/vellum-release/home</string>
+		<key>USER</key>
+		<string>@USER@</string>
+		<key>XDG_CONFIG_HOME</key>
+		<string>@HOME@/.config</string>
+		<key>PUPPETEER_CACHE_DIR</key>
+		<string>@HOME@/.cache/puppeteer</string>
+		<key>VELLUM_IMPORT_CACHE</key>
+		<string>@HOME@/.local/state/vellum-release/import-cache</string>
+		<key>PATH</key>
+		<string>/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:@HOME@/.local/bin:@HOME@/.py/bin:@HOME@/go/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+	</dict>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<true/>
+	<key>ExitTimeOut</key>
+	<integer>10</integer>
+	<key>SoftResourceLimits</key>
+	<dict>
+		<key>NumberOfFiles</key>
+		<integer>8192</integer>
+	</dict>
+	<key>StandardOutPath</key>
+	<string>@HOME@/.local/var/log/vellum-view-release.log</string>
+	<key>StandardErrorPath</key>
+	<string>@HOME@/.local/var/log/vellum-view-release.log</string>
+</dict>
+</plist>

@@ -4,7 +4,7 @@
 # here (ENT-001).
 #
 # verify-release is not a gate: it checks the INSTALLED release on Colossus
-# (Homebrew vellum + supervisord vellum-view-release) after `brew upgrade
+# (Homebrew vellum + LaunchAgent vellum-view-release) after `brew upgrade
 # vellum`. Override the expected version with VERSION=x.y.z (default: the
 # latest git tag).
 .PHONY: bullseye verify-release

@@ -1,11 +1,11 @@
 #!/bin/sh
-# Start vellum serve-view for supervisord. Prefers a repo-root ./vellum build,
+# Start vellum serve-view for launchd. Prefers a repo-root ./vellum build,
 # then the Homebrew install, then whatever is on PATH.
 set -e
 
-ROOT="$(CDPATH= cd "$(dirname "$0")/.." && pwd)"
+ROOT="$(CDPATH='' cd "$(dirname "$0")/.." && pwd)"
 
-# Supervisord starts programs with a stripped environment. Match the Homebrew
+# launchd starts programs with a stripped environment. Match the Homebrew
 # vellum wrapper PATH so mmdc, node, katex, prince, … resolve.
 if [ -z "${HOME:-}" ]; then
   HOME="$(eval echo ~"$(id -un)")"

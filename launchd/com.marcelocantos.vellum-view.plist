@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- launchd/install.sh renders this into ~/Library/LaunchAgents, replacing the REPO, HOME and USER placeholders. -->
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.marcelocantos.vellum-view</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>@REPO@/launchd/run-view.sh</string>
+	</array>
+	<key>WorkingDirectory</key>
+	<string>@REPO@</string>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>HOME</key>
+		<string>@HOME@</string>
+		<key>USER</key>
+		<string>@USER@</string>
+	</dict>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<true/>
+	<key>ExitTimeOut</key>
+	<integer>10</integer>
+	<key>SoftResourceLimits</key>
+	<dict>
+		<key>NumberOfFiles</key>
+		<integer>8192</integer>
+	</dict>
+	<key>StandardOutPath</key>
+	<string>@HOME@/.local/var/log/vellum-view.log</string>
+	<key>StandardErrorPath</key>
+	<string>@HOME@/.local/var/log/vellum-view.log</string>
+</dict>
+</plist>
