@@ -183,7 +183,12 @@ dark-mode article styling with syntax highlighting, tables that use the full pan
 zoom/pan viewer for images and SVG (including Mermaid), and GFM
 task-list checkboxes that edit the source file after consent
 (once per session or permanently) when you click or Space the box, not
-the label text. The toggle adopts the new source stamp without reloading;
+the label text. A toggle names the exact task (its place and source
+line) and the version of the file the page shows; if the file has
+changed since, nothing is written, the box springs back and the page
+says so (reload to see the new version). Task-like lines in code,
+diagrams and math are never touched, and tasks in block quotes and
+loose lists can be ticked. The toggle adopts the new source stamp without reloading;
 an external file-change reload keeps keyboard focus on that box. The pencil
 (or the `e` key) opens the Markdown source in a modal CodeMirror 6
 editor: GFM syntax highlighting with fenced code highlighted in its own

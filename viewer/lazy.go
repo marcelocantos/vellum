@@ -295,10 +295,14 @@ func (s *Server) fragmentHTML(ctx context.Context, absPath, id string) (string, 
 // every deferred fragment resolved (from the fragment cache or a fresh
 // render). It is what the clipboard carries. soft lists fragments that
 // failed to render and were replaced by their source fallback.
-var sourceLineAttrRe = regexp.MustCompile(` (?:` + convert.SourceLineAttr + `|` + convert.SourceEndAttr + `)="\d+"`)
+var sourceLineAttrRe = regexp.MustCompile(` (?:` + convert.SourceLineAttr + `|` + convert.SourceEndAttr + `|` + convert.TaskIndexAttr + `|` + convert.TaskLineAttr + `)="\d+"`)
+
+// clipboardTaskBoxRe matches a task checkbox as the viewer renders it
+// (enabled, for toggling); a paste gets the read-only one.
+var clipboardTaskBoxRe = regexp.MustCompile(`<input((?: checked="")?) type="checkbox"/?>`)
 
 func (s *Server) completeHTML(ctx context.Context, absPath string) (html string, soft []string, err error) {
-	shell, err := s.cachedHTML(ctx, absPath)
+	shell, _, err := s.cachedHTML(ctx, absPath)
 	if err != nil {
 		return "", nil, err
 	}
@@ -312,8 +316,9 @@ func (s *Server) completeHTML(ctx context.Context, absPath string) (html string,
 		return "", nil, err
 	}
 	html, soft = convert.ResolveFragments(string(shell), convert.ScrubFragments(results))
-	// Scroll-mapping attributes are for the live page, not a paste.
-	return sourceLineAttrRe.ReplaceAllString(html, ""), soft, nil
+	// Scroll-mapping and task attributes are for the live page, not a paste.
+	html = sourceLineAttrRe.ReplaceAllString(html, "")
+	return clipboardTaskBoxRe.ReplaceAllString(html, `<input$1 disabled="" type="checkbox">`), soft, nil
 }
 
 // handleFragment serves one deferred fragment for ?path=…&id=…. Ids are

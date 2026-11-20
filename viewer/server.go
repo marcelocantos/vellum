@@ -436,7 +436,7 @@ func urlPathToFS(p string) (string, error) {
 }
 
 func (s *Server) serveMarkdown(w http.ResponseWriter, r *http.Request, absPath string) {
-	body, err := s.cachedHTML(r.Context(), absPath)
+	body, stamp, err := s.cachedHTML(r.Context(), absPath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			s.serveMissingMarkdown(w, r, absPath)
@@ -461,7 +461,7 @@ func (s *Server) serveMarkdown(w http.ResponseWriter, r *http.Request, absPath s
 	}
 	page = lazyLoadImages(page)
 	nonce := newNonce()
-	page = injectChrome(page, &chromePage{SourcePath: absPath, Nonce: nonce})
+	page = injectChrome(page, &chromePage{SourcePath: absPath, Nonce: nonce, Stamp: stamp})
 	// A cache-dir failure must not hide a document that is already rendered.
 	_ = s.noteRecent(absPath)
 
@@ -494,24 +494,26 @@ func (s *Server) serveMissingMarkdown(w http.ResponseWriter, r *http.Request, ab
 // cachedHTML returns the convert shell for absPath (chrome-free): the
 // goldmark page with Mermaid diagrams and math left as placeholders. It
 // is the payload for the view page (chrome is injected after); the
-// clipboard wants completeHTML, which resolves the placeholders.
-func (s *Server) cachedHTML(ctx context.Context, absPath string) ([]byte, error) {
+// clipboard wants completeHTML, which resolves the placeholders. stamp is
+// the source stamp the shell was rendered from: a task toggle from the
+// page names it, so an edit made since then is refused, not misapplied.
+func (s *Server) cachedHTML(ctx context.Context, absPath string) (shell []byte, stamp string, err error) {
 	f, err := s.openServed(absPath)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	defer f.Close()
 	info, err := f.Stat()
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	if info.IsDir() {
-		return nil, errIsDirectory
+		return nil, "", errIsDirectory
 	}
 
 	cacheRoot, err := s.cacheRoot()
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	cachePath := filepath.Join(cacheRoot, cacheName(absPath, ".html"))
 	now := s.now()
@@ -529,12 +531,17 @@ func (s *Server) cachedHTML(ctx context.Context, absPath string) ([]byte, error)
 		if err := s.renderMarkdown(ctx, absPath, f, info, cachePath); err != nil {
 			var se *convert.SoftError
 			if !errors.As(err, &se) {
-				return nil, err
+				return nil, "", err
 			}
 		}
 	}
 	_ = pruneCache(cacheRoot, cachePath, effectiveMaxBytes(s.MaxBytes), maxAge, now)
-	return os.ReadFile(cachePath)
+	shell, err = os.ReadFile(cachePath)
+	if err != nil {
+		return nil, "", err
+	}
+	// A hit matched this info's stamp; a render recorded it.
+	return shell, sourceStamp(info), nil
 }
 
 func requestOrigin(r *http.Request) string {

@@ -95,7 +95,7 @@ func pageRequest(t *testing.T, method, u string) (int, string) {
 	req.Header.Set(secFetchSiteHeader, secFetchSiteSameOrigin)
 	req.Header.Set(secFetchModeHeader, "cors")
 	req.Header.Set(secFetchDestHeader, "empty")
-	if method == http.MethodPut {
+	if method == http.MethodPut || method == http.MethodPost {
 		req.Header.Set(StampHeader, "0 0")
 	}
 	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
@@ -155,7 +155,7 @@ func TestServed_EveryRouteRefusesPathsOutsideItsRoots(t *testing.T) {
 			{http.MethodGet, ts.URL + pathURL(p)},
 			{http.MethodGet, ts.URL + ChromeEditPath + q},
 			{http.MethodPut, ts.URL + ChromeEditPath + q},
-			{http.MethodPost, ts.URL + ChromeTaskTogglePath + q + "&index=0"},
+			{http.MethodPost, ts.URL + ChromeTaskTogglePath + q + "&index=0&line=3&checked=0"},
 			{http.MethodGet, ts.URL + ChromeWatchPath + q},
 			{http.MethodGet, ts.URL + ChromeFragmentPath + q + "&id=0123456789abcdef"},
 			{http.MethodGet, ts.URL + ChromePDFPath + q},

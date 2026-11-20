@@ -277,8 +277,16 @@
   const goneEl = document.getElementById("vellum-gone");
   const waiting = chrome.getAttribute("data-waiting") === "1";
   let pendingTask = null;
-  let loadStamp = null;
+  // The source stamp this page was rendered from (the server puts it on
+  // the chrome). A task toggle sends it; a file changed since is refused.
+  let loadStamp = chrome.getAttribute("data-stamp") || null;
   let toggleInFlight = 0;
+  // Toggles run one at a time, each naming the stamp the previous one
+  // left, so two quick clicks never race each other's write.
+  let toggleChain = Promise.resolve();
+  // A watch stamp that arrived while a toggle was in flight: once the
+  // toggles settle, anything but our own write reloads the page.
+  let watchedDuringToggle = null;
 
   function adoptStamp(stamp) {
     if (stamp) loadStamp = stamp;
@@ -319,7 +327,8 @@
     const el = document.activeElement;
     if (!(el instanceof Element) || !article || !article.contains(el)) return null;
     if (el instanceof HTMLInputElement && el.type === "checkbox") {
-      const idx = el.getAttribute("data-task-index");
+      const item = el.closest("[data-task-index]");
+      const idx = item ? item.getAttribute("data-task-index") : null;
       if (idx !== null && idx !== "") return { taskIndex: idx };
     }
     if (el.id) return { id: el.id };
@@ -342,7 +351,7 @@
     let el = null;
     if (focus.taskIndex != null && focus.taskIndex !== "") {
       el = article.querySelector(
-        'input[type=checkbox][data-task-index="' + CSS.escape(String(focus.taskIndex)) + '"]'
+        '[data-task-index="' + CSS.escape(String(focus.taskIndex)) + '"] input[type=checkbox]'
       );
     } else if (focus.id) {
       el = document.getElementById(focus.id);
@@ -446,9 +455,17 @@
     if (consentEl) consentEl.hidden = false;
   }
 
-  function postTaskToggle(index) {
-    const u = "/_vellum/task-toggle?path=" + encodeURIComponent(source) + "&index=" + encodeURIComponent(String(index));
-    return fetch(u, { method: "POST" }).then(function (resp) {
+  // index and line name the task (the list item carries both); wasChecked
+  // is the state the reader saw before clicking.
+  function postTaskToggle(index, line, wasChecked) {
+    const u =
+      "/_vellum/task-toggle?path=" + encodeURIComponent(source) +
+      "&index=" + encodeURIComponent(String(index)) +
+      "&line=" + encodeURIComponent(String(line)) +
+      "&checked=" + (wasChecked ? "1" : "0");
+    const headers = {};
+    headers["X-Vellum-Stamp"] = loadStamp || "";
+    return fetch(u, { method: "POST", headers: headers }).then(function (resp) {
       return resp.text().then(function (text) {
         if (!resp.ok) {
           throw new Error(text.trim() || resp.statusText);
@@ -458,22 +475,42 @@
     });
   }
 
-  function applyTaskToggle(input, index) {
+  function applyTaskToggle(input) {
+    const item = input.closest("[data-task-index]");
+    if (!item) return;
+    const index = parseInt(item.getAttribute("data-task-index"), 10);
+    const line = parseInt(item.getAttribute("data-task-line"), 10);
+    if (isNaN(index) || isNaN(line)) return;
+    // The box already shows the new state; the reader saw the other one.
+    const wasChecked = !input.checked;
     // Record focus before the write. Watch will reload on the new stamp;
     // restoreScroll puts the same checkbox back under the keyboard.
     persistScroll();
     toggleInFlight++;
-    postTaskToggle(index)
+    toggleChain = toggleChain
+      .then(function () {
+        return postTaskToggle(index, line, wasChecked);
+      })
       .then(function (text) {
         adoptStamp(parseStampLine(text));
       })
       .catch(function (err) {
-        input.checked = !input.checked;
+        input.checked = wasChecked;
         setStatus(err.message || String(err), false);
       })
       .then(function () {
         toggleInFlight--;
+        settleToggles();
       });
+  }
+
+  // After the last toggle, a watch stamp that is not our own write means
+  // the file changed underneath: show it.
+  function settleToggles() {
+    if (toggleInFlight > 0 || watchedDuringToggle === null) return;
+    const seen = watchedDuringToggle;
+    watchedDuringToggle = null;
+    if (seen !== loadStamp && !editorIsOpen()) reloadView();
   }
 
   function watchURL() {
@@ -547,7 +584,7 @@
         }
         if (stamp === loadStamp) return;
         if (toggleInFlight > 0) {
-          adoptStamp(stamp);
+          watchedDuringToggle = stamp;
           return;
         }
         reloadView();
@@ -609,7 +646,7 @@
           const pending = pendingTask;
           pendingTask = null;
           pending.input.checked = pending.checked;
-          applyTaskToggle(pending.input, pending.index);
+          applyTaskToggle(pending.input);
         }
         return;
       }
@@ -1759,14 +1796,12 @@
       if (!(t instanceof HTMLInputElement) || t.type !== "checkbox") return;
       const item = t.closest("[data-task-index]");
       if (!item || !article.contains(item)) return;
-      const index = parseInt(item.getAttribute("data-task-index"), 10);
-      if (isNaN(index)) return;
       if (!taskConsent()) {
-        pendingTask = { input: t, index: index, checked: t.checked };
+        pendingTask = { input: t, checked: t.checked };
         showConsent();
         return;
       }
-      applyTaskToggle(t, index);
+      applyTaskToggle(t);
     });
   }
 

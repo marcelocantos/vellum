@@ -338,7 +338,7 @@ func TestServer_ClipboardResolvesEveryFragment(t *testing.T) {
 		t.Fatalf("fragment after clipboard: %q renders=%d", body, renders.Load())
 	}
 	// The shell cache is untouched by the full render.
-	shell, err := s.cachedHTML(context.Background(), md)
+	shell, _, err := s.cachedHTML(context.Background(), md)
 	if err != nil {
 		t.Fatal(err)
 	}

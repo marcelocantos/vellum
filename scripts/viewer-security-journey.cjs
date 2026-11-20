@@ -175,6 +175,9 @@ const PNG = Buffer.from(
   fs.writeFileSync(payloads, payloadDoc(beaconURL));
   fs.writeFileSync(features, featureDoc());
   fs.writeFileSync(path.join(docs, "pic.png"), PNG);
+  const tasks = path.join(docs, "tasks.md");
+  const tasksSrc = "# Tasks\n\n```\n- [ ] example in code\n```\n\n> - [ ] quoted task\n\n- [ ] real task\n\n- [ ] loose one\n\n- [ ] loose two\n";
+  fs.writeFileSync(tasks, tasksSrc);
   fs.writeFileSync(path.join(root, "outside.png"), PNG);
   fs.writeFileSync(path.join(root, "outside.md"), "# Outside\n\nSECRET-OUTSIDE\n");
   fs.writeFileSync(path.join(docs, "page.html"), "<!doctype html><title>linked</title><p id=linked>linked page</p><script>window.__ran=1;try{parent.__pwned='linked-html'}catch(e){}</script>");
@@ -333,6 +336,48 @@ const PNG = Buffer.from(
     check(linked.ran === null, "a linked HTML file ran its script");
     check(linked.origin === "null", "a linked HTML file runs in the viewer's origin: " + linked.origin);
 
+    // 6. Task checkboxes edit exactly the task clicked, and a click on a
+    // page whose file has changed underneath it is refused. The watch
+    // socket is held off so the page cannot reload before the click.
+    const tasksPage = await context.newPage();
+    tasksPage.setDefaultTimeout(15000);
+    tasksPage.on("pageerror", (e) => errors.push(String(e)));
+    await tasksPage.routeWebSocket(/\/_vellum\/watch/, () => {});
+    await tasksPage.goto(origin + tasks);
+    await tasksPage.waitForSelector(".vellum-article li[data-task-index]");
+    const boxes = await tasksPage.evaluate(() =>
+      Array.from(document.querySelectorAll(".vellum-article input[type=checkbox]")).map((b) => ({
+        text: b.closest("li").textContent.trim(),
+        enabled: !b.disabled,
+        line: b.closest("li").getAttribute("data-task-line"),
+      }))
+    );
+    check(
+      JSON.stringify(boxes.map((b) => b.text)) === JSON.stringify(["quoted task", "real task", "loose one", "loose two"]),
+      "page checkboxes: " + JSON.stringify(boxes)
+    );
+    check(boxes.every((b) => b.enabled), "a task checkbox is disabled: " + JSON.stringify(boxes));
+    const box = (text) => tasksPage.locator(".vellum-article li", { hasText: text }).locator("input[type=checkbox]");
+    await box("quoted task").click();
+    await tasksPage.click('[data-vellum="consent-session"]');
+    await waitFor(() => fs.readFileSync(tasks, "utf8").includes("> - [x] quoted task"), "quoted task ticked on disk");
+    let onDisk = fs.readFileSync(tasks, "utf8");
+    check(onDisk === tasksSrc.replace("> - [ ] quoted", "> - [x] quoted"), "the toggle changed more than the quoted task:\n" + onDisk);
+    // Two quick clicks: both land, one after the other.
+    await box("loose one").click();
+    await box("loose two").click();
+    await waitFor(() => /- \[x\] loose one[\s\S]*- \[x\] loose two/.test(fs.readFileSync(tasks, "utf8")), "both loose tasks ticked");
+    // Someone edits the file; this page still shows the old version.
+    const edited = "- [ ] inserted above\n\n" + fs.readFileSync(tasks, "utf8");
+    fs.writeFileSync(tasks, edited);
+    await box("real task").click();
+    await tasksPage.waitForTimeout(800);
+    check(fs.readFileSync(tasks, "utf8") === edited, "a click on a stale page wrote the file:\n" + fs.readFileSync(tasks, "utf8"));
+    check(!(await box("real task").isChecked()), "the refused checkbox stayed ticked");
+    const status = await tasksPage.evaluate(() => document.getElementById("vellum-status").textContent);
+    check(/changed on disk/.test(status), "no message for the refused toggle: " + JSON.stringify(status));
+    await tasksPage.close();
+
     check(dialogs.length === 0, "dialogs opened: " + dialogs.join(", "));
     check(beaconHits.length === 0, "beacon hit: " + beaconHits.join(", "));
     check(errors.length === 0, "page errors: " + errors.join(" | "));
@@ -347,7 +392,7 @@ const PNG = Buffer.from(
     process.exitCode = 1;
     return;
   }
-  console.log("PASS: payloads inert, CSP refuses injected script, viewer features work, only opened folders served, linked HTML sandboxed");
+  console.log("PASS: payloads inert, CSP refuses injected script, viewer features work, only opened folders served, linked HTML sandboxed, task toggles exact and refused when stale");
 })().catch((e) => {
   console.error(e);
   process.exitCode = 1;

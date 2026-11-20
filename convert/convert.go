@@ -20,6 +20,7 @@ import (
 	meta "github.com/yuin/goldmark-meta"
 	"github.com/yuin/goldmark/extension"
 	"github.com/yuin/goldmark/parser"
+	"github.com/yuin/goldmark/renderer"
 	"github.com/yuin/goldmark/renderer/html"
 	"github.com/yuin/goldmark/util"
 
@@ -90,6 +91,7 @@ var md = goldmark.New(
 	),
 	goldmark.WithRendererOptions(
 		html.WithUnsafe(),
+		renderer.WithNodeRenderers(util.Prioritized(taskBoxRenderer{}, taskBoxRendererPriority)),
 	),
 )
 

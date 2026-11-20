@@ -54,6 +54,9 @@ type chromePage struct {
 	// Waiting marks the placeholder page for a file that does not exist
 	// yet: no editor, and the watch reloads when the file appears.
 	Waiting bool
+	// Stamp is the source stamp the page was rendered from. A task toggle
+	// sends it back; the server refuses the toggle if the file moved on.
+	Stamp string
 }
 
 // injectChrome wraps convert HTML with view-server chrome (toolbar, TOC
@@ -72,8 +75,8 @@ func injectChrome(htmlDoc string, page *chromePage) string {
 	if open == nil || close == nil || close[0] < open[1] {
 		return htmlDoc
 	}
-	inner := annotateTaskCheckboxes(htmlDoc[open[1]:close[0]])
-	wrapped := chromeOpen(page.SourcePath, page.Waiting) + inner + chromeClose()
+	inner := htmlDoc[open[1]:close[0]]
+	wrapped := chromeOpen(page) + inner + chromeClose()
 	htmlDoc = htmlDoc[:open[1]] + wrapped + htmlDoc[close[0]:]
 	if loc := headCloseRe.FindStringIndex(htmlDoc); loc != nil {
 		htmlDoc = htmlDoc[:loc[0]] + chromeStyleTag() + htmlDoc[loc[0]:]
@@ -115,11 +118,14 @@ func pdfIconSVG() string {
 	return `<svg class="vellum-icon vellum-icon-lg" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><defs><mask id="vellum-pdf-gap" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24"><rect x="0" y="0" width="24" height="24" fill="#fff"/><rect x="0" y="11.5" width="24" height="8" fill="#000"/></mask></defs><g mask="url(#vellum-pdf-gap)"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></g><text x="12" y="18.6" text-anchor="middle" textLength="23" lengthAdjust="spacingAndGlyphs" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="8.6" font-weight="800" fill="currentColor" stroke="none">PDF</text></svg>`
 }
 
-func chromeOpen(sourcePath string, waiting bool) string {
-	name := filepath.Base(sourcePath)
-	attrs := `data-source="` + html.EscapeString(sourcePath) + `"`
+func chromeOpen(page *chromePage) string {
+	name := filepath.Base(page.SourcePath)
+	attrs := `data-source="` + html.EscapeString(page.SourcePath) + `"`
+	if page.Stamp != "" {
+		attrs += ` data-stamp="` + html.EscapeString(page.Stamp) + `"`
+	}
 	edit := ""
-	if waiting {
+	if page.Waiting {
 		attrs += ` data-waiting="1"`
 	} else {
 		// A waiting page has no file yet, so nothing to edit.
