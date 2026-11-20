@@ -243,7 +243,7 @@ func TestEditorAssets_ServedAsModules(t *testing.T) {
 
 func TestInjectChrome_EditButtonAndModal(t *testing.T) {
 	doc := `<html><head></head><body><h1>x</h1></body></html>`
-	out := injectChrome(doc, "/docs/note.md")
+	out := injectChrome(doc, &chromePage{SourcePath: "/docs/note.md"})
 	for _, want := range []string{
 		`data-vellum="edit"`,
 		`id="vellum-editor"`,
@@ -253,9 +253,9 @@ func TestInjectChrome_EditButtonAndModal(t *testing.T) {
 			t.Errorf("chrome missing %s", want)
 		}
 	}
-	waiting := injectChromeInto(doc, "/docs/new.md", true)
+	waiting := injectChrome(doc, &chromePage{SourcePath: "/docs/new.md", Waiting: true})
 	// Markup only: the inlined chrome.js mentions both selectors.
-	waiting, _, _ = strings.Cut(waiting, "<script>\n"+chromeJS)
+	waiting, _, _ = strings.Cut(waiting, chromeJS)
 	if strings.Contains(waiting, `data-vellum="edit"`) || strings.Contains(waiting, "data-editor=") {
 		t.Error("waiting page offers an editor for a file that does not exist")
 	}

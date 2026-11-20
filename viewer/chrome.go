@@ -44,20 +44,28 @@ var (
 	bodyClassRe = regexp.MustCompile(`(?i)(\bclass\s*=\s*)(["'])([^"']*)(["'])`)
 )
 
+// chromePage describes one served page for injectChrome.
+type chromePage struct {
+	// SourcePath is the Markdown file the page shows.
+	SourcePath string
+	// Nonce is this response's script nonce (see documentCSP). The
+	// viewer's own scripts carry it; nothing else on the page may run.
+	Nonce string
+	// Waiting marks the placeholder page for a file that does not exist
+	// yet: no editor, and the watch reloads when the file appears.
+	Waiting bool
+}
+
 // injectChrome wraps convert HTML with view-server chrome (toolbar, TOC
 // shell, lightbox). The convert-cache file is left untouched; callers
 // apply this per response.
-func injectChrome(htmlDoc, sourcePath string) string {
-	return injectChromeInto(htmlDoc, sourcePath, false)
-}
-
-func injectChromeInto(htmlDoc, sourcePath string, waiting bool) string {
+func injectChrome(htmlDoc string, page *chromePage) string {
 	if htmlDoc == "" {
 		return htmlDoc
 	}
 	htmlDoc = addBodyClass(htmlDoc, "vellum-view")
 	if loc := headCloseRe.FindStringIndex(htmlDoc); loc != nil {
-		htmlDoc = htmlDoc[:loc[0]] + chromeFaviconLink() + chromeThemeInitScript() + htmlDoc[loc[0]:]
+		htmlDoc = htmlDoc[:loc[0]] + chromeFaviconLink() + chromeThemeInitScript(page.Nonce) + htmlDoc[loc[0]:]
 	}
 	open := bodyOpenRe.FindStringIndex(htmlDoc)
 	close := bodyCloseRe.FindStringIndex(htmlDoc)
@@ -65,13 +73,13 @@ func injectChromeInto(htmlDoc, sourcePath string, waiting bool) string {
 		return htmlDoc
 	}
 	inner := annotateTaskCheckboxes(htmlDoc[open[1]:close[0]])
-	wrapped := chromeOpen(sourcePath, waiting) + inner + chromeClose()
+	wrapped := chromeOpen(page.SourcePath, page.Waiting) + inner + chromeClose()
 	htmlDoc = htmlDoc[:open[1]] + wrapped + htmlDoc[close[0]:]
 	if loc := headCloseRe.FindStringIndex(htmlDoc); loc != nil {
 		htmlDoc = htmlDoc[:loc[0]] + chromeStyleTag() + htmlDoc[loc[0]:]
 	}
 	if loc := bodyCloseRe.FindStringIndex(htmlDoc); loc != nil {
-		htmlDoc = htmlDoc[:loc[0]] + chromeScriptTag() + htmlDoc[loc[0]:]
+		htmlDoc = htmlDoc[:loc[0]] + chromeScriptTag(page.Nonce) + htmlDoc[loc[0]:]
 	}
 	return htmlDoc
 }
@@ -84,12 +92,12 @@ func chromeFaviconLink() string {
 	return `<link rel="icon" href="` + ChromeFaviconPath + `" type="image/svg+xml">` + "\n"
 }
 
-func chromeThemeInitScript() string {
-	return `<script>(function(){try{var k='vellum-theme',t=localStorage.getItem(k),o=['dark','system','light'];document.documentElement.dataset.vellumTheme=o.indexOf(t)>=0?t:'system';}catch(e){document.documentElement.dataset.vellumTheme='system';}})();</script>` + "\n"
+func chromeThemeInitScript(nonce string) string {
+	return `<script nonce="` + html.EscapeString(nonce) + `">(function(){try{var k='vellum-theme',t=localStorage.getItem(k),o=['dark','system','light'];document.documentElement.dataset.vellumTheme=o.indexOf(t)>=0?t:'system';}catch(e){document.documentElement.dataset.vellumTheme='system';}})();</script>` + "\n"
 }
 
-func chromeScriptTag() string {
-	return "<script>\n" + chromeJS + "\n</script>\n"
+func chromeScriptTag(nonce string) string {
+	return `<script nonce="` + html.EscapeString(nonce) + `">` + "\n" + chromeJS + "\n</script>\n"
 }
 
 func pencilIconSVG() string {

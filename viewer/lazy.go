@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/marcelocantos/vellum/convert"
+	"github.com/marcelocantos/vellum/internal/safehtml"
 )
 
 // ChromeFragmentPath serves one deferred article fragment (a Mermaid
@@ -54,6 +55,9 @@ func lazyLoadImages(html string) string {
 			return m
 		}
 		tag, attrs := sub[1], sub[2]
+		// The sanitiser writes void elements as <img …/>; keep the slash
+		// out of the attribute list it would otherwise end up inside.
+		attrs = strings.TrimSuffix(strings.TrimRight(attrs, " "), "/")
 		if !loadingAttrRe.MatchString(attrs) {
 			attrs += ` loading="lazy"`
 		}
@@ -244,7 +248,7 @@ func (s *Server) fragmentHTML(ctx context.Context, absPath, id string) (string, 
 		return "", err
 	}
 	if html, ok := cachedFragment(cacheRoot, id, s.now()); ok {
-		return html, nil
+		return safehtml.Rendered(html), nil
 	}
 	src, err := os.ReadFile(absPath)
 	if err != nil {
@@ -279,7 +283,9 @@ func (s *Server) fragmentHTML(ctx context.Context, absPath, id string) (string, 
 	if res.Err != nil {
 		return "", res.Err
 	}
-	return res.HTML, nil
+	// Fragment HTML is inserted into the page as markup; strip anything a
+	// renderer let through that would run there.
+	return safehtml.Rendered(res.HTML), nil
 }
 
 // completeHTML is the fully rendered document: the cached shell with
@@ -302,7 +308,7 @@ func (s *Server) completeHTML(ctx context.Context, absPath string) (html string,
 	if err != nil {
 		return "", nil, err
 	}
-	html, soft = convert.ResolveFragments(string(shell), results)
+	html, soft = convert.ResolveFragments(string(shell), convert.ScrubFragments(results))
 	// Scroll-mapping attributes are for the live page, not a paste.
 	return sourceLineAttrRe.ReplaceAllString(html, ""), soft, nil
 }

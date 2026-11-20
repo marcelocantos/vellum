@@ -53,7 +53,9 @@ process.stdin.on("end", () => {
     try {
       return katex.renderToString(expr, {displayMode, throwOnError: false, output: "html"});
     } catch(e) {
-      return '<span class="katex-error">' + expr + '</span>';
+      // The expression is document text: escape it, never splice it in.
+      const text = String(expr).replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"})[c]);
+      return '<span class="katex-error">' + text + '</span>';
     }
   });
   process.stdout.write(JSON.stringify(results));

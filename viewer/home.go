@@ -120,6 +120,7 @@ func recentTitle(absPath string) string {
 
 func (s *Server) serveHome(w http.ResponseWriter, r *http.Request) {
 	page := renderHome(s.recentDocs())
+	w.Header().Set(cspHeader, homeCSP)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	if r.Method == http.MethodHead {

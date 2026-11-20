@@ -24,6 +24,7 @@ import (
 	"github.com/yuin/goldmark/util"
 
 	"github.com/marcelocantos/vellum/embed"
+	"github.com/marcelocantos/vellum/internal/safehtml"
 )
 
 // Options configures the conversion pipeline.
@@ -58,6 +59,12 @@ type Options struct {
 	// SourceLines puts SourceLineAttr on rendered blocks (the view server
 	// maps scroll positions between the page and the source editor).
 	SourceLines bool
+	// Sanitize passes the document's HTML through safehtml.Document: raw
+	// HTML and link URLs are cut down to an allow-list, so the page cannot
+	// run anything the document's author wrote. The view server sets it;
+	// outputs the user asks for by name (PDF, HTML files, clipboard from
+	// the CLI) keep the document's HTML as written.
+	Sanitize bool
 }
 
 var htmlTmpl = template.Must(template.New("page").Parse(embed.HTMLTemplate))
@@ -211,12 +218,20 @@ func Render(ctx context.Context, src []byte, opts *Options) (html string, soft [
 	if err != nil {
 		return "", nil, fmt.Errorf("rendering markdown: %w", err)
 	}
+	// Before vellum adds its own markup (placeholders, fragments, the
+	// Contents block), so only what the document brought is filtered.
+	if opts != nil && opts.Sanitize {
+		htmlContent = safehtml.Document(htmlContent)
+	}
 
 	htmlContent = mermaid.deferAll(math.deferAll(htmlContent))
 	if opts == nil || !opts.Defer {
 		results, err := RenderFragments(ctx, append(math.fragments(), mermaid.fragments()...))
 		if err != nil {
 			return "", nil, fmt.Errorf("rendering math: %w", err)
+		}
+		if opts != nil && opts.Sanitize {
+			results = ScrubFragments(results)
 		}
 		htmlContent, soft = ResolveFragments(htmlContent, results)
 	}

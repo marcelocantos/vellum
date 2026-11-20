@@ -252,7 +252,7 @@ func TestInjectChrome_TaskIndexesOnServe(t *testing.T) {
 <li><input disabled="" type="checkbox"> do it</li>
 </ul>
 </body></html>`
-	out := injectChrome(in, "/docs/note.md")
+	out := injectChrome(in, &chromePage{SourcePath: "/docs/note.md"})
 	if !strings.Contains(out, `data-task-index="0"`) {
 		t.Fatalf("missing task index:\n%s", out)
 	}
@@ -289,7 +289,7 @@ func TestInjectChrome_ConvertGFMTaskList(t *testing.T) {
 	if !strings.Contains(html, `type="checkbox"`) {
 		t.Fatalf("convert HTML missing checkbox:\n%s", html)
 	}
-	out := injectChrome(html, md)
+	out := injectChrome(html, &chromePage{SourcePath: md})
 	if !strings.Contains(out, `data-task-index="0"`) || !strings.Contains(out, `data-task-index="1"`) {
 		t.Fatalf("indexes not injected into convert HTML:\n%s", out)
 	}

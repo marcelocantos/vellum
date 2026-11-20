@@ -13,6 +13,8 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+
+	"github.com/marcelocantos/vellum/internal/safehtml"
 )
 
 // FragmentKind names the subprocess a Fragment needs.
@@ -274,4 +276,19 @@ func ResolveFragments(html string, results map[string]FragmentResult) (string, [
 		}
 	})
 	return out, soft
+}
+
+// ScrubFragments returns results with every rendered fragment passed
+// through safehtml.Rendered: KaTeX and mmdc escape what the document
+// wrote, and this strips script, event handlers and script URLs should
+// either of them ever let one through.
+func ScrubFragments(results map[string]FragmentResult) map[string]FragmentResult {
+	out := make(map[string]FragmentResult, len(results))
+	for id, r := range results {
+		if r.HTML != "" {
+			r.HTML = safehtml.Rendered(r.HTML)
+		}
+		out[id] = r
+	}
+	return out
 }

@@ -166,7 +166,7 @@ func TestServer_DeferredFragmentLinksResolveToDocument(t *testing.T) {
 		if status != http.StatusOK {
 			t.Fatalf("%s: status %d: %s", label, status, got)
 		}
-		want := `<svg id="d"><a xlink:href="` + pathURL(md) + `#options"><text>A</text></a><use href="#m"/></svg>`
+		want := `<svg id="d"><a xlink:href="` + pathURL(md) + `#options"><text>A</text></a><use href="#m"></use></svg>`
 		if got != want {
 			t.Fatalf("%s:\n got %s\nwant %s", label, got, want)
 		}

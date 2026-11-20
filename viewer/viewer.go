@@ -304,8 +304,9 @@ func cacheName(absPath string, ext string) string {
 // page with diagrams inline rather than the deferred shell) is re-rendered
 // instead of served. Bump when the cached bytes change meaning (v3: the
 // KaTeX stylesheet is linked from ChromeKaTeXPrefix, not a CDN; v4: blocks
-// carry convert.SourceLineAttr for the editor's scroll mapping).
-const stampFormat = "v4"
+// carry convert.SourceLineAttr for the editor's scroll mapping; v5: the
+// document's HTML is sanitised, so a v4 page may still hold raw script).
+const stampFormat = "v5"
 
 func stampPath(cachePath string) string {
 	return cachePath + ".stamp"

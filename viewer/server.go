@@ -136,6 +136,7 @@ func (s *Server) convertOptions() *convert.Options {
 		Backend:      s.Backend,
 		Defer:        true,
 		SourceLines:  true,
+		Sanitize:     true,
 		KaTeXCSSHref: ChromeKaTeXPrefix + embed.KaTeXCSSName,
 	}
 }
@@ -201,6 +202,12 @@ func (s *Server) Handler() http.Handler {
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
+		// Every response is inert unless its handler says otherwise: the
+		// viewer's own pages replace this policy with one that admits
+		// their nonce'd scripts. nosniff stops a document's text (source,
+		// a fragment) being run as a script or styled as a page.
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set(cspHeader, lockdownCSP)
 		mux.ServeHTTP(w, r)
 	})
 }
@@ -439,10 +446,12 @@ func (s *Server) serveMarkdown(w http.ResponseWriter, r *http.Request, absPath s
 		page = reserveDiagramBoxes(page, cacheRoot)
 	}
 	page = lazyLoadImages(page)
-	page = injectChrome(page, absPath)
+	nonce := newNonce()
+	page = injectChrome(page, &chromePage{SourcePath: absPath, Nonce: nonce})
 	// A cache-dir failure must not hide a document that is already rendered.
 	_ = s.noteRecent(absPath)
 
+	w.Header().Set(cspHeader, documentCSP(r, nonce))
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
 	w.Header().Set("Pragma", "no-cache")
@@ -456,7 +465,9 @@ func (s *Server) serveMarkdown(w http.ResponseWriter, r *http.Request, absPath s
 func (s *Server) serveMissingMarkdown(w http.ResponseWriter, r *http.Request, absPath string) {
 	name := html.EscapeString(filepath.Base(absPath))
 	doc := `<!DOCTYPE html><html><head><title>` + name + `</title></head><body><p>` + name + ` is not here yet. This page will show the document when the file appears.</p></body></html>`
-	page := injectChromeInto(doc, absPath, true)
+	nonce := newNonce()
+	page := injectChrome(doc, &chromePage{SourcePath: absPath, Nonce: nonce, Waiting: true})
+	w.Header().Set(cspHeader, documentCSP(r, nonce))
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(http.StatusNotFound)
@@ -572,6 +583,12 @@ func (s *Server) serveFile(w http.ResponseWriter, r *http.Request, absPath strin
 	ctype := mime.TypeByExtension(filepath.Ext(absPath))
 	if ctype == "" {
 		ctype = "application/octet-stream"
+	}
+	// The lockdown policy (sandbox) keeps an HTML or SVG file a document
+	// links to from running script on this origin. A browser's PDF viewer
+	// will not open in a sandbox, and a PDF runs nothing here.
+	if strings.HasPrefix(ctype, "application/pdf") {
+		w.Header().Del(cspHeader)
 	}
 	w.Header().Set("Content-Type", ctype)
 	w.Header().Set("Cache-Control", "no-store")
