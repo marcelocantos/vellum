@@ -164,12 +164,12 @@ Do not aggregate these states into a scalar.
 
 - **Priority:** P2
 - **Dimensions:** Change amplification; Architecture topology; Redundancy
-- **Status:** observed fact
+- **Status:** resolved. `Convert` and `writeFileOutput` both call `renderPDFHTML` (PNG Mermaid) and `writePDF` (PDF/A, `ResolveBackend`, `backend.Render`, parent directory). Neither function calls the backend itself.
 - **Evidence:**
-  - `convert/convert.go:100-127` — `Convert` reads a file, `RenderFile` with `MermaidPNG`, `ResolveBackend`, `backend.Render`.
-  - `convert/run.go:463-489` — `writeFileOutput` for PDF does the same `Render` + `MermaidPNG` + `ResolveBackend` + `backend.Render` sequence on already-ingested Markdown.
-  - Sole production caller of `Convert` besides its definition: `viewer/viewer.go:250-254` (PDF view cache). CLI and MCP PDF go through `convert.Run` → `writeFileOutput` (`cmd/vellum/main.go:744`, `mcp/server.go:132`).
-- **Mechanism:** a change to PDF/A flags, temp-file handling, mermaid format, or backend error wrapping must be applied in both functions or the viewer PDF path silently diverges from `vellum convert` / MCP (different mermaid format, different baseDir, different mkdir/error text).
+  - Was: `Convert` read a file, `RenderFile` with `MermaidPNG`, `ResolveBackend`, `backend.Render`.
+  - Was: `writeFileOutput` for PDF did the same `Render` + `MermaidPNG` + `ResolveBackend` + `backend.Render` sequence on already-ingested Markdown.
+  - Sole production caller of `Convert` besides its definition: `viewer/viewer.go` (PDF view cache). CLI and MCP PDF go through `convert.Run` → `writeFileOutput`.
+- **Mechanism:** a change to PDF/A flags, temp-file handling, mermaid format, or backend error wrapping had to be applied in both functions or the viewer PDF path silently diverged from `vellum convert` / MCP (different mermaid format, different baseDir, different mkdir/error text). That split no longer exists.
 - **Blast radius:** `vellum view --pdf` / `install-viewer` vs every other PDF sink.
 - **Counterevidence checked:** both currently force PNG mermaid and pass `Style.PDFA`. Tests cover `Run` more densely than `Convert`. The duplication is small (~25 lines) but it is the PDF contract.
 - **Smallest coherent remediation:** make `Convert` a thin wrapper that builds a `Request` and calls `Run` (or extract one `writePDF(html, path, opts, baseDir)` used by both).
@@ -309,7 +309,7 @@ Do not aggregate these states into a scalar.
 |---|---|---|
 | What “green” means | `cvfile` `!gate`, `Makefile` `bullseye`, `ci.yml`, `release.yml` `test` | ENT-001, ENT-002 |
 | Product architecture | `CLAUDE.md`, `README.md`, `docs/HANDOVER.md`, `STABILITY.md` | ENT-003, ENT-007, ENT-009 |
-| Markdown→PDF write | `convert.Convert`, `convert.writeFileOutput` | ENT-004 |
+| Markdown→PDF write | `renderPDFHTML` + `writePDF`, called from `Convert` and `writeFileOutput` | ENT-004 resolved |
 | Markdown parse | `convert` goldmark, `adf` goldmark | ENT-010 |
 | Convert request shape | `convert.Endpoint`, `mcp.Endpoint` | ENT-011 |
 | YAML | yaml.v3 (config), yaml.v2 (goldmark-meta) | ENT-012 |

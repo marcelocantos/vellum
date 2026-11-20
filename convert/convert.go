@@ -114,16 +114,43 @@ func softError(messages []string) error {
 // Soft Mermaid failures still produce a PDF; the returned error is a
 // *SoftError so callers can detect non-zero exit without discarding output.
 // Mermaid diagrams are rendered as PNG for PDF (Prince-safe labels).
+//
+// The viewer PDF cache is this function. CLI and MCP PDF go through Run
+// and writeFileOutput. Both call renderPDFHTML and writePDF so PDF/A,
+// the backend, and the Mermaid format cannot diverge.
 func Convert(ctx context.Context, inputPath, outputPath string, opts *Options) error {
 	absInput, err := filepath.Abs(inputPath)
 	if err != nil {
 		return fmt.Errorf("resolving input path: %w", err)
 	}
-	html, soft, err := RenderFile(ctx, absInput, withMermaidFormat(opts, MermaidPNG))
+	src, err := os.ReadFile(absInput)
+	if err != nil {
+		return fmt.Errorf("reading input: %w", err)
+	}
+	html, soft, err := renderPDFHTML(ctx, string(src), opts)
 	if err != nil {
 		return err
 	}
+	if err := writePDF(ctx, html, outputPath, filepath.Dir(absInput), opts); err != nil {
+		return err
+	}
+	return softError(soft)
+}
 
+// renderPDFHTML is the Markdown→HTML step shared by every PDF sink.
+// PDF forces PNG Mermaid (Prince-safe labels); HTML sinks keep SVG.
+func renderPDFHTML(ctx context.Context, md string, opts *Options) (string, []string, error) {
+	return Render(ctx, []byte(md), withMermaidFormat(opts, MermaidPNG))
+}
+
+// writePDF is the only HTML→PDF backend call. baseDir resolves relative
+// images; an empty baseDir uses the output file's directory.
+func writePDF(ctx context.Context, html, outputPath, baseDir string, opts *Options) error {
+	if dir := filepath.Dir(outputPath); dir != "." && dir != "" {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return err
+		}
+	}
 	var (
 		backendName string
 		pdfa        string
@@ -138,10 +165,13 @@ func Convert(ctx context.Context, inputPath, outputPath string, opts *Options) e
 	if err != nil {
 		return err
 	}
-	if err := backend.Render(ctx, html, outputPath, filepath.Dir(absInput), pdfa); err != nil {
+	if baseDir == "" {
+		baseDir = filepath.Dir(outputPath)
+	}
+	if err := backend.Render(ctx, html, outputPath, baseDir, pdfa); err != nil {
 		return fmt.Errorf("%s: %w", backend.Name(), err)
 	}
-	return softError(soft)
+	return nil
 }
 
 // RenderFile reads a Markdown file and returns the fully assembled HTML

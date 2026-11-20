@@ -490,30 +490,12 @@ func writeFileOutput(ctx context.Context, md, outPath, toFmt, baseDir string, op
 		}
 		return append(soft, warnings...), os.WriteFile(outPath, rtf, 0o644)
 	case toFmt == FormatPDF || toFmt == "":
-		// PDF: PNG mermaid (Prince foreignObject labels); HTML sinks use SVG.
-		html, soft, err := Render(ctx, []byte(md), withMermaidFormat(opts, MermaidPNG))
+		html, soft, err := renderPDFHTML(ctx, md, opts)
 		if err != nil {
 			return soft, err
 		}
-		var (
-			backendName string
-			pdfa        string
-		)
-		if opts != nil {
-			backendName = opts.Backend
-			if opts.Style != nil {
-				pdfa = opts.Style.PDFA
-			}
-		}
-		backend, err := ResolveBackend(backendName)
-		if err != nil {
+		if err := writePDF(ctx, html, outPath, baseDir, opts); err != nil {
 			return soft, err
-		}
-		if baseDir == "" {
-			baseDir = filepath.Dir(outPath)
-		}
-		if err := backend.Render(ctx, html, outPath, baseDir, pdfa); err != nil {
-			return soft, fmt.Errorf("%s: %w", backend.Name(), err)
 		}
 		return soft, nil
 	case toFmt == FormatPPTX:
