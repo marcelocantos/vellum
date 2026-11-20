@@ -57,9 +57,9 @@ func TestPDF_MermaidCannotOpenAFolderOrReadOutside(t *testing.T) {
 	shape := func(id, img string) string {
 		return "  " + id + `@{ img: "` + img + `", label: "` + id + `", pos: "t", w: 60, h: 60, constraint: "on" }` + "\n"
 	}
-	// The first diagram fails to draw (the viewer refuses both images, and
-	// mmdc gives up on an image it cannot decode); its requests are what
-	// matter. The second draws, without the file.
+	// Both diagrams name an image. The renderer answers every request
+	// except its own page with an empty image, so nothing reaches the
+	// viewer and neither image is read. The diagrams still draw.
 	doc := "# Note\n\nInside words.\n\n```mermaid\nflowchart TD\n" +
 		shape("A", ts.URL+filepath.Join(outside, "nothing.md")) +
 		shape("B", ts.URL+secretPNG) +
@@ -92,8 +92,8 @@ func TestPDF_MermaidCannotOpenAFolderOrReadOutside(t *testing.T) {
 			t.Errorf("viewer got %s without fetch metadata (%s)", r.URL.Path, r.UserAgent())
 		}
 	}
-	if reached == 0 {
-		t.Error("mmdc never asked the viewer for the diagram's images; the test did not exercise them")
+	if reached != 0 {
+		t.Errorf("mmdc made %d request(s) to the viewer; the renderer should have answered them itself", reached)
 	}
 	pdf := filepath.Join(root, "out.pdf")
 	if err := os.WriteFile(pdf, body, 0o644); err != nil {

@@ -5,15 +5,25 @@ package convert
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	_ "embed"
 	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 
 	"github.com/marcelocantos/vellum/internal/shim"
 )
+
+//go:embed mmdchook.mjs
+var mermaidConfineHook string
 
 // Mermaid image output formats for mmdc.
 //
@@ -148,10 +158,25 @@ func renderMermaid(ctx context.Context, src string, format string) (string, erro
 		args = append(args, "-s", "2")
 	}
 
-	cmd := shim.Command(ctx, "mmdc", args...)
+	cmd, err := mmdcCommand(ctx, args)
+	if err != nil {
+		return "", err
+	}
+	// The confine hook writes this token to stderr at exit only when it
+	// rewrote mermaid-cli and launched the browser confined. Without it the
+	// render ran unconfined, whatever mmdc's exit status says.
+	var tokenBytes [16]byte
+	if _, err := rand.Read(tokenBytes[:]); err != nil {
+		return "", fmt.Errorf("mmdc: confine token: %w", err)
+	}
+	token := "vellum-mmdc-confined-" + hex.EncodeToString(tokenBytes[:])
+	cmd.Env = append(os.Environ(), "VELLUM_MMDC_CONFINED_TOKEN="+token)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("mmdc: %w: %s", err, string(out))
+	}
+	if !strings.Contains(string(out), token) {
+		return "", fmt.Errorf("mmdc: renderer not confined (the confine hook did not recognise this mermaid-cli); refusing its output: %s", string(out))
 	}
 
 	data, err := os.ReadFile(outFile.Name())
@@ -174,4 +199,138 @@ func embedMermaidSVG(data []byte) string {
 		s = s[i:]
 	}
 	return strings.TrimSpace(s)
+}
+
+// mmdcCommand runs mmdc under Node with the confine hook on its import
+// path. mmdc's Chromium renders the diagram on a file: page and, unless
+// the hook rewrites it, will load any image that page names. A launch
+// that is not a Node script is refused: running it would be unconfined.
+func mmdcCommand(ctx context.Context, args []string) (*exec.Cmd, error) {
+	mmdc, err := exec.LookPath("mmdc")
+	if err != nil {
+		return nil, fmt.Errorf("mmdc: %w", err)
+	}
+	node, script, err := mmdcNodeAndScript(mmdc)
+	if err != nil {
+		return nil, err
+	}
+	hook, err := mermaidConfineHookPath()
+	if err != nil {
+		return nil, fmt.Errorf("mmdc: confine hook: %w", err)
+	}
+	argv := make([]string, 0, 3+len(args))
+	argv = append(argv, "--import", hook, script)
+	argv = append(argv, args...)
+	return exec.CommandContext(ctx, node, argv...), nil
+}
+
+// mmdcNodeAndScript returns the node binary and the script it should run.
+// On Windows, npm's mmdc.cmd is a batch shim; elsewhere mmdc is a script
+// whose shebang names node. Either way the script path is what
+// `node --import <hook>` executes, so the hook loads before mermaid-cli.
+func mmdcNodeAndScript(mmdcPath string) (node, script string, err error) {
+	if runtime.GOOS == "windows" {
+		script, ok := shim.NpmShimScript(mmdcPath)
+		if !ok {
+			return "", "", fmt.Errorf("mmdc: refusing to run %q unconfined: not an npm node shim", mmdcPath)
+		}
+		node = "node"
+		if local := filepath.Join(filepath.Dir(mmdcPath), "node.exe"); regularFile(local) {
+			node = local
+		}
+		return node, script, nil
+	}
+	f, err := os.Open(mmdcPath)
+	if err != nil {
+		return "", "", err
+	}
+	defer f.Close()
+	buf := make([]byte, 256)
+	n, readErr := f.Read(buf)
+	if n == 0 {
+		if readErr != nil {
+			return "", "", readErr
+		}
+		return "", "", fmt.Errorf("mmdc: refusing to run %q unconfined: not a node script", mmdcPath)
+	}
+	line := string(buf[:n])
+	if i := strings.IndexByte(line, '\n'); i >= 0 {
+		line = line[:i]
+	}
+	line = strings.TrimRight(line, "\r")
+	node, ok := nodeFromShebang(line)
+	if !ok {
+		return "", "", fmt.Errorf("mmdc: refusing to run %q unconfined: not a node script", mmdcPath)
+	}
+	return node, mmdcPath, nil
+}
+
+// nodeFromShebang accepts `#!/path/to/node` and `#!/usr/bin/env node`
+// (with flags between env and node). Anything else is not a Node script.
+func nodeFromShebang(line string) (string, bool) {
+	if !strings.HasPrefix(line, "#!") {
+		return "", false
+	}
+	fields := strings.Fields(strings.TrimPrefix(line, "#!"))
+	if len(fields) == 0 {
+		return "", false
+	}
+	if filepath.Base(fields[0]) == "env" {
+		for _, f := range fields[1:] {
+			if f == "node" || filepath.Base(f) == "node" || filepath.Base(f) == "node.exe" {
+				return f, true
+			}
+		}
+		return "", false
+	}
+	base := filepath.Base(fields[0])
+	if base == "node" || base == "node.exe" {
+		return fields[0], true
+	}
+	return "", false
+}
+
+// mermaidConfineHookPath writes the embedded hook once per content hash.
+// The name is the hash, so a changed hook is a different file and a
+// concurrent writer that loses the rename still finds the same bytes.
+func mermaidConfineHookPath() (string, error) {
+	sum := sha256.Sum256([]byte(mermaidConfineHook))
+	dst := filepath.Join(os.TempDir(), "vellum-mmdc-confine-"+hex.EncodeToString(sum[:])+".mjs")
+	// A predictable name in the temp directory can be planted. Use the
+	// file only when its bytes are the hook we embed.
+	if b, err := os.ReadFile(dst); err == nil && string(b) == mermaidConfineHook {
+		return dst, nil
+	}
+	_ = os.Remove(dst)
+	tmp, err := os.CreateTemp(os.TempDir(), "vellum-mmdc-confine-*.mjs")
+	if err != nil {
+		return "", err
+	}
+	tmpName := tmp.Name()
+	if _, err := tmp.WriteString(mermaidConfineHook); err != nil {
+		tmp.Close()
+		os.Remove(tmpName)
+		return "", err
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(tmpName)
+		return "", err
+	}
+	if err := os.Chmod(tmpName, 0o644); err != nil {
+		os.Remove(tmpName)
+		return "", err
+	}
+	if err := os.Rename(tmpName, dst); err != nil {
+		os.Remove(tmpName)
+		if b, readErr := os.ReadFile(dst); readErr == nil && string(b) == mermaidConfineHook {
+			return dst, nil
+		}
+		return "", fmt.Errorf("installing confine hook: %w", err)
+	}
+	return dst, nil
+}
+
+func regularFile(path string) bool {
+	st, err := os.Stat(path)
+	return err == nil && st.Mode().IsRegular()
 }

@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -64,6 +65,58 @@ func TestAction_PDFDownload(t *testing.T) {
 	}
 	if len(converted) != 1 {
 		t.Fatalf("expected cache hit, ConvertPDF calls=%d", len(converted))
+	}
+}
+
+// TestAction_PDFFromAnEarlierViewerIsRerendered: every viewer up to
+// 🎯T68 stamped its cache "v5", and those viewers let a Mermaid diagram
+// draw an image file from anywhere on disk into the PDF (and, before
+// 🎯T66, let the engine read what the HTML named). A PDF they cached is
+// keyed by the document's mtime and size only, so after an upgrade the
+// same unchanged document would keep getting the old PDF for up to
+// CacheMaxAge. It must be rendered again.
+func TestAction_PDFFromAnEarlierViewerIsRerendered(t *testing.T) {
+	dir := t.TempDir()
+	md := filepath.Join(dir, "report.md")
+	if err := os.WriteFile(md, []byte("# Report\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(md)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cacheDir := filepath.Join(dir, "cache")
+	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cached := filepath.Join(cacheDir, cacheName(md, ".pdf"))
+	if err := os.WriteFile(cached, []byte("%PDF-1.4 drawn by an earlier viewer"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	stamp := strconv.FormatInt(info.ModTime().UnixNano(), 10) + " " + strconv.FormatInt(info.Size(), 10) + " v5\n"
+	if err := os.WriteFile(stampPath(cached), []byte(stamp), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	converted := 0
+	s := &Server{
+		CacheDir: cacheDir, Roots: []string{dir},
+		ConvertPDF: func(ctx context.Context, in, out string) error {
+			converted++
+			return os.WriteFile(out, []byte("%PDF-1.4 fresh"), 0o644)
+		},
+	}
+	ts := startTestServer(t, s)
+	resp, err := http.Get(ts.URL + ChromePDFPath + "?path=" + url.QueryEscape(md))
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status %d: %s", resp.StatusCode, body)
+	}
+	if converted != 1 || string(body) != "%PDF-1.4 fresh" {
+		t.Fatalf("served %q with %d render(s); want the earlier viewer's PDF rendered again", body, converted)
 	}
 }
 

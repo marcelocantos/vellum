@@ -309,8 +309,11 @@ func cacheName(absPath string, ext string) string {
 // instead of served. Bump when the cached bytes change meaning (v3: the
 // KaTeX stylesheet is linked from ChromeKaTeXPrefix, not a CDN; v4: blocks
 // carry convert.SourceLineAttr for the editor's scroll mapping; v5: the
-// document's HTML is sanitised, so a v4 page may still hold raw script).
-const stampFormat = "v5"
+// document's HTML is sanitised, so a v4 page may still hold raw script;
+// v6: a PDF's Mermaid diagrams are drawn by a confined renderer and its
+// engine fetches nothing (🎯T66, 🎯T68), so a v5 PDF may hold pixels of an
+// image file from anywhere on disk).
+const stampFormat = "v6"
 
 func stampPath(cachePath string) string {
 	return cachePath + ".stamp"
