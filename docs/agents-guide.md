@@ -426,6 +426,12 @@ already work with files and `convert`.
   names the stamp on disk (409 with the current stamp otherwise, 428
   without one). Both refuse requests whose Host is not loopback or whose
   Origin / Sec-Fetch-Site is foreign.
+  Every route except `/healthz` refuses a Host that is not loopback or
+  `localhost`, and a foreign Origin. A cross-site request is served only
+  when it is a top-level `GET` navigation (a link followed from another
+  page) to a route that changes nothing; subresource loads, fetches,
+  frames and every action route (`/mcp`, clipboard, reveal, task-toggle,
+  edit) get 403 (🎯T57).
 - `vellum view <file.md>` / `vellum --open <file.md>` — open the file
   as an `http://127.0.0.1:18742/…` URL on the view server (**not**
   `file://`). HTML default (browser, fast); pass `--pdf` for

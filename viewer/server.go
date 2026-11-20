@@ -178,9 +178,26 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle(ChromeKaTeXPrefix, http.StripPrefix(ChromeKaTeXPrefix, http.FileServerFS(embed.KaTeX())))
 	mux.HandleFunc(FaviconICOPath, s.handleFavicon)
 	mux.HandleFunc("/", s.handlePath)
+	// Routes that act on the user's machine or files. Cross-site requests
+	// never reach them, whatever their method or kind.
+	stateChanging := map[string]bool{
+		MCPPath:              true,
+		MCPPath + "/":        true,
+		ChromeClipboardPath:  true,
+		ChromeRevealPath:     true,
+		ChromeTaskTogglePath: true,
+		ChromeEditPath:       true,
+	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// The liveness probe serves a constant response and needs no browser context.
-		if r.URL.Path != HealthPath && !localRequestAllowed(r) {
+		if r.URL.Path == HealthPath {
+			mux.ServeHTTP(w, r)
+			return
+		}
+		// Ask the mux which registration will serve the request, so the
+		// guard and the router cannot disagree about the route.
+		_, pattern := mux.Handler(r)
+		if !localRequestAllowed(r, stateChanging[pattern]) {
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
@@ -188,10 +205,38 @@ func (s *Server) Handler() http.Handler {
 	})
 }
 
-// A loopback listener still receives requests from foreign browser pages.
-// Check the literal Host without resolving it, then reject cross-origin
-// browser metadata when present. Local clients may omit both headers.
-func localRequestAllowed(r *http.Request) bool {
+// Fetch metadata request headers (https://www.w3.org/TR/fetch-metadata/).
+// A page cannot set or alter them; the browser does.
+const (
+	secFetchSiteHeader = "Sec-Fetch-Site"
+	secFetchModeHeader = "Sec-Fetch-Mode"
+	secFetchDestHeader = "Sec-Fetch-Dest"
+
+	secFetchSiteSameOrigin = "same-origin"
+	secFetchSiteNone       = "none" // typed URL, bookmark, link opened from another app
+	secFetchModeNavigate   = "navigate"
+	secFetchDestDocument   = "document" // top-level; frames send iframe, frame, embed or object
+)
+
+// localRequestAllowed is the viewer's request rule. A loopback listener
+// still receives requests that foreign browser pages cause, so:
+//
+//  1. Host must be a loopback IP literal or localhost on every route. It is
+//     checked as written, never resolved, which stops DNS rebinding.
+//  2. A present Origin must be this server. A browser attaches Origin to
+//     cross-origin scripted requests and form posts, never to a link
+//     navigation, so a foreign Origin always marks a request to refuse.
+//  3. When the browser sends Sec-Fetch-Site, same-origin and none pass.
+//     Any other value is a cross-site request, and passes only as a plain
+//     top-level GET navigation (Sec-Fetch-Mode navigate, Sec-Fetch-Dest
+//     document) to a route that changes nothing. That is a link followed
+//     from another page: the user sees their own document and the linking
+//     page cannot read it. Subresource loads, fetches, frames, non-GET
+//     methods and every state-changing route are refused.
+//  4. Without Sec-Fetch-Site (curl, MCP clients, browsers that predate
+//     fetch metadata) rules 1 and 2 are the whole check: such clients may
+//     omit Origin, with any method.
+func localRequestAllowed(r *http.Request, stateChanging bool) bool {
 	host, _, err := net.SplitHostPort(r.Host)
 	if err != nil {
 		host = r.Host
@@ -207,12 +252,19 @@ func localRequestAllowed(r *http.Request) bool {
 			return false
 		}
 	}
-	for _, site := range r.Header.Values("Sec-Fetch-Site") {
-		if site != "same-origin" && site != "none" {
-			return false
+	crossSite := false
+	for _, site := range r.Header.Values(secFetchSiteHeader) {
+		if site != secFetchSiteSameOrigin && site != secFetchSiteNone {
+			crossSite = true
 		}
 	}
-	return true
+	if !crossSite {
+		return true
+	}
+	return !stateChanging &&
+		r.Method == http.MethodGet &&
+		r.Header.Get(secFetchModeHeader) == secFetchModeNavigate &&
+		r.Header.Get(secFetchDestHeader) == secFetchDestDocument
 }
 
 // ListenAndServe binds Addr (localhost only) and serves until ctx is cancelled
