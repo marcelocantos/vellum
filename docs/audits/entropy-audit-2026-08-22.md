@@ -261,13 +261,12 @@ Do not aggregate these states into a scalar.
 
 - **Priority:** P3
 - **Dimensions:** Change amplification; Architecture topology
-- **Status:** observed fact (isolation); inference (future drift)
+- **Status:** resolved by isolation. `adf` stays a library (not a `convert.Run` sink). `STABILITY.md` lists it as library-only. `TestGFMTablesAndHeadings_ConvertAndADF` asserts one GFM table/heading fixture in both convert HTML and ADF JSON. The two `goldmark.New` calls remain until ADF is a `Run` sink.
 - **Evidence:**
-  - `adf/convert.go:33-36` — `goldmark.New(GFM, AutoHeadingID)` only; math rewritten to latex fences (`adf/math.go`) before parse.
-  - `convert/convert.go:49-70` — GFM + Footnote + DefinitionList + Typographer + meta + chroma + `html.WithUnsafe()`.
-  - `go list` : `adf` imports nothing in-repo and is imported by nobody in-repo. Tests: `go test ./adf` 13 tests, green this run.
-  - Not in STABILITY, README, agents-guide, or MCP `to.format`.
-- **Mechanism:** GFM table/list/heading fixes in `convert` do not apply to Confluence ADF. When 🎯T27 or a convert sink lands, two parsers will disagree unless they share an AST walk or a documented subset.
+  - Was: `adf` called `goldmark.New(GFM, AutoHeadingID)` and `convert` called a richer goldmark, with no shared fixture.
+  - Was: `adf` was absent from STABILITY. It is now listed as library-only, not an MCP `to.format`.
+  - `TestGFMTablesAndHeadings_ConvertAndADF` failed when the ADF table walk returned nothing, and passes with both pipelines emitting the fixture's headings and cells.
+- **Mechanism:** GFM table/list/heading fixes in `convert` do not apply to Confluence ADF. When 🎯T27 or a convert sink lands, two parsers will disagree unless they share an AST walk or a documented subset. The shared fixture fails if tables or headings diverge before that sink exists.
 - **Blast radius:** Confluence publish (T27); any future `to.format=adf`.
 - **Counterevidence checked:** T26 acceptance is “package adf … no token required” — isolation is the target. Residue (math as latex codeBlock, no footnotes) is declared in `adf/doc.go:12-26`. This is not a premature-unification finding; it is a recorded fork to watch.
 - **Smallest coherent remediation:** when ADF becomes a `Run` sink, parse once (goldmark AST) and fan out HTML vs ADF; until then, leave isolated and list `adf` in STABILITY as library-only.
@@ -310,7 +309,7 @@ Do not aggregate these states into a scalar.
 | What “green” means | `cvfile` `!gate`, `Makefile` `bullseye`, `ci.yml`, `release.yml` `test` | ENT-001, ENT-002 |
 | Product architecture | `CLAUDE.md`, `README.md`, `docs/HANDOVER.md`, `STABILITY.md` | ENT-003, ENT-007, ENT-009 |
 | Markdown→PDF write | `renderPDFHTML` + `writePDF`, called from `Convert` and `writeFileOutput` | ENT-004 resolved |
-| Markdown parse | `convert` goldmark, `adf` goldmark | ENT-010 |
+| Markdown parse | `convert` goldmark, `adf` goldmark, shared GFM fixture | ENT-010 resolved (isolated) |
 | Convert request shape | `convert.Endpoint`, `mcp.Endpoint` | ENT-011 |
 | YAML | yaml.v3 (config), yaml.v2 (goldmark-meta) | ENT-012 |
 | Format constants | `convert.Format*`, `clipboard.Format*`, `viewer.Format*` (iota) | same strings, different types; not currently drifted |
