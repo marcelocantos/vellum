@@ -1,0 +1,121 @@
+// Integrator 20: my live Mermaid payloads through the viewer's PDF route.
+package viewer
+
+import (
+	"image/color"
+	"image/png"
+	"io"
+	"net"
+	"net/http"
+	"net/url"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"sync/atomic"
+	"testing"
+)
+
+func TestI20PDFMermaidPayloads(t *testing.T) {
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	docs, outside := filepath.Join(root, "docs"), filepath.Join(root, "outside")
+	for _, d := range []string{docs, outside} {
+		if err := os.Mkdir(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	secret := filepath.Join(outside, "secret.png")
+	if err := os.WriteFile(secret, pngBytes(t, 40, 40, color.RGBA{0, 0, 255, 255}), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var conns atomic.Int32
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			conns.Add(1)
+			c.Close()
+		}
+	}()
+	web := "http://" + ln.Addr().String() + "/x.png"
+	fill := strings.NewReplacer("{PNG}", secret, "{HTTP}", web, "{BOX}", "width=60 height=60")
+	label := func(h string) string { return "flowchart TD\n  A[\"" + h + "\"] --> B\n" }
+	shape := "flowchart TD\n  A@{ img: \"{PNG}\", label: \"a\", pos: \"t\", w: 60, h: 60, constraint: \"on\" }\n  A --> B\n"
+	cases := []struct{ name, src string }{
+		{"srcset only", label("<img srcset='{PNG} 1x' {BOX}>")},
+		{"markdown string", "flowchart TD\n  A[\"`![x]({HTTP}) <img src='{PNG}' {BOX}>`\"] --> B\n"},
+		{"input image", label("<input type='image' src='{PNG}' {BOX}>")},
+		{"video poster", label("<video poster='{PNG}' {BOX}></video>")},
+		{"video src over http", label("<video src='{HTTP}' autoplay muted {BOX}></video>")},
+		{"table background", label("<table background='{PNG}' {BOX}><tr><td>x</td></tr></table>")},
+		{"content url", label("<span style='content:url({PNG})'></span>x")},
+		{"image-set", label("<span style='display:inline-block;width:60px;height:60px;background-image:image-set(url({PNG}) 1x)'></span>")},
+		{"border-image", label("<div style='width:40px;height:40px;border:20px solid;border-image:url({PNG}) 20'></div>")},
+		{"svg xlink image", label("<svg width='60' height='60'><image xlink:href='{PNG}' width='60' height='60'/></svg>")},
+		{"init sandbox", "%%{init: {\"securityLevel\":\"sandbox\"}}%%\n" + shape},
+		{"init svg labels", "%%{init: {\"flowchart\":{\"htmlLabels\":false},\"htmlLabels\":false}}%%\n" + shape},
+		{"init elk", "%%{init: {\"layout\":\"elk\"}}%%\n" + shape},
+		{"front-matter themeCSS", "---\nconfig:\n  themeCSS: \".nodeLabel::before{content:url('{PNG}')} svg{background-image:url('{HTTP}')}\"\n---\nflowchart TD\n  A[Hello] --> B[World]\n"},
+		{"state description", "stateDiagram-v2\n  s1: <img src='{PNG}' {BOX}>\n  [*] --> s1\n"},
+		{"er labels", "erDiagram\n  A[\"<img src='{PNG}' {BOX}>\"] {\n    string x\n  }\n  A ||--o{ B : \"<img src='{HTTP}'>\"\n"},
+		{"kanban", "kanban\n  todo[<img src='{PNG}' {BOX}>]\n    t1[<img src='{HTTP}'>]\n"},
+		{"requirement", "requirementDiagram\n  requirement r {\n    id: 1\n    text: \"<img src='{PNG}' {BOX}>\"\n    risk: high\n    verifymethod: test\n  }\n"},
+	}
+	var doc strings.Builder
+	doc.WriteString("# Note\n\nInside words.\n\n")
+	for _, c := range cases {
+		doc.WriteString("## " + c.name + "\n\n```mermaid\n" + fill.Replace(c.src) + "```\n\n")
+	}
+	s := &Server{CacheDir: filepath.Join(t.TempDir(), "cache"), Roots: []string{docs}}
+	ts := startTestServer(t, s)
+	note := filepath.Join(docs, "note.md")
+	if err := os.WriteFile(note, []byte(doc.String()), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	resp, err := http.Get(ts.URL + ChromePDFPath + "?path=" + url.QueryEscape(note))
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("pdf status %d: %.300s", resp.StatusCode, body)
+	}
+	out := t.TempDir()
+	pdf := filepath.Join(out, "out.pdf")
+	if err := os.WriteFile(pdf, body, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	prefix := filepath.Join(out, "img")
+	if o, err := exec.Command("pdfimages", "-png", pdf, prefix).CombinedOutput(); err != nil {
+		t.Fatalf("pdfimages: %v\n%s", err, o)
+	}
+	pngs, _ := filepath.Glob(prefix + "*.png")
+	blue := 0
+	for _, p := range pngs {
+		f, err := os.Open(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		img, err := png.Decode(f)
+		f.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		blue += pureBlue(img)
+	}
+	t.Logf("I20 PDF: %d diagrams, %d images in the PDF, %d pure blue pixels, %d connections to the recorder", len(cases), len(pngs), blue, conns.Load())
+	if blue > 0 || conns.Load() > 0 {
+		t.Fail()
+	}
+}

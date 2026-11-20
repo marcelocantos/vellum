@@ -1,0 +1,375 @@
+// Integrator 20: attack battery for the confined Mermaid renderer.
+// Instruments: a magenta canary image outside any opened folder (pixels in
+// the output), a FIFO canary (any process that opens it is counted), and a
+// TCP recorder on loopback (every connection is counted, request or not).
+// Each payload runs confined (PNG and SVG) and once with the plain mmdc
+// command f926199 ran, so a payload that does nothing unconfined is
+// reported as inert instead of as a pass.
+
+package convert
+
+import (
+	"bufio"
+	"bytes"
+	"context"
+	"encoding/base64"
+	"encoding/json"
+	"fmt"
+	"image"
+	"image/color"
+	"image/png"
+	"net"
+	"net/url"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"syscall"
+	"testing"
+	"time"
+)
+
+type i20Probe struct {
+	conns atomic.Int32
+	opens atomic.Int32
+	mu    sync.Mutex
+	lines []string
+}
+
+func i20Magenta(img image.Image) int {
+	n := 0
+	b := img.Bounds()
+	for y := b.Min.Y; y < b.Max.Y; y++ {
+		for x := b.Min.X; x < b.Max.X; x++ {
+			r, g, bl, _ := img.At(x, y).RGBA()
+			if r == 0xffff && g == 0 && bl == 0xffff {
+				n++
+			}
+		}
+	}
+	return n
+}
+
+func i20PNGFromHTML(html string) []byte {
+	const marker = `src="data:image/png;base64,`
+	i := strings.Index(html, marker)
+	if i < 0 {
+		return nil
+	}
+	rest := html[i+len(marker):]
+	j := strings.IndexByte(rest, '"')
+	if j < 0 {
+		return nil
+	}
+	raw, _ := base64.StdEncoding.DecodeString(rest[:j])
+	return raw
+}
+
+func i20Unconfined(src string) ([]byte, error) {
+	dir, err := os.MkdirTemp("", "i20-unconfined-*")
+	if err != nil {
+		return nil, err
+	}
+	defer os.RemoveAll(dir)
+	in, out := filepath.Join(dir, "in.mmd"), filepath.Join(dir, "out.png")
+	if err := os.WriteFile(in, []byte(src), 0o644); err != nil {
+		return nil, err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	if b, err := exec.CommandContext(ctx, "mmdc", "-i", in, "-o", out, "-e", "png", "--quiet", "-s", "2").CombinedOutput(); err != nil {
+		return nil, fmt.Errorf("%v: %.200s", err, b)
+	}
+	return os.ReadFile(out)
+}
+
+func TestI20MermaidAttacks(t *testing.T) {
+	probe := &i20Probe{}
+
+	outside := t.TempDir()
+	canary := filepath.Join(outside, "canary.png")
+	solid := image.NewRGBA(image.Rect(0, 0, 64, 64))
+	for i := 0; i < len(solid.Pix); i += 4 {
+		solid.Pix[i], solid.Pix[i+1], solid.Pix[i+2], solid.Pix[i+3] = 255, 0, 255, 255
+	}
+	var canaryBytes bytes.Buffer
+	if err := png.Encode(&canaryBytes, solid); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(canary, canaryBytes.Bytes(), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fifo := filepath.Join(outside, "canaryfifo")
+	if err := syscall.Mkfifo(fifo, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	stop := make(chan struct{})
+	t.Cleanup(func() { close(stop) })
+	go func() {
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			fd, err := syscall.Open(fifo, syscall.O_WRONLY|syscall.O_NONBLOCK, 0)
+			if err != nil {
+				time.Sleep(10 * time.Millisecond)
+				continue
+			}
+			probe.opens.Add(1)
+			syscall.Close(fd)
+			time.Sleep(50 * time.Millisecond)
+		}
+	}()
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ln.Close() })
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			probe.conns.Add(1)
+			go func() {
+				defer conn.Close()
+				conn.SetDeadline(time.Now().Add(2 * time.Second))
+				line, _ := bufio.NewReader(conn).ReadString('\n')
+				probe.mu.Lock()
+				probe.lines = append(probe.lines, strings.TrimSpace(line))
+				probe.mu.Unlock()
+				fmt.Fprintf(conn, "HTTP/1.1 200 OK\r\nContent-Type: image/png\r\nAccess-Control-Allow-Origin: *\r\nContent-Length: %d\r\nConnection: close\r\n\r\n", canaryBytes.Len())
+				conn.Write(canaryBytes.Bytes())
+			}()
+		}
+	}()
+	hostport := ln.Addr().String()
+	httpURL := "http://" + hostport + "/i20.png"
+
+	fill := strings.NewReplacer(
+		"{PNGPCT}", strings.Replace(canary, "canary.png", "%63anary.png", 1),
+		"{PNG}", canary, "{FIFO}", fifo, "{DIR}", outside,
+		"{HTTPENC}", url.QueryEscape(httpURL), "{HTTP}", httpURL,
+		"{WS}", "ws://"+hostport+"/ws", "{HOSTPORT}", hostport,
+		"{BOX}", "width=60 height=60",
+	)
+	label := func(h string) string { return "flowchart TD\n  A[\"" + h + "\"] --> B\n" }
+	shape := func(ref string) string {
+		return "flowchart TD\n  A@{ img: \"" + ref + "\", label: \"a\", pos: \"t\", w: 60, h: 60, constraint: \"on\" }\n  A --> B\n"
+	}
+	plain := "flowchart TD\n  A[Hello] --> B[World]\n"
+	type payload struct{ name, src string }
+	attacks := []payload{
+		{"img-upper-scheme", label("<img src='FILE://{PNG}' {BOX}>")},
+		{"img-file-localhost", label("<img src='file://localhost{PNG}' {BOX}>")},
+		{"img-percent-encoded", label("<img src='{PNGPCT}' {BOX}>")},
+		{"img-tab-in-scheme", label("<img src='fi&#9;le://{PNG}' {BOX}>")},
+		{"img-leading-newline", label("<img src='&#10; {PNG}' {BOX}>")},
+		{"img-query-fragment", label("<img src='{PNG}?a=1#b' {BOX}>")},
+		{"img-base-href", label("<base href='file://{DIR}/'><img src='canary.png' {BOX}>")},
+		{"img-srcset-only", label("<img srcset='{PNG} 1x' {BOX}>")},
+		{"img-mermaid-entity-syntax", "flowchart TD\n  A[\"#60;img src='{PNG}' {BOX}#62;\"] --> B\n"},
+		{"img-html-entities", label("&lt;img src='{PNG}' {BOX}&gt;")},
+		{"img-markdown-string", "flowchart TD\n  A[\"`![x]({HTTP}) <img src='{PNG}' {BOX}>`\"] --> B\n"},
+		{"img-blob-url", label("<img src='blob:{HTTP}' {BOX}>")},
+		{"img-data-svg-with-file-image", label("<img src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2260%22 height=%2260%22%3E%3Cimage href=%22file://{PNG}%22 width=%2260%22 height=%2260%22/%3E%3C/svg%3E' {BOX}>")},
+		{"img-intercept-origin", label("<img src='https://mermaid-cli-intercept.invalid{PNG}' {BOX}>")},
+		{"img-intercept-origin-traversal", label("<img src='https://mermaid-cli-intercept.invalid/%2e%2e/%2e%2e{FIFO}' {BOX}>")},
+		{"input-image", label("<input type='image' src='{PNG}' {BOX}>")},
+		{"video-poster", label("<video poster='{PNG}' {BOX}></video>")},
+		{"video-src-http", label("<video src='{HTTP}' autoplay muted {BOX}></video>")},
+		{"audio-src-fifo", label("<audio src='{FIFO}' autoplay></audio>x")},
+		{"table-background", label("<table background='{PNG}' {BOX}><tr><td>x</td></tr></table>")},
+		{"embed-fifo", label("<embed src='{FIFO}' {BOX}>")},
+		{"embed-image", label("<embed type='image/png' src='{PNG}' {BOX}>")},
+		{"link-stylesheet", label("<link rel='stylesheet' href='{HTTP}'>x")},
+		{"link-preload", label("<link rel='preload' as='image' href='{HTTP}'>x")},
+		{"link-preconnect", label("<link rel='preconnect' href='http://{HOSTPORT}'>x")},
+		{"meta-refresh", label("<meta http-equiv='refresh' content='0;url={HTTP}'>x")},
+		{"style-import-http", label("<style>@import url({HTTP});</style>x")},
+		{"style-font-fifo", label("<style>@font-face{font-family:i20;src:url({FIFO})} b{font-family:i20}</style><b>hi</b>")},
+		{"style-nested-data-import", label("<style>@import url(data:text/css,%40import%20url%28{HTTPENC}%29%3B);</style>x")},
+		{"style-content-url", label("<span style='content:url({PNG})'></span>x")},
+		{"style-image-set", label("<span style='display:inline-block;width:60px;height:60px;background-image:image-set(url({PNG}) 1x)'></span>")},
+		{"style-list-image", label("<ul style='list-style-image:url({PNG})'><li>x</li></ul>")},
+		{"style-border-image", label("<div style='width:40px;height:40px;border:20px solid;border-image:url({PNG}) 20'></div>")},
+		{"style-mask-http", label("<div style='width:60px;height:60px;background:#f0f;-webkit-mask-image:url({HTTP})'></div>")},
+		{"svg-use-external", label("<svg width='60' height='60'><use href='{HTTP}#a'/></svg>")},
+		{"svg-feimage", label("<svg width='60' height='60'><filter id='i20f'><feImage href='{PNG}'/></filter><rect width='60' height='60' filter='url(#i20f)'/></svg>")},
+		{"svg-image-xlink", label("<svg width='60' height='60'><image xlink:href='{PNG}' width='60' height='60'/></svg>")},
+		{"svg-set-href", label("<svg width='60' height='60'><image width='60' height='60'><set attributeName='href' to='{PNG}'/></image></svg>")},
+		{"svg-animate-href", label("<svg width='60' height='60'><image width='60' height='60'><animate attributeName='href' values='{PNG}' dur='1ms' fill='freeze'/></image></svg>")},
+		{"svg-foreignobject-img", label("<svg width='60' height='60'><foreignObject width='60' height='60'><img src='{PNG}' {BOX}></foreignObject></svg>")},
+		{"svg-style-import", label("<svg width='60' height='60'><style>@import url({HTTP});</style><rect width='60' height='60'/></svg>")},
+		{"svg-pattern-image", label("<svg width='60' height='60'><pattern id='i20p' width='60' height='60' patternUnits='userSpaceOnUse'><image href='{PNG}' width='60' height='60'/></pattern><rect width='60' height='60' fill='url(#i20p)'/></svg>")},
+		{"katex-includegraphics", "flowchart TD\n  A[\"$$\\includegraphics[height=3em]{{PNG}}$$\"] --> B\n"},
+		{"katex-href-url", "flowchart TD\n  A[\"$$\\href{{HTTP}}{x}\\url{{HTTP}}$$\"] --> B\n"},
+		{"init-dompurify-script-websocket", "%%{init: {\"securityLevel\":\"loose\",\"dompurifyConfig\":{\"ADD_TAGS\":[\"script\",\"iframe\",\"object\",\"embed\",\"link\",\"meta\",\"base\"],\"ADD_ATTR\":[\"onerror\",\"onload\",\"src\",\"data\",\"href\"],\"FORCE_BODY\":true}}}%%\n" +
+			label("<img src='x' onerror='new WebSocket(`{WS}`);fetch(`{HTTP}`);new Image().src=`{HTTP}`'><iframe src='{FIFO}'></iframe><script>new WebSocket(`{WS}`)</script><img src='{PNG}' {BOX}>")},
+		{"frontmatter-dompurify-script", "---\nconfig:\n  securityLevel: loose\n  dompurifyConfig:\n    ADD_TAGS: [script, iframe]\n    ADD_ATTR: [onerror, src]\n---\n" +
+			label("<img src='x' onerror='new WebSocket(`{WS}`)'><iframe src='{FIFO}'></iframe><img src='{PNG}' {BOX}>")},
+		{"init-secure-reset-loose", "%%{init: {\"secure\":[],\"securityLevel\":\"loose\"}}%%\n%%{init: {\"securityLevel\":\"loose\"}}%%\n" +
+			label("<img src='x' onerror='fetch(`{HTTP}`)'><img src='{PNG}' {BOX}>")},
+		{"init-sandbox-image-shape", "%%{init: {\"securityLevel\":\"sandbox\"}}%%\n" + shape("{PNG}")},
+		{"init-antiscript-img", "%%{init: {\"securityLevel\":\"antiscript\"}}%%\n" + label("<img src='{PNG}' {BOX}>")},
+		{"init-svg-labels-image-shape", "%%{init: {\"flowchart\":{\"htmlLabels\":false},\"htmlLabels\":false}}%%\n" + shape("{PNG}")},
+		{"init-elk-image-shape", "%%{init: {\"layout\":\"elk\"}}%%\n" + shape("{PNG}")},
+		{"init-handdrawn-image-shape", "%%{init: {\"look\":\"handDrawn\"}}%%\n" + shape("{PNG}")},
+		{"init-themecss-content-url", "%%{init: {\"themeCSS\": \".nodeLabel::before{content:url('{PNG}')} svg{background-image:url('{PNG}')}\"}}%%\n" + plain},
+		{"init-themecss-font-fifo", "%%{init: {\"themeCSS\": \"@font-face{font-family:i20;src:url('{FIFO}')} .nodeLabel{font-family:i20 !important}\"}}%%\n" + plain},
+		{"init-themecss-nested-data-import", "%%{init: {\"themeCSS\": \"@import url('data:text/css,%40import%20url%28{HTTPENC}%29%3B');\"}}%%\n" + plain},
+		{"frontmatter-themecss", "---\nconfig:\n  themeCSS: \".nodeLabel::before{content:url('{PNG}')} svg{background-image:url('{HTTP}')}\"\n---\n" + plain},
+		{"init-themevariables-injection", "%%{init: {\"theme\":\"base\",\"themeVariables\":{\"primaryColor\":\"#fff;} svg{background-image:url({PNG})} .i20{color:red\",\"lineColor\":\"red;} .nodeLabel::before{content:url({HTTP})} .j{a:b\"}}}%%\n" + plain},
+		{"init-fontfamily-injection", "%%{init: {\"fontFamily\":\"x;} svg{background-image:url({PNG})} .nodeLabel::before{content:url({HTTP})} .k{font-family:y\",\"themeVariables\":{\"fontFamily\":\"x;} svg{background-image:url({PNG})} .k{font-family:y\"}}}%%\n" + plain},
+		{"icon-shape-url", "flowchart TD\n  A@{ icon: \"{HTTP}\", form: \"square\", label: \"x\" }\n  A --> B\n"},
+		{"c4-sprite-link-bgcolor", "C4Context\n  Person(u, \"<img src='{PNG}' {BOX}>\", \"d\", $sprite=\"{PNG}\", $link=\"{HTTP}\")\n  System(s, \"S\")\n  Rel(u, s, \"r\")\n  UpdateElementStyle(u, $bgColor=\"url({PNG})\", $fontColor=\"red\", $borderColor=\"url({HTTP})\")\n"},
+		{"architecture-icon-url", "architecture-beta\n  service s({HTTP})[Server]\n  service d(logos:aws)[DB]\n  s:R -- L:d\n"},
+		{"sequence-alias-note-links", "sequenceDiagram\n  participant A as <img src='{PNG}' {BOX}>\n  A->>A: <img src='{HTTP}'>\n  Note over A: <img src='{PNG}' {BOX}>\n  links A: {\"x\": \"{HTTP}\"}\n"},
+		{"class-label-style-click", "classDiagram\n  class A[\"<img src='{PNG}' {BOX}>\"]\n  style A fill:url({PNG}),stroke:#333\n  click A href \"{HTTP}\"\n"},
+		{"state-description-classdef", "stateDiagram-v2\n  classDef bad fill:url({PNG})\n  s1: <img src='{PNG}' {BOX}>\n  [*] --> s1\n  class s1 bad\n"},
+		{"er-entity-and-relation-label", "erDiagram\n  A[\"<img src='{PNG}' {BOX}>\"] {\n    string x\n  }\n  A ||--o{ B : \"<img src='{HTTP}'>\"\n"},
+		{"mindmap-node-markdown-icon", "mindmap\n  root((<img src='{PNG}' {BOX}>))\n    child[\"`![x]({HTTP})`\"]\n    ::icon(fa fa-book)\n"},
+		{"gantt-title-click", "gantt\n  title <img src='{PNG}' {BOX}>\n  section s\n  t1 :a, 2026-01-01, 1d\n  click a href \"{HTTP}\"\n"},
+		{"pie-title-label", "pie title <img src='{PNG}' {BOX}>\n  \"<img src='{HTTP}'>\" : 1\n"},
+		{"timeline-title-event", "timeline\n  title <img src='{PNG}' {BOX}>\n  2026 : <img src='{HTTP}'>\n"},
+		{"block-label", "block-beta\n  a[\"<img src='{PNG}' {BOX}>\"]\n"},
+		{"kanban-item", "kanban\n  todo[<img src='{PNG}' {BOX}>]\n    t1[<img src='{HTTP}'>]\n"},
+		{"quadrant-title", "quadrantChart\n  title <img src='{PNG}' {BOX}>\n  x-axis a --> b\n  y-axis c --> d\n  P1: [0.3, 0.6]\n"},
+		{"requirement-text", "requirementDiagram\n  requirement r {\n    id: 1\n    text: \"<img src='{PNG}' {BOX}>\"\n    risk: high\n    verifymethod: test\n  }\n"},
+		{"gitgraph-id-tag", "gitGraph\n  commit id: \"<img src='{PNG}' {BOX}>\" tag: \"<img src='{HTTP}'>\"\n"},
+		{"zenuml-title-message", "zenuml\n  title <img src='{PNG}' {BOX}>\n  A->B: <img src='{HTTP}'>\n"},
+		{"xychart-title", "xychart-beta\n  title \"<img src='{PNG}' {BOX}>\"\n  x-axis [a, b]\n  bar [1, 2]\n"},
+		{"packet-title-field", "packet-beta\n  title <img src='{PNG}' {BOX}>\n  0-15: \"<img src='{HTTP}'>\"\n"},
+		{"journey-title-task", "journey\n  title <img src='{PNG}' {BOX}>\n  section s\n    <img src='{HTTP}'>: 5: Me\n"},
+	}
+
+	out := os.Stdout
+	if path := os.Getenv("I20_OUT"); path != "" {
+		f, err := os.Create(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer f.Close()
+		out = f
+	}
+	measure := func(run func() ([]byte, error)) (pixels int, conns, opens int32, errText string) {
+		c0, o0 := probe.conns.Load(), probe.opens.Load()
+		raw, err := run()
+		time.Sleep(150 * time.Millisecond)
+		conns, opens = probe.conns.Load()-c0, probe.opens.Load()-o0
+		if err != nil {
+			return 0, conns, opens, fmt.Sprintf("%.160s", err.Error())
+		}
+		if img, derr := png.Decode(bytes.NewReader(raw)); derr == nil {
+			pixels = i20Magenta(img)
+		}
+		return pixels, conns, opens, ""
+	}
+
+	live, inert, leaks := 0, 0, 0
+	for _, a := range attacks {
+		src := fill.Replace(a.src)
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		cp, cc, co, cerr := measure(func() ([]byte, error) {
+			html, err := renderMermaid(ctx, src, MermaidPNG)
+			if err != nil {
+				return nil, err
+			}
+			return i20PNGFromHTML(html), nil
+		})
+		var svg string
+		_, sc, so, serr := measure(func() ([]byte, error) {
+			var err error
+			svg, err = renderMermaid(ctx, src, MermaidSVG)
+			return nil, err
+		})
+		cancel()
+		up, uc, uo, uerr := measure(func() ([]byte, error) { return i20Unconfined(src) })
+		svgNames := strings.Contains(svg, canary) || strings.Contains(svg, fifo) || strings.Contains(svg, hostport)
+		row := map[string]any{
+			"name": a.name, "confined_png": []any{cp, cc, co, cerr}, "confined_svg": []any{sc, so, serr, svgNames},
+			"unconfined_png": []any{up, uc, uo, uerr},
+		}
+		line, _ := json.Marshal(row)
+		fmt.Fprintf(out, "%s\n", line)
+		if up > 0 || uc > 0 || uo > 0 {
+			live++
+		} else {
+			inert++
+		}
+		if cp > 0 || cc > 0 || co > 0 || sc > 0 || so > 0 {
+			leaks++
+			t.Errorf("I20 LEAK %s: confined png pixels=%d conns=%d opens=%d; svg conns=%d opens=%d", a.name, cp, cc, co, sc, so)
+		}
+	}
+	probe.mu.Lock()
+	t.Logf("I20 recorder saw %d request lines in all (confined and unconfined)", len(probe.lines))
+	probe.mu.Unlock()
+	t.Logf("I20 ATTACK SUMMARY payloads=%d live_unconfined=%d inert_unconfined=%d confined_leaks=%d", len(attacks), live, inert, leaks)
+
+	// Ordinary diagrams: the confined render is the unconfined render.
+	data := "data:image/png;base64," + base64.StdEncoding.EncodeToString(canaryBytes.Bytes())
+	legit := []payload{
+		{"fa-icons", "flowchart TD\n  A[fa:fa-user User] --> B[fa:fa-database DB]\n"},
+		{"katex", "flowchart LR\n  A[\"$$x^2 + y^2$$\"] --> B[\"$$\\frac{a}{b}$$\"]\n"},
+		{"subgraph-classdef-linkstyle", "flowchart LR\n  subgraph one\n    A --> B\n  end\n  B --> C{Choice}\n  C -->|yes| D\n  classDef hot fill:#f96,stroke:#333,stroke-width:2px\n  class A,D hot\n  linkStyle 0 stroke:#f00,stroke-width:3px\n"},
+		{"sequence", "sequenceDiagram\n  autonumber\n  Alice->>Bob: Hello\n  Note right of Bob: thinks\n  Bob-->>Alice: Hi\n"},
+		{"class", "classDiagram\n  class Animal {\n    +String name\n    +eat()\n  }\n  Animal <|-- Dog\n"},
+		{"state", "stateDiagram-v2\n  [*] --> Idle\n  Idle --> Busy: go\n  Busy --> [*]\n"},
+		{"er", "erDiagram\n  CUSTOMER ||--o{ ORDER : places\n  ORDER {\n    int id\n  }\n"},
+		{"gantt", "gantt\n  dateFormat YYYY-MM-DD\n  section A\n  Task one :a1, 2026-01-01, 10d\n  Task two :after a1, 5d\n"},
+		{"pie", "pie title Pets\n  \"Dogs\" : 5\n  \"Cats\" : 3\n"},
+		{"mindmap-icon", "mindmap\n  root((Plan))\n    Idea\n    ::icon(fa fa-book)\n    Other\n"},
+		{"gitgraph", "gitGraph\n  commit\n  branch dev\n  commit\n  checkout main\n  merge dev\n"},
+		{"data-image-shape-and-img", "flowchart TD\n  A@{ img: \"" + data + "\", label: \"a\", pos: \"t\", w: 60, h: 60, constraint: \"on\" }\n  A --> B[\"<img src='" + data + "' width=30 height=30>\"]\n"},
+		{"unicode-emoji", "flowchart TD\n  A[\"Zoë 😀 日本語\"] --> B[\"línea<br/>dos\"]\n"},
+		{"timeline", "timeline\n  title History\n  2025 : one\n  2026 : two\n"},
+		{"quadrant", "quadrantChart\n  title Reach\n  x-axis Low --> High\n  y-axis Low --> High\n  A: [0.3, 0.6]\n"},
+		{"xychart", "xychart-beta\n  title \"Sales\"\n  x-axis [jan, feb]\n  bar [5, 9]\n"},
+		{"elk-layout", "%%{init: {\"layout\":\"elk\"}}%%\nflowchart LR\n  A --> B --> C\n  A --> C\n"},
+		{"theme-forest-themecss", "%%{init: {\"theme\":\"forest\",\"themeCSS\":\".node rect{stroke-width:4px}\"}}%%\nflowchart TD\n  A --> B\n"},
+	}
+	same, different := 0, 0
+	for _, l := range legit {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		html, err := renderMermaid(ctx, l.src, MermaidPNG)
+		cancel()
+		want, uerr := i20Unconfined(l.src)
+		verdict := "identical"
+		switch {
+		case err != nil || uerr != nil:
+			verdict = fmt.Sprintf("error confined=%v unconfined=%v", err, uerr)
+		default:
+			a, aerr := png.Decode(bytes.NewReader(i20PNGFromHTML(html)))
+			b, berr := png.Decode(bytes.NewReader(want))
+			if aerr != nil || berr != nil || a.Bounds() != b.Bounds() {
+				verdict = "different bounds or undecodable"
+			} else {
+				n := 0
+				for y := a.Bounds().Min.Y; y < a.Bounds().Max.Y; y++ {
+					for x := a.Bounds().Min.X; x < a.Bounds().Max.X; x++ {
+						if color.RGBAModel.Convert(a.At(x, y)) != color.RGBAModel.Convert(b.At(x, y)) {
+							n++
+						}
+					}
+				}
+				if n > 0 {
+					verdict = fmt.Sprintf("%d pixels differ of %d", n, a.Bounds().Dx()*a.Bounds().Dy())
+				}
+			}
+		}
+		if verdict == "identical" {
+			same++
+		} else {
+			different++
+		}
+		fmt.Fprintf(out, "{\"legit\":%q,\"verdict\":%q}\n", l.name, verdict)
+	}
+	t.Logf("I20 LEGIT SUMMARY diagrams=%d identical=%d different=%d", len(legit), same, different)
+}
