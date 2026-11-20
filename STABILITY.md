@@ -273,7 +273,7 @@ not listed here is either GFM (via goldmark's GFM extension) or not supported.
 - **YAML front-matter** — `title` field extracted for `<title>`. **stable**.
 - **Inline math** — `$...$` rendered via server-side KaTeX. **stable**.
 - **Block math** — `$$...$$` rendered via server-side KaTeX. **stable**.
-- **Code-block protection** — `$…$` inside fenced code blocks and inline code is not extracted as math. **stable**.
+- **Code-block protection** — `$…$` inside code is not extracted as math, for every form of code CommonMark has: fences of ``` or `~~~` (indented up to three spaces, in lists and block quotes), indented code blocks, and code spans of any backtick count. Code is found by goldmark's own parse (`internal/mdmath`), shared by the HTML/PDF pipeline and the ADF converter. **stable**.
 - **Mermaid** — ```` ```mermaid ```` fenced blocks via `mmdc`. HTML/view embed **SVG** (vector). PDF keeps **PNG** at 2× scale because Mermaid SVG `foreignObject` labels do not paint in Prince. **stable** (dual path, 🎯T17).
 - **`<!-- vellum:scale N -->`** hint — applies a CSS `max-width: N * 100%` to the *next* Mermaid block. `N > 0`. **stable** (the comment syntax is stable; future hints may be added under the same `vellum:` prefix).
 - **`<!-- vellum:toc -->`** hint — replaced with a static Contents list (nested heading links, depth h1–h3). Same effect as `style.toc: true` except placement follows the hint. **needs review** (🎯T38).

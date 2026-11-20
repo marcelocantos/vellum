@@ -408,3 +408,36 @@ func collectTypes(nodes []adf.Node) map[string]bool {
 	walk(nodes)
 	return m
 }
+
+// Defect hunt 2026-11-20 finding 4 (ADF path): a fence indented by a
+// space is code, so its $…$ stays in the code block.
+func TestConvert_MathLeavesIndentedFenceAlone(t *testing.T) {
+	for _, src := range []string{" ```\n $E = mc^2$\n ```\n", "~~~\n$E = mc^2$\n~~~\n", "    cost $5 and $10\n"} {
+		doc, err := adf.Convert(src, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		raw, _ := json.Marshal(doc)
+		s := string(raw)
+		if strings.Contains(s, `"language":"latex"`) || !strings.Contains(s, "$") {
+			t.Errorf("%q: code became math: %s", src, s)
+		}
+	}
+}
+
+// Code is no longer swapped out for <!--ADFCODE:n--> sentinels, so a
+// span that contains that text cannot duplicate another span (defect
+// hunt 2026-11-20 finding 8, third case).
+func TestConvert_ADFCodeSentinelDoesNotDuplicate(t *testing.T) {
+	for _, src := range []string{"`<!--ADFCODE:1-->`\n\n`SECOND`\n", "`<!--ADFCODE:0-->`\n\n`secret`\n"} {
+		doc, err := adf.Convert(src, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		raw, _ := json.Marshal(doc)
+		s := string(raw)
+		if !strings.Contains(s, "ADFCODE:") || strings.Count(s, "SECOND")+strings.Count(s, "secret") != 1 {
+			t.Errorf("%q: sentinel restore rewrote a code span: %s", src, s)
+		}
+	}
+}

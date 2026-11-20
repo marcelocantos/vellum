@@ -9,8 +9,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"os/exec"
-	"regexp"
 	"strings"
+
+	"github.com/marcelocantos/vellum/internal/mdmath"
 )
 
 // katexResolveScript binds `katex` using createRequire against the global
@@ -67,17 +68,6 @@ type mathExpr struct {
 	DisplayMode bool   `json:"displayMode"`
 }
 
-var (
-	// Match $$...$$ blocks (possibly multiline) in markdown source.
-	blockMathRe = regexp.MustCompile(`(?m)^\$\$\s*\n([\s\S]+?)\n\$\$\s*$`)
-	// Match inline $...$ (no newlines, no leading/trailing space).
-	inlineMathRe = regexp.MustCompile(`\$([^\n$]+?)\$`)
-	// Match fenced code blocks (``` or ~~~) to protect them from math extraction.
-	fencedCodeRe = regexp.MustCompile("(?m)^```[\\s\\S]*?^```\\s*$")
-	// Match inline code (`...`).
-	inlineCodeRe = regexp.MustCompile("`[^`\n]+`")
-)
-
 // mathPreprocessor extracts math expressions from markdown source before
 // goldmark processes it, replacing them with HTML-safe placeholders that
 // goldmark will pass through unchanged. After rendering, call ReplaceAll
@@ -103,48 +93,32 @@ func (m *mathPreprocessor) placeholder(expr string, display bool, lines int) str
 	return p
 }
 
-// Extract finds all math expressions in the markdown source and replaces
-// them with HTML comment placeholders that goldmark will ignore.
-// Code blocks and inline code are protected from math extraction.
+// Extract finds the math in the markdown source (mdmath.Find: never
+// inside code, as CommonMark defines it) and replaces each expression
+// with an HTML comment placeholder that goldmark passes through. Display
+// math is numbered first, then inline, each in source order.
 func (m *mathPreprocessor) Extract(src string) string {
-	// Temporarily replace code blocks and inline code with placeholders
-	// so the math regexes don't match $ inside code.
-	var codeBlocks []string
-	src = fencedCodeRe.ReplaceAllStringFunc(src, func(match string) string {
-		idx := len(codeBlocks)
-		codeBlocks = append(codeBlocks, match)
-		return fmt.Sprintf("<!--CODE:%d-->", idx)
-	})
-	src = inlineCodeRe.ReplaceAllStringFunc(src, func(match string) string {
-		idx := len(codeBlocks)
-		codeBlocks = append(codeBlocks, match)
-		return fmt.Sprintf("<!--CODE:%d-->", idx)
-	})
-
-	// Block math first ($$...$$ on own lines).
-	src = blockMathRe.ReplaceAllStringFunc(src, func(match string) string {
-		inner := blockMathRe.FindStringSubmatch(match)
-		if len(inner) < 2 {
-			return match
-		}
-		return m.placeholder(strings.TrimSpace(inner[1]), true, lineCount(match))
-	})
-
-	// Inline math ($...$).
-	src = inlineMathRe.ReplaceAllStringFunc(src, func(match string) string {
-		inner := inlineMathRe.FindStringSubmatch(match)
-		if len(inner) < 2 {
-			return match
-		}
-		return m.placeholder(strings.TrimSpace(inner[1]), false, 0)
-	})
-
-	// Restore code blocks.
-	for i, code := range codeBlocks {
-		src = strings.Replace(src, fmt.Sprintf("<!--CODE:%d-->", i), code, 1)
+	spans := mdmath.Find(src)
+	if len(spans) == 0 {
+		return src
 	}
-
-	return src
+	placeholders := make([]string, len(spans))
+	for _, display := range []bool{true, false} {
+		for i, sp := range spans {
+			if sp.Display == display {
+				placeholders[i] = m.placeholder(sp.Expr, sp.Display, lineCount(src[sp.Start:sp.End]))
+			}
+		}
+	}
+	var b strings.Builder
+	last := 0
+	for i, sp := range spans {
+		b.WriteString(src[last:sp.Start])
+		b.WriteString(placeholders[i])
+		last = sp.End
+	}
+	b.WriteString(src[last:])
+	return b.String()
 }
 
 // ReplaceAll batch-renders all collected math expressions via KaTeX

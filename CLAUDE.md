@@ -31,6 +31,7 @@ Markdown → pptx path: Mermaid preprocessor (PNG, inlined as images) → pandoc
 | `importer/` | Rich-text → Markdown via pandoc; PDF via Poppler |
 | `adf/` | Markdown → Confluence ADF (library only; not a `convert.Run` sink) |
 | `internal/pandoc/` | pandoc export helpers: HTML → RTF/plain (clipboard fallback) and Markdown → file (pptx); not a public API |
+| `internal/mdmath/` | Finds `$…$` / `$$…$$` math outside code, with code located by a goldmark parse (CommonMark fences, indented blocks, code spans); used by `convert` (KaTeX placeholders) and `adf` (latex fences). |
 | `internal/safehtml/` | Allow-list HTML sanitiser (x/net/html parse → filter → render) for the viewer: `Document` for a document's own HTML, `Rendered` scrubs KaTeX/Mermaid fragments. The viewer pairs it with a nonce CSP (`viewer/csp.go`). |
 | `internal/xdg/` | Per-user config directory (`$XDG_CONFIG_HOME/vellum`, else `~/.config/vellum`; `%APPDATA%\vellum` on Windows) shared by `config/` and template lookup |
 | `internal/fileurl/`, `internal/shim/`, `internal/hint/` | Portability helpers: drive-letter-safe `file://` URLs, running npm `.cmd` shims (mmdc) as `node <script>` on Windows, per-OS install/service hints |
