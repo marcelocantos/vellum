@@ -10,9 +10,7 @@ import (
 	"errors"
 	"io"
 	"io/fs"
-	"net"
 	"net/http"
-	"net/url"
 	"os"
 	"path"
 	"strings"
@@ -112,45 +110,9 @@ func (s *Server) handleEditorAsset(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(data)
 }
 
-// editRequestAllowed rejects requests that a page other than the viewer
-// could have sent. The server binds loopback only, but a browser will
-// still deliver a cross-site request to it, and a DNS-rebinding name
-// that resolves to 127.0.0.1 makes such a page same-origin. So the Host
-// must be a loopback literal or localhost, a present Origin must be this
-// server, and the browser's own Sec-Fetch-Site (when sent) must agree.
-// PUT is not a CORS-simple method, so a cross-origin PUT needs a
-// preflight, which this server never approves.
-func editRequestAllowed(r *http.Request) bool {
-	host := r.Host
-	if h, _, err := net.SplitHostPort(host); err == nil {
-		host = h
-	}
-	host = strings.Trim(host, "[]")
-	if !strings.EqualFold(host, "localhost") {
-		ip := net.ParseIP(host)
-		if ip == nil || !ip.IsLoopback() {
-			return false
-		}
-	}
-	if origin := r.Header.Get("Origin"); origin != "" {
-		u, err := url.Parse(origin)
-		if err != nil || u.Host != r.Host {
-			return false
-		}
-	}
-	if site := r.Header.Get("Sec-Fetch-Site"); site != "" && site != "same-origin" && site != "none" {
-		return false
-	}
-	return true
-}
-
 func (s *Server) handleEdit(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet && r.Method != http.MethodPut {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	if !editRequestAllowed(r) {
-		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
 	absPath, err := queryAbsPath(r)

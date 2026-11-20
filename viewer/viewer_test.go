@@ -13,6 +13,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/marcelocantos/vellum/embed"
 )
 
 func startTestServer(t *testing.T, s *Server) *httptest.Server {
@@ -143,6 +145,114 @@ func TestServer_Healthz(t *testing.T) {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status %d", resp.StatusCode)
+	}
+}
+
+func TestServer_RequestBoundaries(t *testing.T) {
+	dir := t.TempDir()
+	md := filepath.Join(dir, "doc.md")
+	asset := filepath.Join(dir, "image.txt")
+	for _, path := range []string{md, asset} {
+		if err := os.WriteFile(path, []byte("viewer fixture\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s := &Server{
+		CacheDir: filepath.Join(dir, "cache"),
+		MCP: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusNoContent)
+		}),
+	}
+	handler := s.Handler()
+
+	// Every registration in Server.Handler, with both branches of the
+	// filesystem catch-all and concrete files under each asset prefix.
+	routes := []struct {
+		name, method, path string
+	}{
+		{"health", http.MethodGet, HealthPath},
+		{"mcp", http.MethodPost, MCPPath},
+		{"mcp subtree", http.MethodPost, MCPPath + "/"},
+		{"pdf", http.MethodGet, ChromePDFPath},
+		{"clipboard", http.MethodPost, ChromeClipboardPath},
+		{"reveal", http.MethodPost, ChromeRevealPath},
+		{"watch", http.MethodGet, ChromeWatchPath},
+		{"task toggle", http.MethodPost, ChromeTaskTogglePath},
+		{"edit read", http.MethodGet, ChromeEditPath},
+		{"edit write", http.MethodPut, ChromeEditPath},
+		{"editor bundle", http.MethodGet, ChromeEditorPrefix + EditorEntry},
+		{"fragment", http.MethodGet, ChromeFragmentPath},
+		{"favicon", http.MethodGet, ChromeFaviconPath},
+		{"file manager icon", http.MethodGet, ChromeFileManagerIconPath},
+		{"katex", http.MethodGet, ChromeKaTeXPrefix + embed.KaTeXCSSName},
+		{"favicon ico", http.MethodGet, FaviconICOPath},
+		{"markdown", http.MethodGet, pathURL(md)},
+		{"static file", http.MethodGet, pathURL(asset)},
+	}
+	const localHost = "127.0.0.1:18742"
+	const foreignHost = "foreign.example:18742"
+	for _, route := range routes {
+		t.Run(route.name, func(t *testing.T) {
+			requests := []struct {
+				name, method, host, origin, site string
+				healthStatus                     int
+			}{
+				{"foreign host", route.method, foreignHost, "", "", http.StatusOK},
+				{"foreign origin", route.method, localHost, "https://foreign.example", "", http.StatusOK},
+				{"cross-origin POST", http.MethodPost, localHost, "https://foreign.example", "", http.StatusMethodNotAllowed},
+				{"cross-site POST", http.MethodPost, localHost, "", "cross-site", http.StatusMethodNotAllowed},
+			}
+			for _, tc := range requests {
+				t.Run(tc.name, func(t *testing.T) {
+					req := httptest.NewRequest(tc.method, route.path, nil)
+					req.Host = tc.host
+					if tc.origin != "" {
+						req.Header.Set("Origin", tc.origin)
+					}
+					if tc.site != "" {
+						req.Header.Set("Sec-Fetch-Site", tc.site)
+					}
+					w := httptest.NewRecorder()
+					handler.ServeHTTP(w, req)
+					want := http.StatusForbidden
+					if route.path == HealthPath {
+						want = tc.healthStatus
+					}
+					if w.Code != want {
+						t.Errorf("status %d, want %d", w.Code, want)
+					}
+				})
+			}
+		})
+	}
+}
+
+func TestServer_AllowsLocalRequests(t *testing.T) {
+	s := &Server{MCP: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})}
+	handler := s.Handler()
+	for _, host := range []string{"127.0.0.1:18742", "127.0.0.1:18744", "127.0.0.2", "localhost:18742", "LOCALHOST", "[::1]:18742", "[::1]"} {
+		t.Run(host, func(t *testing.T) {
+			// A client without browser metadata can still POST to MCP.
+			req := httptest.NewRequest(http.MethodPost, MCPPath, nil)
+			req.Host = host
+			w := httptest.NewRecorder()
+			handler.ServeHTTP(w, req)
+			if w.Code != http.StatusNoContent {
+				t.Errorf("MCP POST status %d, want 204", w.Code)
+			}
+
+			req = httptest.NewRequest(http.MethodGet, ChromeFaviconPath, nil)
+			req.Host = host
+			req.Header.Set("Origin", "http://"+host)
+			req.Header.Set("Sec-Fetch-Site", "same-origin")
+			w = httptest.NewRecorder()
+			handler.ServeHTTP(w, req)
+			if w.Code != http.StatusOK {
+				t.Errorf("same-origin GET status %d, want 200", w.Code)
+			}
+		})
 	}
 }
 

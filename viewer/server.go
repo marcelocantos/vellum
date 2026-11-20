@@ -176,7 +176,41 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle(ChromeKaTeXPrefix, http.StripPrefix(ChromeKaTeXPrefix, http.FileServerFS(embed.KaTeX())))
 	mux.HandleFunc(FaviconICOPath, s.handleFavicon)
 	mux.HandleFunc("/", s.handlePath)
-	return mux
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// The liveness probe serves a constant response and needs no browser context.
+		if r.URL.Path != HealthPath && !localRequestAllowed(r) {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		mux.ServeHTTP(w, r)
+	})
+}
+
+// A loopback listener still receives requests from foreign browser pages.
+// Check the literal Host without resolving it, then reject cross-origin
+// browser metadata when present. Local clients may omit both headers.
+func localRequestAllowed(r *http.Request) bool {
+	host, _, err := net.SplitHostPort(r.Host)
+	if err != nil {
+		host = r.Host
+		if strings.HasPrefix(host, "[") && strings.HasSuffix(host, "]") {
+			host = host[1 : len(host)-1]
+		}
+	}
+	if !strings.EqualFold(host, "localhost") && !net.ParseIP(host).IsLoopback() {
+		return false
+	}
+	for _, origin := range r.Header.Values("Origin") {
+		if !strings.EqualFold(origin, requestOrigin(r)) {
+			return false
+		}
+	}
+	for _, site := range r.Header.Values("Sec-Fetch-Site") {
+		if site != "same-origin" && site != "none" {
+			return false
+		}
+	}
+	return true
 }
 
 // ListenAndServe binds Addr (localhost only) and serves until ctx is cancelled
