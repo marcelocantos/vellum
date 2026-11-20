@@ -229,7 +229,7 @@ Do not aggregate these states into a scalar.
 
 - **Priority:** P2
 - **Dimensions:** Architecture topology; Correctness / verification
-- **Status:** observed fact
+- **Status:** resolved. The file sink uses `internal/pandoc.HTMLToRTF` with the source directory as its resource path. Tests cover CLI extension inference, explicit MCP format selection, and a pandoc round-trip under the T23 TextKit sandbox.
 - **Evidence:**
   - `convert/run.go:45` `FormatRTF = "rtf"`; `:606-607` `.rtf` → `FormatRTF`.
   - `convert/run.go:490-491` `writeFileOutput` default: `to.media file does not support format %q`.

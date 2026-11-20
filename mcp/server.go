@@ -119,6 +119,8 @@ Examples:
 
 Formats are inferred aggressively (file extension, clipboard UTI, markdown default for content, pdf for md→file, markdown for rich→file). Optional from.format / to.format override.
 
+RTF file output uses pandoc and preserves structural formatting such as bold and italic. Select it with a .rtf output path or to.format rtf.
+
 PowerPoint: to.path ending .pptx (or to.format pptx) writes a deck through pandoc. Headings at the slide level become slides, headings above it section slides, a YAML title block the title slide; lists, tables, images, code, math and ::: notes speaker notes carry through; Mermaid blocks become PNG pictures. Optional template picks the reference deck (a .pptx path, a bare name under ~/.config/vellum/templates/, or default for pandoc's default deck).
 
 Rich import (rtf/docx/html/… via pandoc; pdf via pdftoppm+pdftotext) extracts images/page renders into a TTL cache (or media_dir) and rewrites Markdown to absolute asset paths. Clipboard import probes RTF, HTML, then PDF (e.g. PowerPoint com.adobe.pdf).

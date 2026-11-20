@@ -4,15 +4,21 @@
 package mcp
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/marcelocantos/vellum/internal/pandoc"
+	"github.com/marcelocantos/vellum/internal/testdeps"
 )
 
 // TestHTTPHandler_ConvertOverStreamableHTTP connects a real MCP client
@@ -71,6 +77,36 @@ func TestHTTPHandler_ConvertOverStreamableHTTP(t *testing.T) {
 	if !strings.Contains(string(raw), "content") {
 		t.Fatalf("structured output missing content field: %s", raw)
 	}
+
+	t.Run("RTF file", func(t *testing.T) {
+		testdeps.Need(t, pandoc.Binary)
+		dir := t.TempDir()
+		in, out := filepath.Join(dir, "report.md"), filepath.Join(dir, "report.out")
+		const marker = "MCP RTF fixture"
+		if err := os.WriteFile(in, []byte("**"+marker+"**\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		result, err := session.CallTool(ctx, &mcp.CallToolParams{
+			Name: "convert",
+			Arguments: ConvertInput{
+				From: &Endpoint{Media: "file", Path: in},
+				To:   &Endpoint{Media: "file", Path: out, Format: "rtf"},
+			},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if result.IsError {
+			t.Fatalf("convert IsError: %s", toolText(result))
+		}
+		rtf, err := os.ReadFile(out)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.HasPrefix(rtf, []byte(`{\rtf`)) || !bytes.Contains(rtf, []byte(marker)) {
+			t.Fatalf("output is missing the RTF signature or fixture text: %q", rtf)
+		}
+	})
 }
 
 // TestHTTPHandler_MountedAtMCPPath mirrors viewer.Server: the handler

@@ -209,8 +209,13 @@ sugar). Formats are inferred aggressively when omitted:
 | `to.media=clipboard` | rich (RTF+HTML+plain) |
 | `to.media=content` | `markdown` |
 | `to.media=file` from markdown | `pdf` |
+| `to.media=file` with `path` ending `.rtf` | `rtf` (Rich Text Format) |
 | `to.media=file` with `path` ending `.pptx` | `pptx` (PowerPoint deck) |
 | `to.media=file` from rich-text / pdf | `markdown` |
+
+RTF file output uses `pandoc` on PATH. Select it with a `.rtf` output path
+or `to.format=rtf`. Structural formatting such as bold and italic is
+preserved. Pandoc ignores CSS.
 
 **Rich import:** RTF/DOCX/HTML/… via pandoc with `--extract-media`; PDF
 via Poppler (`pdftoppm` page PNGs + `pdftotext`). Media is written under

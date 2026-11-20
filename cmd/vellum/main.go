@@ -652,7 +652,7 @@ Options:
   --from <media>      Source medium (required)
   --to <media>        Sink medium (required)
   --format <fmt>      Source format override (markdown, html, rtf, docx, …)
-  --to-format <fmt>   Sink format override (markdown, html, pdf, …)
+  --to-format <fmt>   Sink format override (markdown, html, pdf, rtf, pptx, …)
   -o <path>           Output path (file / file_reference sinks)
   --backend <name>    PDF backend: weasyprint (default) or prince
   --template <t>      PowerPoint reference deck for pptx output: a .pptx
@@ -662,6 +662,7 @@ Options:
 
 Examples:
   vellum convert --from file --to file report.md -o report.pdf
+  vellum convert --from file --to file report.md -o report.rtf
   vellum convert --from file --to file deck.md -o deck.pptx
   vellum convert --from file --to file deck.md --to-format pptx --template brand.pptx
   vellum convert --from file --to clipboard report.md
@@ -676,6 +677,9 @@ Shorthand (also available):
   vellum --to-clipboard report.md   → --from file --to clipboard
   vellum import doc.docx            → --from file --to content
   vellum import --from-clipboard    → --from clipboard --to content
+
+RTF file output uses pandoc and preserves structural formatting such as
+bold and italic. Pandoc ignores CSS.
 
 PowerPoint (pptx): headings at the slide level become slides, headings
 above it section slides, a YAML title block the title slide; lists,

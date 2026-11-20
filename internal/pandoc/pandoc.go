@@ -43,20 +43,22 @@ func Available() error {
 // silently drops images that were written next to the source.
 //
 // pandoc reads the markup, not the stylesheet, so structural formatting
-// (bold, italic, headings, lists) survives and CSS does not.
-func HTMLToRTF(html, resourcePath string) ([]byte, error) {
+// (bold, italic, headings, lists) survives and CSS does not. Warnings
+// report content pandoc dropped while still producing a document.
+func HTMLToRTF(ctx context.Context, html, resourcePath string) (rtf []byte, warnings []string, err error) {
 	// --standalone emits the {\rtf … } wrapper; without it pandoc writes
 	// a bare fragment that no RTF consumer will accept as a document.
 	args := []string{"-f", "html", "-t", "rtf", "--standalone"}
 	if resourcePath != "" {
 		args = append(args, "--resource-path="+resourcePath)
 	}
-	return run(html, args...)
+	return run(ctx, html, args...)
 }
 
 // HTMLToPlain converts an HTML document to plain text.
 func HTMLToPlain(html string) ([]byte, error) {
-	return run(html, "-f", "html", "-t", "plain")
+	plain, _, err := run(context.Background(), html, "-f", "html", "-t", "plain")
+	return plain, err
 }
 
 // ToFile converts src from one format to another and writes the result
@@ -82,31 +84,36 @@ func ToFile(ctx context.Context, src, from, to, outPath string, extra ...string)
 		}
 		return nil, fmt.Errorf("%s -t %s: %w", Binary, to, err)
 	}
-	for _, line := range strings.Split(stderr.String(), "\n") {
+	return warningLines(stderr.String()), nil
+}
+
+func warningLines(stderr string) []string {
+	var warnings []string
+	for _, line := range strings.Split(stderr, "\n") {
 		if line = strings.TrimSpace(line); strings.HasPrefix(line, "[WARNING]") {
 			warnings = append(warnings, Binary+": "+strings.TrimSpace(strings.TrimPrefix(line, "[WARNING]")))
 		}
 	}
-	return warnings, nil
+	return warnings
 }
 
-func run(stdin string, args ...string) ([]byte, error) {
+func run(ctx context.Context, stdin string, args ...string) ([]byte, []string, error) {
 	if err := Available(); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	cmd := exec.Command(Binary, args...)
+	cmd := exec.CommandContext(ctx, Binary, args...)
 	cmd.Stdin = strings.NewReader(stdin)
 	var out, stderr bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
 		if msg := strings.TrimSpace(stderr.String()); msg != "" {
-			return nil, fmt.Errorf("%s %s: %w: %s", Binary, strings.Join(args, " "), err, msg)
+			return nil, nil, fmt.Errorf("%s %s: %w: %s", Binary, strings.Join(args, " "), err, msg)
 		}
-		return nil, fmt.Errorf("%s %s: %w", Binary, strings.Join(args, " "), err)
+		return nil, nil, fmt.Errorf("%s %s: %w", Binary, strings.Join(args, " "), err)
 	}
 	if out.Len() == 0 {
-		return nil, fmt.Errorf("%s %s produced no output", Binary, strings.Join(args, " "))
+		return nil, nil, fmt.Errorf("%s %s produced no output", Binary, strings.Join(args, " "))
 	}
-	return out.Bytes(), nil
+	return out.Bytes(), warningLines(stderr.String()), nil
 }

@@ -4,6 +4,8 @@
 package clipboard
 
 import (
+	"context"
+
 	"github.com/marcelocantos/vellum/internal/pandoc"
 )
 
@@ -17,7 +19,7 @@ import (
 func pandocRichText(html string) (rtf, plain []byte, err error) {
 	// No resource path: the pasteboard carries bytes, not a document
 	// directory, so relative images cannot travel with it either way.
-	rtf, err = pandoc.HTMLToRTF(html, "")
+	rtf, _, err = pandoc.HTMLToRTF(context.Background(), html, "")
 	if err != nil {
 		return nil, nil, err
 	}

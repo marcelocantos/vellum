@@ -49,6 +49,8 @@ func TestPreflight(t *testing.T) {
 			Endpoint{Media: MediaClipboard}, nil, nil},
 		{"md→pptx needs pandoc only", nil, "", file(""), md, file(FormatPPTX),
 			[]string{`required dependency "pandoc" ` + missingWording}, []string{"weasyprint", "mmdc"}},
+		{"md→rtf inferred needs pandoc only", nil, "", file(""), md, Endpoint{Media: MediaFile, Path: "out.rtf"},
+			[]string{`required dependency "pandoc" ` + missingWording}, []string{"weasyprint", "mmdc"}},
 		{"docx→md needs pandoc", nil, "", file(""), docx, file(""),
 			[]string{`"pandoc"`}, []string{"weasyprint"}},
 		{"docx→pdf without renderer", []string{"pandoc", "node", "mmdc"}, "", file(""), docx, file(FormatPDF),
