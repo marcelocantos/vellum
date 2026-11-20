@@ -329,55 +329,66 @@ func (s *Server) readServed(p string) ([]byte, os.FileInfo, error) {
 // writeServed replaces p's contents atomically inside its served root:
 // a temporary file beside the target, then a rename, both through
 // os.Root. A symlinked path replaces its target (the link stays a link),
-// and the file keeps its mode.
-func (s *Server) writeServed(p string, data []byte) error {
+// and the file keeps its mode. The returned info is the written file's
+// own (rename keeps its mtime and size), so a stamp made from it names
+// this write even if another lands right after it.
+func (s *Server) writeServed(p string, data []byte) (os.FileInfo, error) {
 	if s.WriteFile != nil {
 		if err := s.checkServed(p); err != nil {
-			return err
+			return nil, err
 		}
-		return s.WriteFile(p, data)
+		if err := s.WriteFile(p, data); err != nil {
+			return nil, err
+		}
+		return s.statServed(p)
 	}
 	dir, rel, err := s.confine(p)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	root, err := os.OpenRoot(dir)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer root.Close()
 	mode := os.FileMode(0o644)
 	if info, err := root.Stat(rel); err == nil {
 		mode = info.Mode().Perm()
 	} else if !errors.Is(err, fs.ErrNotExist) {
-		return s.servedError(p, err)
+		return nil, s.servedError(p, err)
 	}
 	var nonce [8]byte
 	_, _ = rand.Read(nonce[:])
 	tmp := filepath.Join(filepath.Dir(rel), ".vellum-write-"+hex.EncodeToString(nonce[:])+".tmp")
 	f, err := root.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
-		return s.servedError(p, err)
+		return nil, s.servedError(p, err)
 	}
 	if err := f.Chmod(mode); err != nil && runtime.GOOS != "windows" {
 		_ = f.Close()
 		_ = root.Remove(tmp)
-		return err
+		return nil, err
 	}
 	if _, err := f.Write(data); err != nil {
 		_ = f.Close()
 		_ = root.Remove(tmp)
-		return err
+		return nil, err
+	}
+	info, err := f.Stat()
+	if err != nil {
+		_ = f.Close()
+		_ = root.Remove(tmp)
+		return nil, err
 	}
 	if err := f.Close(); err != nil {
 		_ = root.Remove(tmp)
-		return err
+		return nil, err
 	}
 	if err := root.Rename(tmp, rel); err != nil {
 		_ = root.Remove(tmp)
-		return s.servedError(p, err)
+		return nil, s.servedError(p, err)
 	}
-	return nil
+	return info, nil
 }
 
 // servedStatus writes the HTTP error for a failed path operation and

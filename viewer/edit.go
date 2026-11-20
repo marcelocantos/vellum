@@ -166,10 +166,7 @@ func (s *Server) handleEdit(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "the file changed on disk since it was opened", http.StatusConflict)
 		return
 	}
-	if servedStatus(w, r, s.writeServed(absPath, body)) {
-		return
-	}
-	after, err := s.statServed(absPath)
+	after, err := s.writeServed(absPath, body)
 	if servedStatus(w, r, err) {
 		return
 	}

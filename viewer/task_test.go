@@ -346,3 +346,32 @@ func TestInjectChrome_ConsentDialogAndStamp(t *testing.T) {
 		t.Fatalf("missing task-toggle script:\n%s", out)
 	}
 }
+
+// The stamp a toggle or save reports names that write, not whatever is
+// on disk a moment later: the page adopts it, and an outside write that
+// lands right after must still look like a change.
+func TestWriteServed_ReportsItsOwnWrite(t *testing.T) {
+	dir := t.TempDir()
+	md := filepath.Join(dir, "doc.md")
+	if err := os.WriteFile(md, []byte("old\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s := &Server{CacheDir: filepath.Join(dir, "cache"), Roots: []string{dir}}
+	ours, err := s.writeServed(md, []byte("ours\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ours.Size() != int64(len("ours\n")) {
+		t.Fatalf("returned info size %d", ours.Size())
+	}
+	if now, _ := os.Stat(md); sourceStamp(now) != sourceStamp(ours) {
+		t.Fatalf("stamp of our write %q differs from the file %q", sourceStamp(ours), sourceStamp(now))
+	}
+	if err := os.WriteFile(md, []byte("theirs, longer\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	bumpMtime(t, md)
+	if now, _ := os.Stat(md); sourceStamp(now) == sourceStamp(ours) {
+		t.Fatal("an outside write after ours carries our stamp")
+	}
+}

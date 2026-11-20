@@ -26,7 +26,7 @@ func TestWriteServed_FollowsSymlinkAndKeepsIt(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := &Server{CacheDir: t.TempDir(), Roots: []string{dir}}
-	if err := s.writeServed(link, []byte("# Via link\n")); err != nil {
+	if _, err := s.writeServed(link, []byte("# Via link\n")); err != nil {
 		t.Fatal(err)
 	}
 	if fi, err := os.Lstat(link); err != nil || fi.Mode()&fs.ModeSymlink == 0 {

@@ -101,10 +101,7 @@ func (s *Server) handleTaskToggle(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusConflict)
 		return
 	}
-	if servedStatus(w, r, s.writeServed(absPath, out)) {
-		return
-	}
-	after, err := s.statServed(absPath)
+	after, err := s.writeServed(absPath, out)
 	if servedStatus(w, r, err) {
 		return
 	}
