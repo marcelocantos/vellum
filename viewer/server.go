@@ -92,6 +92,8 @@ type Server struct {
 	// WriteFile, when non-nil, replaces atomic Markdown writes (task-toggle
 	// and editor-save tests).
 	WriteFile func(path string, data []byte) error
+
+	mruMu sync.Mutex
 }
 
 // Origin returns the http://host:port origin for Addr (no trailing slash).
@@ -317,6 +319,10 @@ func (s *Server) handlePath(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	if r.URL.Path == "/" {
+		s.serveHome(w, r)
+		return
+	}
 	fsPath, err := urlPathToFS(r.URL.Path)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -382,6 +388,8 @@ func (s *Server) serveMarkdown(w http.ResponseWriter, r *http.Request, absPath s
 	}
 	page = lazyLoadImages(page)
 	page = injectChrome(page, absPath)
+	// A cache-dir failure must not hide a document that is already rendered.
+	_ = s.noteRecent(absPath)
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
