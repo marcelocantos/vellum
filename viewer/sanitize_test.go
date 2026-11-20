@@ -142,7 +142,7 @@ func TestServer_DocumentHTMLCannotRun(t *testing.T) {
 			if err := os.WriteFile(md, []byte("# Doc\n\n"+p.md+"\nTail paragraph.\n"), 0o644); err != nil {
 				t.Fatal(err)
 			}
-			s := &Server{CacheDir: filepath.Join(dir, "cache")}
+			s := &Server{CacheDir: filepath.Join(dir, "cache"), Roots: []string{dir}}
 			ts := startTestServer(t, s)
 			resp, err := http.Get(ts.URL + pathURL(md))
 			if err != nil {
@@ -172,7 +172,7 @@ func TestServer_DocumentHTMLCannotRun(t *testing.T) {
 // URLs and remote script even if the sanitiser let one through.
 func TestServer_DocumentCSP(t *testing.T) {
 	dir, md := writeDoc(t, "# Doc\n")
-	s := &Server{CacheDir: filepath.Join(dir, "cache")}
+	s := &Server{CacheDir: filepath.Join(dir, "cache"), Roots: []string{dir}}
 	ts := startTestServer(t, s)
 	var nonces []string
 	for range 2 {
@@ -230,7 +230,7 @@ func TestServer_DocumentCSP(t *testing.T) {
 // shows it without running its script on the viewer's origin.
 func TestServer_LinkedFilesAreSandboxed(t *testing.T) {
 	dir, _ := writeDoc(t, "# Doc\n")
-	s := &Server{CacheDir: filepath.Join(dir, "cache")}
+	s := &Server{CacheDir: filepath.Join(dir, "cache"), Roots: []string{dir}}
 	ts := startTestServer(t, s)
 	for name, body := range map[string]string{
 		"page.html":  "<script>parent.__pwned=1</script>",

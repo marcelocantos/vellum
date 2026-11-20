@@ -38,7 +38,7 @@ func TestServer_OneConvertPerGET(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	s := &Server{CacheDir: filepath.Join(dir, "cache")}
+	s := &Server{CacheDir: filepath.Join(dir, "cache"), Roots: []string{dir}}
 	ts := startTestServer(t, s)
 
 	if s.ConvertCount.Load() != 0 {
@@ -86,7 +86,7 @@ func TestServer_ReloadReconvertsOnMtime(t *testing.T) {
 	if err := os.WriteFile(md, []byte("# v1\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	s := &Server{CacheDir: filepath.Join(dir, "cache")}
+	s := &Server{CacheDir: filepath.Join(dir, "cache"), Roots: []string{dir}}
 	ts := startTestServer(t, s)
 
 	get := func() string {
@@ -158,7 +158,7 @@ func TestServer_RequestBoundaries(t *testing.T) {
 		}
 	}
 	s := &Server{
-		CacheDir: filepath.Join(dir, "cache"),
+		CacheDir: filepath.Join(dir, "cache"), Roots: []string{dir},
 		MCP: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusNoContent)
 		}),
@@ -269,7 +269,7 @@ func TestServer_CrossSiteRule(t *testing.T) {
 		}
 	}
 	s := &Server{
-		CacheDir: filepath.Join(dir, "cache"),
+		CacheDir: filepath.Join(dir, "cache"), Roots: []string{dir},
 		MCP: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusNoContent)
 		}),
@@ -429,7 +429,7 @@ func TestView_OpensServerURLNotFile(t *testing.T) {
 	if err := os.WriteFile(md, []byte("# Hello\n\ncache test body\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	s := &Server{CacheDir: filepath.Join(dir, "cache")}
+	s := &Server{CacheDir: filepath.Join(dir, "cache"), Roots: []string{dir}}
 	ts := startTestServer(t, s)
 
 	var opened []string

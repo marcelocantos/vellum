@@ -22,7 +22,7 @@ func TestAction_PDFDownload(t *testing.T) {
 	}
 	var converted []string
 	s := &Server{
-		CacheDir: filepath.Join(dir, "cache"),
+		CacheDir: filepath.Join(dir, "cache"), Roots: []string{dir},
 		ConvertPDF: func(ctx context.Context, in, out string) error {
 			converted = append(converted, in)
 			return os.WriteFile(out, []byte("%PDF-1.4 fake"), 0o644)
@@ -75,7 +75,7 @@ func TestAction_ClipboardPOST(t *testing.T) {
 	}
 	var got string
 	s := &Server{
-		CacheDir:   filepath.Join(dir, "cache"),
+		CacheDir: filepath.Join(dir, "cache"), Roots: []string{dir},
 		RenderFile: stubHTML,
 		WriteClipboard: func(html string) error {
 			got = html
@@ -122,7 +122,7 @@ func TestAction_RevealPOST(t *testing.T) {
 	}
 	var revealed string
 	s := &Server{
-		CacheDir: filepath.Join(dir, "cache"),
+		CacheDir: filepath.Join(dir, "cache"), Roots: []string{dir},
 		Reveal: func(p string) error {
 			revealed = p
 			return nil

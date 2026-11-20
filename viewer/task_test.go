@@ -94,7 +94,7 @@ func TestAction_TaskTogglePOST(t *testing.T) {
 	}
 	var wrote []byte
 	s := &Server{
-		CacheDir: filepath.Join(dir, "cache"),
+		CacheDir: filepath.Join(dir, "cache"), Roots: []string{dir},
 		WriteFile: func(path string, data []byte) error {
 			if path != md {
 				t.Fatalf("write path %q", path)
@@ -161,7 +161,7 @@ func TestAction_TaskToggleOutOfRange(t *testing.T) {
 	if err := os.WriteFile(md, []byte("- [ ] only\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	s := &Server{CacheDir: filepath.Join(dir, "cache")}
+	s := &Server{CacheDir: filepath.Join(dir, "cache"), Roots: []string{dir}}
 	ts := startTestServer(t, s)
 	u := ts.URL + ChromeTaskTogglePath + "?path=" + url.QueryEscape(md) + "&index=4"
 	resp, err := http.Post(u, "text/plain", nil)
@@ -182,7 +182,7 @@ func TestAction_TaskToggleWriteError(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := &Server{
-		CacheDir: filepath.Join(dir, "cache"),
+		CacheDir: filepath.Join(dir, "cache"), Roots: []string{dir},
 		WriteFile: func(path string, data []byte) error {
 			return os.ErrPermission
 		},

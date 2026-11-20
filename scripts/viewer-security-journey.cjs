@@ -142,7 +142,11 @@ function featureDoc() {
     "",
     "![pic](pic.png)",
     "",
+    "![outside pic](../outside.png)",
+    "",
     "[linked page](page.html)",
+    "",
+    "[outside doc](../outside.md)",
     "",
   ].join("\n");
 }
@@ -171,6 +175,8 @@ const PNG = Buffer.from(
   fs.writeFileSync(payloads, payloadDoc(beaconURL));
   fs.writeFileSync(features, featureDoc());
   fs.writeFileSync(path.join(docs, "pic.png"), PNG);
+  fs.writeFileSync(path.join(root, "outside.png"), PNG);
+  fs.writeFileSync(path.join(root, "outside.md"), "# Outside\n\nSECRET-OUTSIDE\n");
   fs.writeFileSync(path.join(docs, "page.html"), "<!doctype html><title>linked</title><p id=linked>linked page</p><script>window.__ran=1;try{parent.__pwned='linked-html'}catch(e){}</script>");
 
   const port = await freePort();
@@ -301,7 +307,24 @@ const PNG = Buffer.from(
     await page.click('[data-vellum="ed-close"]');
     check(cspViolations.length === ownViolations, "the viewer's own features hit the CSP: " + cspViolations.slice(ownViolations).join(" | "));
 
-    // 4. A linked HTML page opens sandboxed: no script, opaque origin.
+    // 4. Only docs/ is served: the browser's own requests for a file
+    // outside it (an image, a followed link) are refused; the user can
+    // still open that file directly, which serves its folder.
+    await page.goto(origin + features);
+    await page.waitForSelector(".vellum-article h1");
+    await page.waitForTimeout(300);
+    const outsidePic = await page.evaluate(() => {
+      const img = document.querySelector('.vellum-article img[alt="outside pic"]');
+      return img ? { complete: img.complete, w: img.naturalWidth } : null;
+    });
+    check(outsidePic && outsidePic.w === 0, "an image outside the served folder loaded: " + JSON.stringify(outsidePic));
+    const [outResp] = await Promise.all([page.waitForNavigation(), page.click('a[href$="outside.md"]')]);
+    check(outResp && outResp.status() === 403, "a link out of the served folder was served: " + (outResp && outResp.status()));
+    check(!(await page.content()).includes("SECRET-OUTSIDE"), "outside document content shown after a link");
+    const direct = await page.goto(origin + path.join(root, "outside.md"));
+    check(direct.status() === 200, "opening the outside document directly: " + direct.status());
+
+    // 5. A linked HTML page opens sandboxed: no script, opaque origin.
     await page.goto(origin + features);
     await page.waitForSelector(".vellum-article h1");
     await Promise.all([page.waitForNavigation(), page.click('a[href$="page.html"]')]);
@@ -324,7 +347,7 @@ const PNG = Buffer.from(
     process.exitCode = 1;
     return;
   }
-  console.log("PASS: payloads inert, CSP refuses injected script, viewer features work, linked HTML sandboxed");
+  console.log("PASS: payloads inert, CSP refuses injected script, viewer features work, only opened folders served, linked HTML sandboxed");
 })().catch((e) => {
   console.error(e);
   process.exitCode = 1;

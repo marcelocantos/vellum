@@ -22,7 +22,7 @@ func editTestDoc(t *testing.T, content string) (string, *Server, string) {
 	if err := os.WriteFile(md, []byte(content), 0o640); err != nil {
 		t.Fatal(err)
 	}
-	s := &Server{CacheDir: filepath.Join(dir, "cache")}
+	s := &Server{CacheDir: filepath.Join(dir, "cache"), Roots: []string{dir}}
 	ts := startTestServer(t, s)
 	return md, s, ts.URL + ChromeEditPath + "?path=" + url.QueryEscape(md)
 }
@@ -184,7 +184,7 @@ func TestEdit_RejectsNonMarkdownAndMissing(t *testing.T) {
 	if err := os.WriteFile(txt, []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	ts := startTestServer(t, &Server{CacheDir: filepath.Join(dir, "cache")})
+	ts := startTestServer(t, &Server{CacheDir: filepath.Join(dir, "cache"), Roots: []string{dir}})
 	for path, want := range map[string]int{
 		txt:                           http.StatusBadRequest,
 		filepath.Join(dir, "gone.md"): http.StatusNotFound,

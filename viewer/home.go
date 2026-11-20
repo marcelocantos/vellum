@@ -31,7 +31,7 @@ type recentDoc struct {
 // noteRecent records a successfully rendered Markdown file, newest first.
 func (s *Server) noteRecent(absPath string) error {
 	absPath = filepath.Clean(absPath)
-	title := recentTitle(absPath)
+	title := s.recentTitle(absPath)
 	s.mruMu.Lock()
 	defer s.mruMu.Unlock()
 	root, err := s.cacheRoot()
@@ -95,9 +95,9 @@ func writeRecent(root string, docs []recentDoc) error {
 	return os.Rename(tmp, filepath.Join(root, homeRecentName))
 }
 
-func recentTitle(absPath string) string {
+func (s *Server) recentTitle(absPath string) string {
 	fallback := strings.TrimSuffix(filepath.Base(absPath), filepath.Ext(absPath))
-	f, err := os.Open(absPath)
+	f, err := s.openServed(absPath)
 	if err != nil {
 		return fallback
 	}
@@ -119,7 +119,21 @@ func recentTitle(absPath string) string {
 }
 
 func (s *Server) serveHome(w http.ResponseWriter, r *http.Request) {
-	page := renderHome(s.recentDocs())
+	// The list was written by earlier runs, and folders stop being served
+	// when their grant ages out: show only what this server would serve.
+	var docs []recentDoc
+	for _, doc := range s.recentDocs() {
+		if s.checkServed(doc.Path) == nil {
+			docs = append(docs, doc)
+		}
+	}
+	var dirs []string
+	for _, dir := range recentRoots(docs) {
+		if s.dirServed(dir) {
+			dirs = append(dirs, dir)
+		}
+	}
+	page := renderHome(docs, dirs)
 	w.Header().Set(cspHeader, homeCSP)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
@@ -130,7 +144,9 @@ func (s *Server) serveHome(w http.ResponseWriter, r *http.Request) {
 	_, _ = io.WriteString(w, page)
 }
 
-func renderHome(docs []recentDoc) string {
+// renderHome lists docs (recent, newest first) and the Markdown tree under
+// each of dirs.
+func renderHome(docs []recentDoc, dirs []string) string {
 	var b bytes.Buffer
 	b.WriteString(`<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">`)
 	b.WriteString(`<title>Vellum</title>`)
@@ -163,7 +179,7 @@ ul{padding-left:1.2rem}li{margin:.2rem 0}
 		b.WriteString(`</ul>`)
 	}
 	b.WriteString(`</section><section id="files"><h2>Files</h2>`)
-	roots := recentRoots(docs)
+	roots := dirs
 	if len(roots) == 0 {
 		b.WriteString(`<p>No folders yet.</p>`)
 	}

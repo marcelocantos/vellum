@@ -47,12 +47,13 @@ func (s *Server) handlePDF(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	info, err := os.Stat(absPath)
+	f, err := s.openServed(absPath)
+	if servedStatus(w, r, err) {
+		return
+	}
+	info, err := f.Stat()
+	f.Close()
 	if err != nil {
-		if os.IsNotExist(err) {
-			http.NotFound(w, r)
-			return
-		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -102,7 +103,7 @@ func (s *Server) handlePDF(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-		if err := writeStamp(cachePath, absPath); err != nil {
+		if err := writeStamp(cachePath, info); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -129,16 +130,7 @@ func (s *Server) handleClipboard(w http.ResponseWriter, r *http.Request) {
 	// The clipboard carries the whole document, so every deferred
 	// diagram and expression is rendered now (cache hits are free).
 	html, _, err := s.completeHTML(r.Context(), absPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			http.NotFound(w, r)
-			return
-		}
-		if errors.Is(err, errIsDirectory) {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+	if servedStatus(w, r, err) {
 		return
 	}
 	writeFn := s.WriteClipboard
@@ -165,6 +157,9 @@ func (s *Server) handleReveal(w http.ResponseWriter, r *http.Request) {
 	absPath, err := queryAbsPath(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if servedStatus(w, r, s.checkServed(absPath)) {
 		return
 	}
 	if _, err := os.Stat(absPath); err != nil {

@@ -94,10 +94,10 @@ func TestStamp_RejectsOtherFormats(t *testing.T) {
 	if err := os.WriteFile(cache, []byte("c"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := writeStamp(cache, md); err != nil {
+	info, _ := os.Stat(md)
+	if err := writeStamp(cache, info); err != nil {
 		t.Fatal(err)
 	}
-	info, _ := os.Stat(md)
 	if !stampMatches(cache, info) {
 		t.Fatal("fresh stamp must match")
 	}
@@ -155,7 +155,7 @@ func TestFlightGroup_CoalescesSameKey(t *testing.T) {
 func TestServer_ShellFirstThenFragmentsOnDemand(t *testing.T) {
 	dir, md := writeDoc(t, lazyDoc)
 	var renders atomic.Int64
-	s := &Server{CacheDir: filepath.Join(dir, "cache"), RenderFragments: stubFragments(&renders)}
+	s := &Server{CacheDir: filepath.Join(dir, "cache"), Roots: []string{dir}, RenderFragments: stubFragments(&renders)}
 	ts := startTestServer(t, s)
 
 	status, _, page := getText(t, ViewURL(ts.URL, md))
@@ -274,7 +274,7 @@ func TestServer_ShellFirstThenFragmentsOnDemand(t *testing.T) {
 func TestServer_FragmentRenderFailureIsNotCached(t *testing.T) {
 	dir, md := writeDoc(t, "```mermaid\ngraph TD\n  boom\n```\n")
 	var renders atomic.Int64
-	s := &Server{CacheDir: filepath.Join(dir, "cache"), RenderFragments: stubFragments(&renders)}
+	s := &Server{CacheDir: filepath.Join(dir, "cache"), Roots: []string{dir}, RenderFragments: stubFragments(&renders)}
 	ts := startTestServer(t, s)
 	id := convert.ExtractFragments([]byte("```mermaid\ngraph TD\n  boom\n```\n"), nil)[0].ID
 
@@ -300,7 +300,7 @@ func TestServer_ClipboardResolvesEveryFragment(t *testing.T) {
 	var renders atomic.Int64
 	var got string
 	s := &Server{
-		CacheDir:        filepath.Join(dir, "cache"),
+		CacheDir: filepath.Join(dir, "cache"), Roots: []string{dir},
 		RenderFragments: stubFragments(&renders),
 		WriteClipboard:  func(html string) error { got = html; return nil },
 	}
@@ -350,7 +350,7 @@ func TestServer_ClipboardResolvesEveryFragment(t *testing.T) {
 func TestServer_FragmentNotFoundWhenSourceChanged(t *testing.T) {
 	dir, md := writeDoc(t, lazyDoc)
 	var renders atomic.Int64
-	s := &Server{CacheDir: filepath.Join(dir, "cache"), RenderFragments: stubFragments(&renders)}
+	s := &Server{CacheDir: filepath.Join(dir, "cache"), Roots: []string{dir}, RenderFragments: stubFragments(&renders)}
 	ts := startTestServer(t, s)
 	diagram := convert.ExtractFragments([]byte(lazyDoc), nil)[2]
 

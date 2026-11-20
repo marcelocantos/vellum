@@ -90,10 +90,22 @@ type Server struct {
 	watches   *watchHub
 
 	// WriteFile, when non-nil, replaces atomic Markdown writes (task-toggle
-	// and editor-save tests).
+	// and editor-save tests). The path has passed the served-roots check.
 	WriteFile func(path string, data []byte) error
 
+	// Roots are folders served from the start. Every other folder is
+	// served once the user opens a document in it (see roots.go).
+	Roots []string
+
+	// beforeOpen, when non-nil, runs between the served-roots check and
+	// the open (tests swap the path on disk there).
+	beforeOpen func(path string)
+
 	mruMu sync.Mutex
+
+	rootsMu      sync.Mutex
+	grantsLoaded bool
+	granted      []servedRoot
 }
 
 // Origin returns the http://host:port origin for Addr (no trailing slash).
@@ -389,6 +401,12 @@ func (s *Server) handlePath(w http.ResponseWriter, r *http.Request) {
 	}
 	ext := strings.ToLower(filepath.Ext(fsPath))
 	if ext == ".md" || ext == ".markdown" {
+		// Opening a document from outside any page serves its folder. A
+		// grant that fails (no such folder) leaves the check below to
+		// refuse the path.
+		if r.Method == http.MethodGet && openedByUser(r) {
+			_ = s.grant(fsPath)
+		}
 		s.serveMarkdown(w, r, fsPath)
 		return
 	}
@@ -424,11 +442,7 @@ func (s *Server) serveMarkdown(w http.ResponseWriter, r *http.Request, absPath s
 			s.serveMissingMarkdown(w, r, absPath)
 			return
 		}
-		if errors.Is(err, errIsDirectory) {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		servedStatus(w, r, err)
 		return
 	}
 	origin := requestOrigin(r)
@@ -482,7 +496,12 @@ func (s *Server) serveMissingMarkdown(w http.ResponseWriter, r *http.Request, ab
 // is the payload for the view page (chrome is injected after); the
 // clipboard wants completeHTML, which resolves the placeholders.
 func (s *Server) cachedHTML(ctx context.Context, absPath string) ([]byte, error) {
-	info, err := os.Stat(absPath)
+	f, err := s.openServed(absPath)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	info, err := f.Stat()
 	if err != nil {
 		return nil, err
 	}
@@ -507,7 +526,7 @@ func (s *Server) cachedHTML(ctx context.Context, absPath string) ([]byte, error)
 		}
 	}
 	if !hit {
-		if err := s.renderMarkdown(ctx, absPath, cachePath); err != nil {
+		if err := s.renderMarkdown(ctx, absPath, f, info, cachePath); err != nil {
 			var se *convert.SoftError
 			if !errors.As(err, &se) {
 				return nil, err
@@ -526,7 +545,10 @@ func requestOrigin(r *http.Request) string {
 	return scheme + "://" + r.Host
 }
 
-func (s *Server) renderMarkdown(ctx context.Context, absInput, cachePath string) error {
+// renderMarkdown renders src (the open document at absInput, stat'd as
+// info before reading) into cachePath. The stamp records info, so it is
+// never newer than the bytes rendered.
+func (s *Server) renderMarkdown(ctx context.Context, absInput string, src io.Reader, info os.FileInfo, cachePath string) error {
 	s.ConvertCount.Add(1)
 	cOpts := s.convertOptions()
 	// Placeholder base; rewritten per-response in serveMarkdown.
@@ -534,11 +556,20 @@ func (s *Server) renderMarkdown(ctx context.Context, absInput, cachePath string)
 		`<meta http-equiv="Pragma" content="no-cache">` + "\n" +
 		`<base href="about:blank">`
 
-	render := s.RenderFile
-	if render == nil {
-		render = convert.RenderFile
+	var (
+		html string
+		soft []string
+		err  error
+	)
+	if s.RenderFile != nil {
+		html, soft, err = s.RenderFile(ctx, absInput, cOpts)
+	} else {
+		var data []byte
+		if data, err = io.ReadAll(src); err != nil {
+			return err
+		}
+		html, soft, err = convert.Render(ctx, data, cOpts)
 	}
-	html, soft, err := render(ctx, absInput, cOpts)
 	if err != nil {
 		return err
 	}
@@ -551,7 +582,7 @@ func (s *Server) renderMarkdown(ctx context.Context, absInput, cachePath string)
 		_ = os.Remove(tmp)
 		return fmt.Errorf("finalising cache: %w", err)
 	}
-	if err := writeStamp(cachePath, absInput); err != nil {
+	if err := writeStamp(cachePath, info); err != nil {
 		return err
 	}
 	if len(soft) > 0 {
@@ -561,12 +592,13 @@ func (s *Server) renderMarkdown(ctx context.Context, absInput, cachePath string)
 }
 
 func (s *Server) serveFile(w http.ResponseWriter, r *http.Request, absPath string) {
-	info, err := os.Stat(absPath)
+	f, err := s.openServed(absPath)
+	if servedStatus(w, r, err) {
+		return
+	}
+	defer f.Close()
+	info, err := f.Stat()
 	if err != nil {
-		if os.IsNotExist(err) {
-			http.NotFound(w, r)
-			return
-		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -574,12 +606,6 @@ func (s *Server) serveFile(w http.ResponseWriter, r *http.Request, absPath strin
 		http.Error(w, "is a directory", http.StatusBadRequest)
 		return
 	}
-	f, err := os.Open(absPath)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	defer f.Close()
 	ctype := mime.TypeByExtension(filepath.Ext(absPath))
 	if ctype == "" {
 		ctype = "application/octet-stream"

@@ -137,7 +137,7 @@ func TestServer_ChromeInjectedOnServeNotInCache(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := &Server{
-		CacheDir:   filepath.Join(dir, "cache"),
+		CacheDir: filepath.Join(dir, "cache"), Roots: []string{dir},
 		RenderFile: stubHTML,
 	}
 	ts := startTestServer(t, s)

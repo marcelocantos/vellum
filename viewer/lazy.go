@@ -243,6 +243,9 @@ func (s *Server) renderFragmentsCached(ctx context.Context, key string, frags []
 // page) is errFragmentNotFound. Math fragments are rendered a document at
 // a time, because every expression costs the same single node start.
 func (s *Server) fragmentHTML(ctx context.Context, absPath, id string) (string, error) {
+	if err := s.checkServed(absPath); err != nil {
+		return "", err
+	}
 	cacheRoot, err := s.cacheRoot()
 	if err != nil {
 		return "", err
@@ -250,7 +253,7 @@ func (s *Server) fragmentHTML(ctx context.Context, absPath, id string) (string, 
 	if html, ok := cachedFragment(cacheRoot, id, s.now()); ok {
 		return safehtml.Rendered(html), nil
 	}
-	src, err := os.ReadFile(absPath)
+	src, _, err := s.readServed(absPath)
 	if err != nil {
 		return "", err
 	}
@@ -299,7 +302,7 @@ func (s *Server) completeHTML(ctx context.Context, absPath string) (html string,
 	if err != nil {
 		return "", nil, err
 	}
-	src, err := os.ReadFile(absPath)
+	src, _, err := s.readServed(absPath)
 	if err != nil {
 		return "", nil, err
 	}
@@ -336,6 +339,8 @@ func (s *Server) handleFragment(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		w.Header().Set("Cache-Control", "no-store")
 		switch {
+		case errors.Is(err, errOutsideRoots):
+			http.Error(w, err.Error(), http.StatusForbidden)
 		case os.IsNotExist(err), errors.Is(err, errFragmentNotFound):
 			http.NotFound(w, r)
 		default:

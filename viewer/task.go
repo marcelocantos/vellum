@@ -6,10 +6,7 @@ package viewer
 import (
 	"fmt"
 	"net/http"
-	"os"
-	"path/filepath"
 	"regexp"
-	"runtime"
 	"strconv"
 	"strings"
 )
@@ -83,45 +80,6 @@ func toggleTaskMarker(src []byte, index int) ([]byte, error) {
 	return out, nil
 }
 
-// writeFileAtomic replaces path's contents via a temp file and rename, so
-// a reader never sees a half-written document. A symlinked path is
-// resolved first (the link stays a link), and the file keeps its mode:
-// CreateTemp makes 0600 files, which rename would otherwise install.
-func writeFileAtomic(path string, data []byte) error {
-	if resolved, err := filepath.EvalSymlinks(path); err == nil {
-		path = resolved
-	}
-	mode := os.FileMode(0o644)
-	if info, err := os.Stat(path); err == nil {
-		mode = info.Mode().Perm()
-	}
-	dir := filepath.Dir(path)
-	tmp, err := os.CreateTemp(dir, ".vellum-write-*.tmp")
-	if err != nil {
-		return err
-	}
-	tmpName := tmp.Name()
-	if err := tmp.Chmod(mode); err != nil && runtime.GOOS != "windows" {
-		_ = tmp.Close()
-		_ = os.Remove(tmpName)
-		return err
-	}
-	if _, err := tmp.Write(data); err != nil {
-		_ = tmp.Close()
-		_ = os.Remove(tmpName)
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		_ = os.Remove(tmpName)
-		return err
-	}
-	if err := os.Rename(tmpName, path); err != nil {
-		_ = os.Remove(tmpName)
-		return err
-	}
-	return nil
-}
-
 func (s *Server) handleTaskToggle(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -142,21 +100,8 @@ func (s *Server) handleTaskToggle(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "missing or invalid index", http.StatusBadRequest)
 		return
 	}
-	if _, err := requireMarkdownFile(absPath); err != nil {
-		if os.IsNotExist(err) {
-			http.NotFound(w, r)
-			return
-		}
-		if err == errIsDirectory {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	src, err := os.ReadFile(absPath)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+	src, _, err := s.readServed(absPath)
+	if servedStatus(w, r, err) {
 		return
 	}
 	out, err := toggleTaskMarker(src, index)
@@ -164,17 +109,11 @@ func (s *Server) handleTaskToggle(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusConflict)
 		return
 	}
-	writeFn := s.WriteFile
-	if writeFn == nil {
-		writeFn = writeFileAtomic
-	}
-	if err := writeFn(absPath, out); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+	if servedStatus(w, r, s.writeServed(absPath, out)) {
 		return
 	}
-	info, err := os.Stat(absPath)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+	info, err := s.statServed(absPath)
+	if servedStatus(w, r, err) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")

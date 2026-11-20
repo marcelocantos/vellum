@@ -288,10 +288,14 @@ func renderToCache(ctx context.Context, absInput, cachePath string, opts *ViewOp
 	if err := convert.CheckDeps(opts.Backend); err != nil {
 		return err
 	}
+	info, err := os.Stat(absInput)
+	if err != nil {
+		return fmt.Errorf("stamp stat source: %w", err)
+	}
 	if err := convert.Convert(ctx, absInput, cachePath, cOpts); err != nil {
 		return err
 	}
-	return writeStamp(cachePath, absInput)
+	return writeStamp(cachePath, info)
 }
 
 func cacheName(absPath string, ext string) string {
@@ -312,11 +316,10 @@ func stampPath(cachePath string) string {
 	return cachePath + ".stamp"
 }
 
-func writeStamp(cachePath, absInput string) error {
-	info, err := os.Stat(absInput)
-	if err != nil {
-		return fmt.Errorf("stamp stat source: %w", err)
-	}
+// writeStamp records the source info a cache entry was made from. info
+// must be taken before the source was read, so a write during the render
+// leaves a stale stamp (a re-render), never a fresh stamp on old bytes.
+func writeStamp(cachePath string, info os.FileInfo) error {
 	body := strconv.FormatInt(info.ModTime().UnixNano(), 10) + " " + strconv.FormatInt(info.Size(), 10) + " " + stampFormat + "\n"
 	if err := os.WriteFile(stampPath(cachePath), []byte(body), 0o644); err != nil {
 		return fmt.Errorf("writing cache stamp: %w", err)

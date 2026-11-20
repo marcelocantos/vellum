@@ -147,7 +147,7 @@ func TestServer_DeferredFragmentLinksResolveToDocument(t *testing.T) {
 	body := "# D\n\n```mermaid\ngraph TD\n  A --> B\n  click A \"#options\"\n```\n\n## Options\n"
 	dir, md := writeDoc(t, body)
 	s := &Server{
-		CacheDir: filepath.Join(dir, "cache"),
+		CacheDir: filepath.Join(dir, "cache"), Roots: []string{dir},
 		RenderFragments: func(_ context.Context, frags []convert.Fragment) (map[string]convert.FragmentResult, error) {
 			out := map[string]convert.FragmentResult{}
 			for _, f := range frags {
