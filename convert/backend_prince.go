@@ -4,11 +4,7 @@
 package convert
 
 import (
-	"bytes"
 	"context"
-	"fmt"
-	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -28,47 +24,31 @@ func (princeBackend) Dep() Dep {
 }
 
 func (princeBackend) Render(ctx context.Context, htmlContent, outputPath, inputDir, pdfaProfile string) error {
-	if dir := filepath.Dir(outputPath); dir != "." {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return err
-		}
-	}
-
-	tmpFile, err := os.CreateTemp("", "vellum-*.html")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(tmpFile.Name())
-
-	if _, err := tmpFile.WriteString(htmlContent); err != nil {
-		tmpFile.Close()
-		return err
-	}
-	tmpFile.Close()
-
 	// Relative paths in <img src="..."> resolve against the source Markdown
 	// file's directory via --baseurl. url.URL ensures unusual paths (spaces,
 	// Unicode) are correctly encoded.
-	args := []string{}
+	var args []string
 	if inputDir != "" {
 		args = append(args, "--baseurl="+fileurl.FromPath(inputDir+string(filepath.Separator)))
 	}
+	return princeRun(ctx, htmlContent, outputPath, pdfaProfile, args)
+}
+
+// princeFetchless loads nothing beyond the input file: no HTTP, no local
+// file but the one named on the command line. XInclude and XML external
+// entities stay off (Prince's default; vellum never turns them on).
+var princeFetchless = []string{"--no-network", "--no-local-files"}
+
+func (princeBackend) renderFetchless(ctx context.Context, htmlContent, outputPath, pdfaProfile string) error {
+	return princeRun(ctx, htmlContent, outputPath, pdfaProfile, append([]string(nil), princeFetchless...))
+}
+
+func princeRun(ctx context.Context, htmlContent, outputPath, pdfaProfile string, args []string) error {
 	if pdfaProfile != "" {
 		// Prince accepts the canonical form as-is (e.g. "PDF/A-3b").
 		args = append(args, "--pdf-profile="+pdfaProfile)
 	}
-	args = append(args, tmpFile.Name(), "-o", outputPath)
-
-	cmd := exec.CommandContext(ctx, "prince", args...)
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
-		msg := strings.TrimSpace(stderr.String())
-		if msg != "" {
-			return fmt.Errorf("%w: %s", err, msg)
-		}
-		return err
-	}
-	return nil
+	return runEngine(ctx, "prince", htmlContent, outputPath, strings.TrimSpace, func(input string) []string {
+		return append(args, input, "-o", outputPath)
+	})
 }

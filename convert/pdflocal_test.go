@@ -4,24 +4,32 @@
 package convert
 
 import (
+	"context"
+	"encoding/base64"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
 
-func TestIsolateLocalFiles_NilReaderKeepsTheDocumentBase(t *testing.T) {
-	const page = `<!DOCTYPE html><html><head></head><body><img src="pic.png"></body></html>`
-	out, dir, err := IsolateLocalFiles(page, "/docs", nil)
+func TestInlineResources_NilArgsDropEverythingButData(t *testing.T) {
+	const page = `<!DOCTYPE html><html><head></head><body>` +
+		`<img src="pic.png" alt="rel"><img src="https://example.com/a.png" alt="remote">` +
+		`<img src="data:image/png;base64,AAAA" alt="data"></body></html>`
+	out, err := InlineResources(context.Background(), page, "/docs", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if out != page || dir != "/docs" {
-		t.Fatalf("nil reader changed the page or the base: %q %q", out, dir)
+	if strings.Contains(out, "pic.png") || strings.Contains(out, "example.com") {
+		t.Fatalf("a reference with nowhere to come from survived:\n%s", out)
+	}
+	if !strings.Contains(out, "data:image/png;base64,AAAA") {
+		t.Fatalf("data: URL was removed:\n%s", out)
 	}
 }
 
-func TestIsolateLocalFiles_CopiesOnlyWhatTheReaderAllows(t *testing.T) {
+func TestInlineResources_InlinesOnlyWhatReadAndFetchAllow(t *testing.T) {
 	base := t.TempDir()
 	inside := filepath.Join(base, "pic.png")
 	if err := os.WriteFile(inside, []byte("INSIDE"), 0o644); err != nil {
@@ -37,49 +45,61 @@ func TestIsolateLocalFiles_CopiesOnlyWhatTheReaderAllows(t *testing.T) {
 		`</head><body>` +
 		`<base href="file:///etc/">` +
 		`<img src="pic.png" alt="in">` +
+		`<img src="pic.png" alt="again">` +
 		`<img src="../secret.png" alt="rel">` +
 		`<img src="` + outside + `" alt="abs">` +
 		`<img src="file://` + outside + `" alt="file">` +
 		`<img src="https://example.com/a.png" alt="remote">` +
+		`<img src="https://example.com/refused.png" alt="refused">` +
+		`<img src="ftp://example.com/x.png" alt="ftp">` +
 		`<a href="../secret.png">link</a>` +
+		`<svg><image href="../secret.png"/><use xlink:href="../secret.png#x"/></svg>` +
+		`<object data="../secret.png"></object>` +
 		`<style>body{background:url("../secret.png")}@import "\2e\2e/secret.png";p{background:url("https://example.com/b.png")}</style>` +
 		`<div style="background:url(\2e\2e/secret.png)"></div>` +
 		`</body></html>`
 
-	out, dir, err := IsolateLocalFiles(page, base, func(p string) ([]byte, error) {
-		if filepath.Clean(p) != inside {
-			return nil, os.ErrPermission
-		}
-		return os.ReadFile(p)
+	var reads, fetches []string
+	out, err := InlineResources(context.Background(), page, base, &InlineArgs{
+		Read: func(p string) ([]byte, error) {
+			reads = append(reads, p)
+			if filepath.Clean(p) != inside {
+				return nil, os.ErrPermission
+			}
+			return os.ReadFile(p)
+		},
+		Fetch: func(_ context.Context, u string) ([]byte, string, error) {
+			fetches = append(fetches, u)
+			if strings.HasSuffix(u, "refused.png") {
+				return nil, "", errors.New("refused")
+			}
+			return []byte("REMOTE:" + u), "image/png; charset=binary", nil
+		},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(dir)
-	if dir == base || !strings.HasPrefix(dir, os.TempDir()) {
-		t.Fatalf("resource dir %q is not a fresh jail", dir)
+	inData := "data:image/png;base64," + base64.StdEncoding.EncodeToString([]byte("INSIDE"))
+	if strings.Count(out, inData) != 2 {
+		t.Fatalf("inside image was not inlined twice:\n%s", out)
 	}
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		t.Fatal(err)
+	if n := strings.Count(strings.Join(reads, "\n"), inside); n != 1 {
+		t.Fatalf("inside image read %d times, want 1 (memoised)", n)
 	}
-	if len(entries) != 1 {
-		t.Fatalf("jail has %d files, want the one inside image", len(entries))
+	remote := "data:image/png;base64," + base64.StdEncoding.EncodeToString([]byte("REMOTE:https://example.com/a.png"))
+	if !strings.Contains(out, remote) {
+		t.Fatalf("remote image was not inlined:\n%s", out)
 	}
-	got, err := os.ReadFile(filepath.Join(dir, entries[0].Name()))
-	if err != nil {
-		t.Fatal(err)
+	if !strings.Contains(out, base64.StdEncoding.EncodeToString([]byte("REMOTE:https://example.com/b.png"))) {
+		t.Fatalf("remote css url was not inlined:\n%s", out)
 	}
-	if string(got) != "INSIDE" {
-		t.Fatalf("copied %q", got)
+	if strings.Contains(out, "example.com") || strings.Contains(out, "ftp:") {
+		t.Fatalf("a remote reference survived as a URL:\n%s", out)
 	}
 	if !strings.Contains(out, "file:///katex/katex.min.css") {
-		t.Fatalf("head stylesheet was rewritten:\n%s", out)
+		t.Fatalf("head was rewritten:\n%s", out)
 	}
-	if !strings.Contains(out, "https://example.com/a.png") || !strings.Contains(out, "https://example.com/b.png") {
-		t.Fatalf("remote url was rewritten:\n%s", out)
-	}
-	if strings.Contains(out, "<base") || strings.Contains(strings.ToLower(out), "<base") {
+	if strings.Contains(strings.ToLower(out), "<base") {
 		t.Fatalf("base element survived:\n%s", out)
 	}
 	if strings.Contains(out, outside) || strings.Contains(out, "SECRET") {
@@ -94,7 +114,37 @@ func TestIsolateLocalFiles_CopiesOnlyWhatTheReaderAllows(t *testing.T) {
 	if strings.Count(out, "secret.png") != 1 || !strings.Contains(out, link) {
 		t.Fatalf("outside reference was not confined to the document link:\n%s", out)
 	}
-	if !strings.Contains(out, entries[0].Name()) {
-		t.Fatalf("inside image was not rewritten to %s:\n%s", entries[0].Name(), out)
+	for _, f := range fetches {
+		if !strings.HasPrefix(f, "https://example.com/") {
+			t.Fatalf("fetched %q", f)
+		}
+	}
+}
+
+func TestDataURL_StripsParameters(t *testing.T) {
+	if got := dataURL("Image/SVG+XML; charset=utf-8", []byte("<svg/>")); got != "data:image/svg+xml;base64,PHN2Zy8+" {
+		t.Fatalf("dataURL = %q", got)
+	}
+	if got := dataURL("image/png,evil", []byte("x")); !strings.HasPrefix(got, "data:image/png;base64,") {
+		t.Fatalf("dataURL = %q", got)
+	}
+}
+
+func TestKaTeXInlineHead_FetchesNothing(t *testing.T) {
+	head, err := katexInlineHead()
+	if err != nil {
+		t.Fatal(err)
+	}
+	refs, err := katexFontRefs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := strings.Count(head, "url(\"data:font/woff2;base64,"); n < len(refs) {
+		t.Fatalf("inlined %d fonts, want at least %d", n, len(refs))
+	}
+	for _, r := range refs {
+		if strings.Contains(head, filepath.Base(r)) {
+			t.Fatalf("font %s is still named by path", r)
+		}
 	}
 }

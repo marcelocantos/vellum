@@ -123,11 +123,23 @@ func (s *Server) handlePDF(w http.ResponseWriter, r *http.Request) {
 }
 
 // renderServedPDF renders markdown already read from a served file.
-// Sanitize cuts the document's HTML down to the allow-list, and
-// IsolateLocalFiles copies every body-local resource through readServed
-// into a fresh directory. That directory is the PDF engine's base URL,
-// and it is removed after the engine returns. The head's own stylesheet
-// stays an absolute file URL, so KaTeX's fonts still resolve next to it.
+//
+// The PDF engine reads nothing by itself. Sanitize cuts the document's
+// HTML down to the allow-list, and InlineResources turns every image the
+// body names into a data: URL: a local one only through readServed (the
+// check every page request passes), a remote one through
+// fetchRemoteImage, which tells any viewer it reaches that it is a page's
+// image. KaTeX's stylesheet and fonts are inlined from the embedded copy.
+// WriteSelfContainedPDF then runs the engine with every fetch but data:
+// refused, so what those images name in turn (an SVG's <image> or <use>,
+// a file: URL, this viewer's own origin) goes nowhere.
+//
+// That puts every byte the engine sees through the same decision as the
+// page's own requests. The alternatives were a fetcher inside the engine
+// that asks the viewer (WeasyPrint's is Python, Prince has none) or a
+// credential on the engine's requests (neither engine's command line can
+// add a header); both leave the engine able to reach files and the
+// network, and a mistake in them is an escape.
 func (s *Server) renderServedPDF(ctx context.Context, src []byte, absPath, cachePath string) error {
 	if err := convert.CheckDeps(s.Backend); err != nil {
 		return err
@@ -136,24 +148,25 @@ func (s *Server) renderServedPDF(ctx context.Context, src []byte, absPath, cache
 		Style:         s.Style,
 		Backend:       s.Backend,
 		Sanitize:      true,
+		KaTeXInline:   true,
 		MermaidFormat: convert.MermaidPNG,
 	})
 	if err != nil {
 		return err
 	}
-	docDir := filepath.Dir(absPath)
-	jailed, dir, err := convert.IsolateLocalFiles(page, docDir, func(p string) ([]byte, error) {
-		b, _, err := s.readServed(p)
-		return b, err
+	fetchCtx, cancel := context.WithTimeout(ctx, remoteImagesBudget)
+	defer cancel()
+	page, err = convert.InlineResources(fetchCtx, page, filepath.Dir(absPath), &convert.InlineArgs{
+		Read: func(p string) ([]byte, error) {
+			b, _, err := s.readServed(p)
+			return b, err
+		},
+		Fetch: fetchRemoteImage,
 	})
 	if err != nil {
 		return err
 	}
-	if dir == "" || dir == docDir {
-		return fmt.Errorf("pdf resource directory was not isolated")
-	}
-	defer os.RemoveAll(dir)
-	if err := convert.WritePDF(ctx, jailed, cachePath, dir, &convert.Options{Style: s.Style, Backend: s.Backend}); err != nil {
+	if err := convert.WriteSelfContainedPDF(ctx, page, cachePath, &convert.Options{Style: s.Style, Backend: s.Backend}); err != nil {
 		return err
 	}
 	if len(soft) > 0 {

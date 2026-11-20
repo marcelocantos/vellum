@@ -5,10 +5,11 @@ package convert
 
 import (
 	"bytes"
+	"context"
+	"encoding/base64"
+	"net/http"
 	"net/url"
-	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 
 	"github.com/marcelocantos/vellum/internal/fileurl"
@@ -16,45 +17,47 @@ import (
 	"golang.org/x/net/html/atom"
 )
 
-// IsolateLocalFiles prepares a rendered page for a PDF engine whose base
-// URL resolves relative references as files.
-//
-// A base URL pointed at a fresh directory is not enough: url(../x) and
-// @import "../x" resolve outside that directory. When read is non-nil,
-// every non-remote URL in the document body (elements and CSS) is copied
-// through read into a new temporary directory, which is returned as the
-// base to pass to WritePDF. The caller removes that directory. A URL read
-// refuses is removed, so the engine never resolves it. The head is left
-// alone: its stylesheet link is an absolute file URL, and that
-// stylesheet's own font urls are relative to the stylesheet, not to the
-// document base.
-//
-// When read is nil the page and baseDir are returned unchanged and the
-// caller must not remove baseDir. That is the CLI and MCP path, which
-// still loads whatever the document's directory can see.
-func IsolateLocalFiles(fullHTML, baseDir string, read func(abs string) ([]byte, error)) (htmlOut, resourceDir string, err error) {
-	if read == nil {
-		return fullHTML, baseDir, nil
-	}
-	dir, err := os.MkdirTemp("", "vellum-pdf-")
-	if err != nil {
-		return "", "", err
-	}
-	j := &pdfJail{dir: dir, base: baseDir, read: read}
-	out, err := j.rewrite(fullHTML)
-	if err != nil {
-		os.RemoveAll(dir)
-		return "", "", err
-	}
-	return out, dir, nil
+// InlineArgs says where InlineResources may get a page's resources.
+type InlineArgs struct {
+	// Read returns the bytes of a local file, given its absolute path.
+	// An error drops the reference. Nil drops every local reference.
+	Read func(abs string) ([]byte, error)
+	// Fetch returns an http or https resource's bytes and media type.
+	// An error drops the reference. Nil drops every remote reference.
+	Fetch func(ctx context.Context, rawURL string) (data []byte, mediaType string, err error)
 }
 
-type pdfJail struct {
-	dir  string
+// InlineResources prepares a rendered page for WriteSelfContainedPDF,
+// whose engine fetches nothing but data: URLs.
+//
+// Every URL the body names as a resource (element src, data and href
+// attributes, CSS url() and @import) becomes a data: URL holding bytes
+// that Read or Fetch returned, or is removed. Relative references and
+// local paths resolve against baseDir and go through Read; http and https
+// go through Fetch; data: URLs stay as written; anything else is removed.
+// <base> elements are removed, so nothing resolves against a base the
+// document chose.
+//
+// vellum decides every byte the engine sees. What a data: resource names
+// in turn (an SVG's <image> or <use>, an inlined stylesheet's url()) is
+// not followed here: the engine refuses it.
+//
+// The head is left alone. It is vellum's own (the stylesheet, and KaTeX
+// inlined by Options.KaTeXInline); anything there that is not a data:
+// URL is refused by the engine as well.
+func InlineResources(ctx context.Context, fullHTML, baseDir string, args *InlineArgs) (string, error) {
+	if args == nil {
+		args = &InlineArgs{}
+	}
+	in := &inliner{ctx: ctx, base: baseDir, args: args, seen: map[string]refDecision{}}
+	return in.rewrite(fullHTML)
+}
+
+type inliner struct {
+	ctx  context.Context
 	base string
-	read func(abs string) ([]byte, error)
-	n    int
-	err  error
+	args *InlineArgs
+	seen map[string]refDecision
 }
 
 type refDecision struct {
@@ -68,7 +71,7 @@ const (
 	refReplace
 )
 
-func (j *pdfJail) rewrite(fullHTML string) (string, error) {
+func (in *inliner) rewrite(fullHTML string) (string, error) {
 	doc, err := html.Parse(strings.NewReader(fullHTML))
 	if err != nil {
 		return "", err
@@ -93,16 +96,13 @@ func (j *pdfJail) rewrite(fullHTML string) (string, error) {
 		var walk func(*html.Node)
 		walk = func(n *html.Node) {
 			if n.Type == html.ElementNode {
-				j.rewriteElement(n)
+				in.rewriteElement(n)
 			}
 			for c := n.FirstChild; c != nil; c = c.NextSibling {
 				walk(c)
 			}
 		}
 		walk(body)
-	}
-	if j.err != nil {
-		return "", j.err
 	}
 	var buf bytes.Buffer
 	if err := html.Render(&buf, doc); err != nil {
@@ -123,11 +123,11 @@ func stripBases(n *html.Node) {
 	}
 }
 
-func (j *pdfJail) rewriteElement(n *html.Node) {
+func (in *inliner) rewriteElement(n *html.Node) {
 	if n.DataAtom == atom.Style || strings.EqualFold(n.Data, "style") {
 		for c := n.FirstChild; c != nil; c = c.NextSibling {
 			if c.Type == html.TextNode {
-				c.Data = rewriteCSSURLs(c.Data, j.decide)
+				c.Data = rewriteCSSURLs(c.Data, in.decide)
 			}
 		}
 	}
@@ -138,20 +138,20 @@ func (j *pdfJail) rewriteElement(n *html.Node) {
 		case key == "srcset":
 			continue
 		case key == "style":
-			a.Val = rewriteCSSURLs(a.Val, j.decide)
+			a.Val = rewriteCSSURLs(a.Val, in.decide)
 			attrs = append(attrs, a)
 		case key == "src" || key == "poster" || strings.HasSuffix(key, ":src"):
-			if v, ok := j.keptAttr(a.Val); ok {
+			if v, ok := in.keptAttr(a.Val); ok {
 				a.Val = v
 				attrs = append(attrs, a)
 			}
 		case key == "data" && isEmbeddedResource(n):
-			if v, ok := j.keptAttr(a.Val); ok {
+			if v, ok := in.keptAttr(a.Val); ok {
 				a.Val = v
 				attrs = append(attrs, a)
 			}
 		case (key == "href" || strings.HasSuffix(key, ":href")) && isResourceHref(n):
-			if v, ok := j.keptAttr(a.Val); ok {
+			if v, ok := in.keptAttr(a.Val); ok {
 				a.Val = v
 				attrs = append(attrs, a)
 			}
@@ -185,8 +185,8 @@ func isResourceHref(n *html.Node) bool {
 	return false
 }
 
-func (j *pdfJail) keptAttr(val string) (string, bool) {
-	switch d := j.decide(val); d.kind {
+func (in *inliner) keptAttr(val string) (string, bool) {
+	switch d := in.decide(val); d.kind {
 	case refKeep:
 		return val, true
 	case refReplace:
@@ -196,7 +196,10 @@ func (j *pdfJail) keptAttr(val string) (string, bool) {
 	}
 }
 
-func (j *pdfJail) decide(ref string) refDecision {
+// decide maps one reference to what the engine gets: the reference
+// itself (a fragment or a data: URL), a data: URL vellum filled, or
+// nothing.
+func (in *inliner) decide(ref string) refDecision {
 	ref = strings.Trim(ref, " \t\n\r\f")
 	if ref == "" || strings.HasPrefix(ref, "#") {
 		return refDecision{kind: refKeep}
@@ -208,17 +211,17 @@ func (j *pdfJail) decide(ref string) refDecision {
 		if p == "" || strings.ContainsRune(p, 0) {
 			return refDecision{kind: refDrop}
 		}
-		return j.copy(p, ref)
+		return in.local(filepath.Clean(p))
 	}
 	u, err := url.Parse(ref)
 	if err != nil {
 		return refDecision{kind: refDrop}
 	}
 	switch strings.ToLower(u.Scheme) {
-	case "http", "https", "data", "blob", "mailto":
+	case "data":
 		return refDecision{kind: refKeep}
-	case "file":
-		return refDecision{kind: refDrop}
+	case "http", "https":
+		return in.remote(ref)
 	case "":
 	default:
 		return refDecision{kind: refDrop}
@@ -236,41 +239,80 @@ func (j *pdfJail) decide(ref string) refDecision {
 	}
 	abs := p
 	if !filepath.IsAbs(p) {
-		abs = filepath.Join(j.base, p)
+		abs = filepath.Join(in.base, p)
 	}
-	return j.copy(filepath.Clean(abs), ref)
+	return in.local(filepath.Clean(abs))
 }
 
-func (j *pdfJail) copy(abs, hint string) refDecision {
-	b, err := j.read(abs)
-	if err != nil {
-		return refDecision{kind: refDrop}
+func (in *inliner) local(abs string) refDecision {
+	key := "file\x00" + abs
+	if d, ok := in.seen[key]; ok {
+		return d
 	}
-	name := strconv.Itoa(j.n) + safeExt(hint)
-	j.n++
-	if err := os.WriteFile(filepath.Join(j.dir, name), b, 0o644); err != nil {
-		j.err = err
-		return refDecision{kind: refDrop}
-	}
-	return refDecision{kind: refReplace, repl: name}
-}
-
-func safeExt(ref string) string {
-	if i := strings.IndexAny(ref, "?#"); i >= 0 {
-		ref = ref[:i]
-	}
-	ext := filepath.Ext(ref)
-	if len(ext) < 2 || len(ext) > 8 {
-		return ""
-	}
-	for _, c := range ext[1:] {
-		switch {
-		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9':
-		default:
-			return ""
+	d := refDecision{kind: refDrop}
+	if in.args.Read != nil {
+		if b, err := in.args.Read(abs); err == nil {
+			d = refDecision{kind: refReplace, repl: dataURL(mediaTypeFor(abs, b), b)}
 		}
 	}
-	return ext
+	in.seen[key] = d
+	return d
+}
+
+func (in *inliner) remote(ref string) refDecision {
+	key := "url\x00" + ref
+	if d, ok := in.seen[key]; ok {
+		return d
+	}
+	d := refDecision{kind: refDrop}
+	if in.args.Fetch != nil {
+		if b, mediaType, err := in.args.Fetch(in.ctx, ref); err == nil {
+			if mediaType == "" {
+				mediaType = http.DetectContentType(b)
+			}
+			d = refDecision{kind: refReplace, repl: dataURL(mediaType, b)}
+		}
+	}
+	in.seen[key] = d
+	return d
+}
+
+// inlineMediaTypes names the types of the files a page commonly shows,
+// so an inlined file keeps its type without a system MIME table. SVG in
+// particular cannot be sniffed.
+var inlineMediaTypes = map[string]string{
+	".png":   "image/png",
+	".apng":  "image/apng",
+	".jpg":   "image/jpeg",
+	".jpeg":  "image/jpeg",
+	".gif":   "image/gif",
+	".webp":  "image/webp",
+	".avif":  "image/avif",
+	".bmp":   "image/bmp",
+	".ico":   "image/x-icon",
+	".svg":   "image/svg+xml",
+	".css":   "text/css",
+	".woff":  "font/woff",
+	".woff2": "font/woff2",
+	".ttf":   "font/ttf",
+	".otf":   "font/otf",
+}
+
+func mediaTypeFor(name string, data []byte) string {
+	if t, ok := inlineMediaTypes[strings.ToLower(filepath.Ext(name))]; ok {
+		return t
+	}
+	return http.DetectContentType(data)
+}
+
+// dataURL encodes data as a base64 data: URL. mediaType loses any
+// parameters that could end the URL's header early.
+func dataURL(mediaType string, data []byte) string {
+	if i := strings.IndexAny(mediaType, ";,"); i >= 0 {
+		mediaType = mediaType[:i]
+	}
+	mediaType = strings.ToLower(strings.TrimSpace(mediaType))
+	return "data:" + mediaType + ";base64," + base64.StdEncoding.EncodeToString(data)
 }
 
 // rewriteCSSURLs rewrites url() and @import in one CSS declaration or

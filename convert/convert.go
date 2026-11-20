@@ -39,6 +39,10 @@ type Options struct {
 	// KaTeXAssetDir); the view server sets its own route, which serves the
 	// same embedded files. Vellum never links a CDN.
 	KaTeXCSSHref string
+	// KaTeXInline puts KaTeX's stylesheet in the page, its fonts as data:
+	// URLs, in place of the KaTeXCSSHref link: for a page handed to
+	// WriteSelfContainedPDF, whose engine fetches nothing.
+	KaTeXInline bool
 	// Style applies a small set of CSS overrides on top of the base
 	// stylesheet (whether default or supplied via CSS).
 	Style *Style
@@ -128,7 +132,8 @@ func softError(messages []string) error {
 // renderPDFHTML and WritePDF, so PDF/A, the backend, and the Mermaid
 // format cannot diverge. The view server does not use Convert: it
 // renders bytes it already read inside a served root, with Sanitize
-// set, and passes the page through IsolateLocalFiles before WritePDF.
+// set, inlines its resources (InlineResources) and calls
+// WriteSelfContainedPDF.
 func Convert(ctx context.Context, inputPath, outputPath string, opts *Options) error {
 	absInput, err := filepath.Abs(inputPath)
 	if err != nil {
@@ -154,10 +159,10 @@ func renderPDFHTML(ctx context.Context, md string, opts *Options) (string, []str
 	return Render(ctx, []byte(md), withMermaidFormat(opts, MermaidPNG))
 }
 
-// WritePDF is the only HTML→PDF backend call. baseDir resolves relative
-// images; an empty baseDir uses the output file's directory. The view
-// server passes the directory from IsolateLocalFiles, not the document's
-// own folder.
+// WritePDF is the HTML→PDF backend call for the CLI and MCP. baseDir
+// resolves relative images; an empty baseDir uses the output file's
+// directory. The engine loads whatever the page names, so the view
+// server uses WriteSelfContainedPDF instead.
 func WritePDF(ctx context.Context, html, outputPath, baseDir string, opts *Options) error {
 	if dir := filepath.Dir(outputPath); dir != "." && dir != "" {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -182,6 +187,42 @@ func WritePDF(ctx context.Context, html, outputPath, baseDir string, opts *Optio
 		baseDir = filepath.Dir(outputPath)
 	}
 	if err := backend.Render(ctx, html, outputPath, baseDir, pdfa); err != nil {
+		return fmt.Errorf("%s: %w", backend.Name(), err)
+	}
+	return nil
+}
+
+// WriteSelfContainedPDF writes a PDF from a page that carries every
+// resource it shows as a data: URL (see InlineResources). The engine runs
+// with every fetch refused but data: (WeasyPrint --allowed-protocols=data;
+// Prince --no-network --no-local-files), so nothing the page names
+// reaches a file or the network: not an SVG's own <image> or <use>, not
+// a stylesheet's @import, not a redirect.
+//
+// The view server uses it. A document's page in a browser reaches only
+// what the viewer serves, and the viewer decides what that is; the engine
+// is not a browser and its requests carry nothing that tells the viewer
+// so, so it is given no way to make any.
+func WriteSelfContainedPDF(ctx context.Context, html, outputPath string, opts *Options) error {
+	var (
+		backendName string
+		pdfa        string
+	)
+	if opts != nil {
+		backendName = opts.Backend
+		if opts.Style != nil {
+			pdfa = opts.Style.PDFA
+		}
+	}
+	backend, err := ResolveBackend(backendName)
+	if err != nil {
+		return err
+	}
+	fl, ok := backend.(fetchlessRenderer)
+	if !ok {
+		return fmt.Errorf("%s: cannot render without fetching", backend.Name())
+	}
+	if err := fl.renderFetchless(ctx, html, outputPath, pdfa); err != nil {
 		return fmt.Errorf("%s: %w", backend.Name(), err)
 	}
 	return nil
@@ -252,11 +293,16 @@ func Render(ctx context.Context, src []byte, opts *Options) (html string, soft [
 	css := embed.GitHubCSS
 	headExtra := ""
 	if len(math.exprs) > 0 {
-		var href string
-		if opts != nil {
-			href = opts.KaTeXCSSHref
+		if opts != nil && opts.KaTeXInline {
+			headExtra, err = katexInlineHead()
+		} else {
+			var href string
+			if opts != nil {
+				href = opts.KaTeXCSSHref
+			}
+			headExtra, err = katexHead(href)
 		}
-		if headExtra, err = katexHead(href); err != nil {
+		if err != nil {
 			return "", soft, err
 		}
 	}

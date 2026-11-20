@@ -55,9 +55,27 @@ func HTMLToRTF(ctx context.Context, html, resourcePath string) (rtf []byte, warn
 	return run(ctx, html, args...)
 }
 
-// HTMLToPlain converts an HTML document to plain text.
+// sandbox stops pandoc reading anything but its input: no file, no
+// network. A data: URL is not a read, so a data: image still embeds.
+const sandbox = "--sandbox"
+
+// HTMLToRTFSandboxed is HTMLToRTF for HTML pandoc must not act on beyond
+// its text: pandoc reads no file and fetches no URL, so an image reaches
+// the RTF only as a data: URL. An image named by path, file: URL or
+// http(s) URL is left out (pandoc warns and writes its description).
+//
+// The clipboard uses it. Without it pandoc would embed whatever a
+// document names, outside every folder the viewer serves, and its
+// requests to the viewer itself carry no fetch metadata, which the viewer
+// reads as the user opening a document.
+func HTMLToRTFSandboxed(ctx context.Context, html string) (rtf []byte, warnings []string, err error) {
+	return run(ctx, html, sandbox, "-f", "html", "-t", "rtf", "--standalone")
+}
+
+// HTMLToPlain converts an HTML document to plain text. Plain text has no
+// images, so pandoc runs sandboxed: it needs nothing but its input.
 func HTMLToPlain(html string) ([]byte, error) {
-	plain, _, err := run(context.Background(), html, "-f", "html", "-t", "plain")
+	plain, _, err := run(context.Background(), html, sandbox, "-f", "html", "-t", "plain")
 	return plain, err
 }
 

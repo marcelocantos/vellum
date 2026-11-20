@@ -17,9 +17,13 @@ import (
 // adds no new install burden, and unlike AppKit's HTML importer it needs
 // no window server and no XPC service — see [pandoc] (🎯T23).
 func pandocRichText(html string) (rtf, plain []byte, err error) {
-	// No resource path: the pasteboard carries bytes, not a document
-	// directory, so relative images cannot travel with it either way.
-	rtf, _, err = pandoc.HTMLToRTF(context.Background(), html, "")
+	// Sandboxed: the pasteboard carries bytes, not a document directory,
+	// so only images already in the HTML as data: URLs travel with it.
+	// pandoc reads no path and fetches no URL the document names, so a
+	// document cannot copy a file from outside the viewer's folders onto
+	// the clipboard, nor make a request to the viewer that it would take
+	// for the user (🎯T66). AppKit's importer fetches nothing either.
+	rtf, _, err = pandoc.HTMLToRTFSandboxed(context.Background(), html)
 	if err != nil {
 		return nil, nil, err
 	}

@@ -4,8 +4,12 @@
 package convert
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
 )
 
 // Backend is a Markdown→PDF renderer that accepts assembled HTML and writes
@@ -48,4 +52,43 @@ func ResolveBackend(name string) (Backend, error) {
 		return nil, fmt.Errorf("unknown backend %q (supported: %s, %s)",
 			name, BackendWeasyPrint, BackendPrince)
 	}
+}
+
+// fetchlessRenderer is a backend that can run its engine with every
+// fetch refused but data: URLs (WriteSelfContainedPDF).
+type fetchlessRenderer interface {
+	renderFetchless(ctx context.Context, htmlContent, outputPath, pdfaProfile string) error
+}
+
+// runEngine writes htmlContent to a temporary file and runs bin with the
+// arguments argv returns for that file's path. stderr passes through
+// clean before it joins the error.
+func runEngine(ctx context.Context, bin, htmlContent, outputPath string, clean func(string) string, argv func(input string) []string) error {
+	if dir := filepath.Dir(outputPath); dir != "." {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return err
+		}
+	}
+	tmpFile, err := os.CreateTemp("", "vellum-*.html")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmpFile.Name())
+	if _, err := tmpFile.WriteString(htmlContent); err != nil {
+		tmpFile.Close()
+		return err
+	}
+	if err := tmpFile.Close(); err != nil {
+		return err
+	}
+	cmd := exec.CommandContext(ctx, bin, argv(tmpFile.Name())...)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		if msg := clean(stderr.String()); msg != "" {
+			return fmt.Errorf("%w: %s", err, msg)
+		}
+		return err
+	}
+	return nil
 }

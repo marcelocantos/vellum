@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"sync"
 
@@ -30,6 +31,31 @@ func katexHead(href string) (string, error) {
 	}
 	return `<link rel="stylesheet" href="` + href + `">`, nil
 }
+
+// katexInlineHead returns KaTeX's stylesheet as a <style> element whose
+// fonts are data: URLs, for a page handed to an engine that fetches
+// nothing (Options.KaTeXInline). It reads only the embedded copy.
+var katexInlineHead = sync.OnceValues(func() (string, error) {
+	tree := embed.KaTeX()
+	css, err := fs.ReadFile(tree, embed.KaTeXCSSName)
+	if err != nil {
+		return "", fmt.Errorf("katex stylesheet: %w", err)
+	}
+	var missing error
+	inlined := rewriteCSSURLs(string(css), func(ref string) refDecision {
+		name := path.Clean(path.Join(path.Dir(embed.KaTeXCSSName), ref))
+		b, err := fs.ReadFile(tree, name)
+		if err != nil {
+			missing = fmt.Errorf("katex font %s: %w", ref, err)
+			return refDecision{kind: refDrop}
+		}
+		return refDecision{kind: refReplace, repl: dataURL(mediaTypeFor(name, b), b)}
+	})
+	if missing != nil {
+		return "", missing
+	}
+	return "<style>\n" + inlined + "\n</style>", nil
+})
 
 var katexAssetDir = sync.OnceValues(materialiseKaTeX)
 
