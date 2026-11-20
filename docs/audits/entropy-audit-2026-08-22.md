@@ -277,9 +277,9 @@ Do not aggregate these states into a scalar.
 
 - **Priority:** P3
 - **Dimensions:** Redundancy; Change amplification
-- **Status:** observed fact
-- **Evidence:** `mcp/server.go:19-32` `Endpoint` / `FilePair` vs `convert/run.go:52-65`. Mapping: `mcp/server.go:159-170` `toEndpoint`.
-- **Mechanism:** a new media field must be added twice or MCP silently drops it (`toEndpoint` is a manual field list).
+- **Status:** resolved. The DTOs stay separate (jsonschema tags stay out of `convert`). `TestEndpointSchemaMatchesConvert` compares exported fields and checks `toEndpoint` / `toFilePair` copy every one. Adding `Extra` to `convert.Endpoint` failed that test (6 fields vs 5) before the field was removed.
+- **Evidence:** Was: `mcp.Endpoint` / `FilePair` duplicated `convert.Endpoint` / `FilePair`, and `toEndpoint` was a manual field list that could drop a new field with no test.
+- **Mechanism:** a new media field must be added twice or MCP silently drops it (`toEndpoint` is a manual field list). The reflection test now fails unless the MCP struct and the copier both match.
 - **Blast radius:** MCP `convert` schema vs `convert.Run`.
 - **Counterevidence checked:** jsonschema tags cannot live on `convert.Endpoint` without pulling MCP concerns into the library — a real reason to duplicate. The mapping is small and tested (`mcp/server_test.go`).
 - **Smallest coherent remediation:** keep the DTO; generate `toEndpoint` from shared field names, or embed `convert.Endpoint` if the SDK allows jsonschema on the inner type.
@@ -310,7 +310,7 @@ Do not aggregate these states into a scalar.
 | Product architecture | `CLAUDE.md`, `README.md`, `docs/HANDOVER.md`, `STABILITY.md` | ENT-003, ENT-007, ENT-009 |
 | Markdown→PDF write | `renderPDFHTML` + `writePDF`, called from `Convert` and `writeFileOutput` | ENT-004 resolved |
 | Markdown parse | `convert` goldmark, `adf` goldmark, shared GFM fixture | ENT-010 resolved (isolated) |
-| Convert request shape | `convert.Endpoint`, `mcp.Endpoint` | ENT-011 |
+| Convert request shape | `convert.Endpoint`, `mcp.Endpoint`, reflection parity test | ENT-011 resolved |
 | YAML | yaml.v3 (config), yaml.v2 (goldmark-meta) | ENT-012 |
 | Format constants | `convert.Format*`, `clipboard.Format*`, `viewer.Format*` (iota) | same strings, different types; not currently drifted |
 | Pandoc invocation | `importer` (import), `internal/pandoc` (HTML→RTF) | **deliberate**; package comment in `internal/pandoc/pandoc.go:4-13` |

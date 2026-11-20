@@ -150,7 +150,7 @@ func makeConvertHandler(baseStyle *convert.Style, baseBackend, baseTemplate stri
 
 		if len(input.Files) > 0 {
 			for _, f := range input.Files {
-				req.Files = append(req.Files, convert.FilePair{Input: f.Input, Output: f.Output})
+				req.Files = append(req.Files, toFilePair(f))
 			}
 		} else {
 			if input.From == nil || input.To == nil {
@@ -198,6 +198,10 @@ func toEndpoint(e *Endpoint) convert.Endpoint {
 		Content: e.Content,
 		Format:  e.Format,
 	}
+}
+
+func toFilePair(f FilePair) convert.FilePair {
+	return convert.FilePair{Input: f.Input, Output: f.Output}
 }
 
 func fromResult(r *convert.Result) ConvertOutput {
