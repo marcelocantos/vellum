@@ -11,7 +11,6 @@ import (
 	"io"
 	"io/fs"
 	"net/http"
-	"os"
 	"path"
 	"strings"
 )
@@ -120,27 +119,18 @@ func (s *Server) handleEdit(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	info, err := requireMarkdownFile(absPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			http.NotFound(w, r)
-			return
-		}
-		http.Error(w, err.Error(), http.StatusBadRequest)
+	if !isMarkdownPath(absPath) {
+		http.Error(w, "not a markdown path", http.StatusBadRequest)
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
 
 	if r.Method == http.MethodGet {
-		data, err := os.ReadFile(absPath)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+		// The stamp is the open file's, taken before the read: a write in
+		// between shows up as a conflict on save, never as a lost update.
+		data, info, err := s.readServed(absPath)
+		if servedStatus(w, r, err) {
 			return
-		}
-		// Stat again after the read so the stamp is never newer than the
-		// bytes; a write in between shows up as a conflict on save.
-		if st, err := os.Stat(absPath); err == nil {
-			info = st
 		}
 		w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
 		w.Header().Set(StampHeader, sourceStamp(info))
@@ -163,6 +153,10 @@ func (s *Server) handleEdit(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	info, err := s.statServed(absPath)
+	if servedStatus(w, r, err) {
+		return
+	}
 	// Optimistic concurrency: the client names the version it edited.
 	// Anything else on disk (another editor, git checkout) wins until the
 	// user chooses to overwrite, which they do by resending with the
@@ -172,17 +166,8 @@ func (s *Server) handleEdit(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "the file changed on disk since it was opened", http.StatusConflict)
 		return
 	}
-	writeFn := s.WriteFile
-	if writeFn == nil {
-		writeFn = writeFileAtomic
-	}
-	if err := writeFn(absPath, body); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	after, err := os.Stat(absPath)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+	after, err := s.writeServed(absPath, body)
+	if servedStatus(w, r, err) {
 		return
 	}
 	stamp := sourceStamp(after)

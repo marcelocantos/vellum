@@ -22,7 +22,7 @@ func editTestDoc(t *testing.T, content string) (string, *Server, string) {
 	if err := os.WriteFile(md, []byte(content), 0o640); err != nil {
 		t.Fatal(err)
 	}
-	s := &Server{CacheDir: filepath.Join(dir, "cache")}
+	s := &Server{CacheDir: filepath.Join(dir, "cache"), Roots: []string{dir}}
 	ts := startTestServer(t, s)
 	return md, s, ts.URL + ChromeEditPath + "?path=" + url.QueryEscape(md)
 }
@@ -184,7 +184,7 @@ func TestEdit_RejectsNonMarkdownAndMissing(t *testing.T) {
 	if err := os.WriteFile(txt, []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	ts := startTestServer(t, &Server{CacheDir: filepath.Join(dir, "cache")})
+	ts := startTestServer(t, &Server{CacheDir: filepath.Join(dir, "cache"), Roots: []string{dir}})
 	for path, want := range map[string]int{
 		txt:                           http.StatusBadRequest,
 		filepath.Join(dir, "gone.md"): http.StatusNotFound,
@@ -243,7 +243,7 @@ func TestEditorAssets_ServedAsModules(t *testing.T) {
 
 func TestInjectChrome_EditButtonAndModal(t *testing.T) {
 	doc := `<html><head></head><body><h1>x</h1></body></html>`
-	out := injectChrome(doc, "/docs/note.md")
+	out := injectChrome(doc, &chromePage{SourcePath: "/docs/note.md"})
 	for _, want := range []string{
 		`data-vellum="edit"`,
 		`id="vellum-editor"`,
@@ -253,9 +253,9 @@ func TestInjectChrome_EditButtonAndModal(t *testing.T) {
 			t.Errorf("chrome missing %s", want)
 		}
 	}
-	waiting := injectChromeInto(doc, "/docs/new.md", true)
+	waiting := injectChrome(doc, &chromePage{SourcePath: "/docs/new.md", Waiting: true})
 	// Markup only: the inlined chrome.js mentions both selectors.
-	waiting, _, _ = strings.Cut(waiting, "<script>\n"+chromeJS)
+	waiting, _, _ = strings.Cut(waiting, chromeJS)
 	if strings.Contains(waiting, `data-vellum="edit"`) || strings.Contains(waiting, "data-editor=") {
 		t.Error("waiting page offers an editor for a file that does not exist")
 	}

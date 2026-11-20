@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/marcelocantos/vellum/convert"
+	"github.com/marcelocantos/vellum/internal/safehtml"
 )
 
 // A document with inline and display math and two Mermaid diagrams, the
@@ -93,10 +94,10 @@ func TestStamp_RejectsOtherFormats(t *testing.T) {
 	if err := os.WriteFile(cache, []byte("c"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := writeStamp(cache, md); err != nil {
+	info, _ := os.Stat(md)
+	if err := writeStamp(cache, info); err != nil {
 		t.Fatal(err)
 	}
-	info, _ := os.Stat(md)
 	if !stampMatches(cache, info) {
 		t.Fatal("fresh stamp must match")
 	}
@@ -154,7 +155,7 @@ func TestFlightGroup_CoalescesSameKey(t *testing.T) {
 func TestServer_ShellFirstThenFragmentsOnDemand(t *testing.T) {
 	dir, md := writeDoc(t, lazyDoc)
 	var renders atomic.Int64
-	s := &Server{CacheDir: filepath.Join(dir, "cache"), RenderFragments: stubFragments(&renders)}
+	s := &Server{CacheDir: filepath.Join(dir, "cache"), Roots: []string{dir}, RenderFragments: stubFragments(&renders)}
 	ts := startTestServer(t, s)
 
 	status, _, page := getText(t, ViewURL(ts.URL, md))
@@ -207,7 +208,7 @@ func TestServer_ShellFirstThenFragmentsOnDemand(t *testing.T) {
 
 	// Mermaid: one render per id, then cache hits; immutable response.
 	status, hdr, body := getText(t, fragmentURL(ts.URL, md, diagram.ID))
-	if status != http.StatusOK || body != sampleMermaidSVG {
+	if status != http.StatusOK || body != safehtml.Rendered(sampleMermaidSVG) {
 		t.Fatalf("fragment %d: %s", status, body)
 	}
 	if cc := hdr.Get("Cache-Control"); !strings.Contains(cc, "immutable") {
@@ -216,7 +217,7 @@ func TestServer_ShellFirstThenFragmentsOnDemand(t *testing.T) {
 	if renders.Load() != 1 {
 		t.Fatalf("renders=%d after one diagram", renders.Load())
 	}
-	if _, _, again := getText(t, fragmentURL(ts.URL, md, diagram.ID)); again != sampleMermaidSVG || renders.Load() != 1 {
+	if _, _, again := getText(t, fragmentURL(ts.URL, md, diagram.ID)); again != safehtml.Rendered(sampleMermaidSVG) || renders.Load() != 1 {
 		t.Fatalf("second fetch must come from the fragment cache (renders=%d)", renders.Load())
 	}
 	if _, err := os.Stat(fragmentCachePath(s.CacheDir, diagram.ID)); err != nil {
@@ -273,7 +274,7 @@ func TestServer_ShellFirstThenFragmentsOnDemand(t *testing.T) {
 func TestServer_FragmentRenderFailureIsNotCached(t *testing.T) {
 	dir, md := writeDoc(t, "```mermaid\ngraph TD\n  boom\n```\n")
 	var renders atomic.Int64
-	s := &Server{CacheDir: filepath.Join(dir, "cache"), RenderFragments: stubFragments(&renders)}
+	s := &Server{CacheDir: filepath.Join(dir, "cache"), Roots: []string{dir}, RenderFragments: stubFragments(&renders)}
 	ts := startTestServer(t, s)
 	id := convert.ExtractFragments([]byte("```mermaid\ngraph TD\n  boom\n```\n"), nil)[0].ID
 
@@ -299,7 +300,7 @@ func TestServer_ClipboardResolvesEveryFragment(t *testing.T) {
 	var renders atomic.Int64
 	var got string
 	s := &Server{
-		CacheDir:        filepath.Join(dir, "cache"),
+		CacheDir: filepath.Join(dir, "cache"), Roots: []string{dir},
 		RenderFragments: stubFragments(&renders),
 		WriteClipboard:  func(html string) error { got = html; return nil },
 	}
@@ -319,8 +320,9 @@ func TestServer_ClipboardResolvesEveryFragment(t *testing.T) {
 	for _, want := range []string{
 		`<p>before <span class="katex">x^2</span> and</p>`,
 		`<div class="katex-display"><span class="katex">a = b</span></div>`,
-		`<div class="mermaid-svg">` + sampleMermaidSVG + `</div>`,
-		`<div class="mermaid-svg" style="max-width: 50%">` + sampleMermaidSVG + `</div>`,
+		// Fragments pass through the scrub, which re-serialises the SVG.
+		`<div class="mermaid-svg">` + safehtml.Rendered(sampleMermaidSVG) + `</div>`,
+		`<div class="mermaid-svg" style="max-width: 50%">` + safehtml.Rendered(sampleMermaidSVG) + `</div>`,
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("clipboard missing %q:\n%s", want, got)
@@ -332,11 +334,11 @@ func TestServer_ClipboardResolvesEveryFragment(t *testing.T) {
 		t.Fatalf("renders=%d", renders.Load())
 	}
 	diagram := convert.ExtractFragments([]byte(lazyDoc), nil)[2]
-	if _, _, body := getText(t, fragmentURL(ts.URL, md, diagram.ID)); body != sampleMermaidSVG || renders.Load() != 3 {
+	if _, _, body := getText(t, fragmentURL(ts.URL, md, diagram.ID)); body != safehtml.Rendered(sampleMermaidSVG) || renders.Load() != 3 {
 		t.Fatalf("fragment after clipboard: %q renders=%d", body, renders.Load())
 	}
 	// The shell cache is untouched by the full render.
-	shell, err := s.cachedHTML(context.Background(), md)
+	shell, _, err := s.cachedHTML(context.Background(), md)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -348,7 +350,7 @@ func TestServer_ClipboardResolvesEveryFragment(t *testing.T) {
 func TestServer_FragmentNotFoundWhenSourceChanged(t *testing.T) {
 	dir, md := writeDoc(t, lazyDoc)
 	var renders atomic.Int64
-	s := &Server{CacheDir: filepath.Join(dir, "cache"), RenderFragments: stubFragments(&renders)}
+	s := &Server{CacheDir: filepath.Join(dir, "cache"), Roots: []string{dir}, RenderFragments: stubFragments(&renders)}
 	ts := startTestServer(t, s)
 	diagram := convert.ExtractFragments([]byte(lazyDoc), nil)[2]
 

@@ -73,7 +73,7 @@ func TestHome_ListsTreeAndRecent(t *testing.T) {
 
 func TestHome_IsReadOnlyAndLoopback(t *testing.T) {
 	dir := t.TempDir()
-	s := &Server{CacheDir: filepath.Join(dir, "cache")}
+	s := &Server{CacheDir: filepath.Join(dir, "cache"), Roots: []string{dir}}
 	handler := s.Handler()
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)

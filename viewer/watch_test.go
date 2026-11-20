@@ -79,7 +79,7 @@ func TestWatch_RejectsMissingPath(t *testing.T) {
 func TestWatch_MissingFileWaitsUntilItAppears(t *testing.T) {
 	dir := t.TempDir()
 	md := filepath.Join(dir, "later.md")
-	s := &Server{CacheDir: filepath.Join(dir, "cache"), WatchHeartbeat: time.Hour}
+	s := &Server{CacheDir: filepath.Join(dir, "cache"), Roots: []string{dir}, WatchHeartbeat: time.Hour}
 	ts := startTestServer(t, s)
 	conn, ctx, _ := dialWatch(t, ts.URL, md)
 
@@ -142,7 +142,7 @@ func TestWatch_InitialStampThenQuietThenChange(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := &Server{
-		CacheDir:       filepath.Join(dir, "cache"),
+		CacheDir: filepath.Join(dir, "cache"), Roots: []string{dir},
 		WatchHeartbeat: time.Hour,
 	}
 	ts := startTestServer(t, s)
@@ -212,7 +212,7 @@ func TestWatch_DeleteLeavesConnectionQuiet(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := &Server{
-		CacheDir:       filepath.Join(dir, "cache"),
+		CacheDir: filepath.Join(dir, "cache"), Roots: []string{dir},
 		WatchHeartbeat: time.Hour,
 	}
 	ts := startTestServer(t, s)
@@ -282,7 +282,7 @@ func TestWatch_CoalescesRapidWrites(t *testing.T) {
 	if err := os.WriteFile(md, []byte("# Doc\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	s := &Server{CacheDir: filepath.Join(dir, "cache"), WatchHeartbeat: time.Hour}
+	s := &Server{CacheDir: filepath.Join(dir, "cache"), Roots: []string{dir}, WatchHeartbeat: time.Hour}
 	ts := startTestServer(t, s)
 	conn, ctx, _ := dialWatch(t, ts.URL, md)
 	if msg := readWatchText(t, ctx, conn); !strings.HasPrefix(msg, "stamp ") {
@@ -321,7 +321,7 @@ func TestWatch_RenameRedirects(t *testing.T) {
 	if err := os.WriteFile(md, []byte("# Doc\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	s := &Server{CacheDir: filepath.Join(dir, "cache"), WatchHeartbeat: time.Hour}
+	s := &Server{CacheDir: filepath.Join(dir, "cache"), Roots: []string{dir}, WatchHeartbeat: time.Hour}
 	ts := startTestServer(t, s)
 	conn, ctx, _ := dialWatch(t, ts.URL, md)
 	if msg := readWatchText(t, ctx, conn); !strings.HasPrefix(msg, "stamp ") {
@@ -347,7 +347,7 @@ func TestWatch_AtomicReplaceIsStamp(t *testing.T) {
 	if err := os.WriteFile(md, []byte("# Doc\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	s := &Server{CacheDir: filepath.Join(dir, "cache"), WatchHeartbeat: time.Hour}
+	s := &Server{CacheDir: filepath.Join(dir, "cache"), Roots: []string{dir}, WatchHeartbeat: time.Hour}
 	ts := startTestServer(t, s)
 	conn, ctx, _ := dialWatch(t, ts.URL, md)
 	if msg := readWatchText(t, ctx, conn); !strings.HasPrefix(msg, "stamp ") {
@@ -373,7 +373,7 @@ func TestWatch_AtomicReplaceIsStamp(t *testing.T) {
 func TestWatch_MissingParentThenFile(t *testing.T) {
 	dir := t.TempDir()
 	md := filepath.Join(dir, "a", "b", "doc.md")
-	s := &Server{CacheDir: filepath.Join(dir, "cache"), WatchHeartbeat: time.Hour}
+	s := &Server{CacheDir: filepath.Join(dir, "cache"), Roots: []string{dir}, WatchHeartbeat: time.Hour}
 	ts := startTestServer(t, s)
 	conn, ctx, _ := dialWatch(t, ts.URL, md)
 	got := make(chan string, 1)
@@ -426,7 +426,7 @@ func TestWatch_SharedMachine(t *testing.T) {
 	if err := os.WriteFile(md, []byte("# Doc\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	s := &Server{CacheDir: filepath.Join(dir, "cache"), WatchHeartbeat: time.Hour}
+	s := &Server{CacheDir: filepath.Join(dir, "cache"), Roots: []string{dir}, WatchHeartbeat: time.Hour}
 	ts := startTestServer(t, s)
 	a, ctxA, _ := dialWatch(t, ts.URL, md)
 	b, ctxB, _ := dialWatch(t, ts.URL, md)
@@ -457,7 +457,7 @@ func TestWatch_SharedMachine(t *testing.T) {
 func TestServe_MissingMarkdownWatches(t *testing.T) {
 	dir := t.TempDir()
 	md := filepath.Join(dir, "missing.md")
-	s := &Server{CacheDir: filepath.Join(dir, "cache")}
+	s := &Server{CacheDir: filepath.Join(dir, "cache"), Roots: []string{dir}}
 	ts := startTestServer(t, s)
 	resp, err := http.Get(ViewURL(ts.URL, md))
 	if err != nil {
@@ -487,7 +487,7 @@ func TestWatch_HeartbeatPing(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := &Server{
-		CacheDir:       filepath.Join(dir, "cache"),
+		CacheDir: filepath.Join(dir, "cache"), Roots: []string{dir},
 		WatchHeartbeat: 30 * time.Millisecond,
 	}
 	ts := startTestServer(t, s)
@@ -513,7 +513,7 @@ func TestWatch_HeartbeatPing(t *testing.T) {
 
 func TestInjectChrome_IncludesWatchScript(t *testing.T) {
 	in := `<!DOCTYPE html><html><head><title>T</title></head><body><h1 id="hello">Hello</h1></body></html>`
-	out := injectChrome(in, "/docs/note.md")
+	out := injectChrome(in, &chromePage{SourcePath: "/docs/note.md"})
 	if !strings.Contains(out, "/_vellum/watch") {
 		t.Fatalf("missing watch URL:\n%s", out)
 	}
@@ -537,7 +537,7 @@ func TestWatch_HTTPNotUpgradeStillRejectsBodyRead(t *testing.T) {
 	if err := os.WriteFile(md, []byte("# Doc\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	s := &Server{CacheDir: filepath.Join(dir, "cache")}
+	s := &Server{CacheDir: filepath.Join(dir, "cache"), Roots: []string{dir}}
 	ts := startTestServer(t, s)
 	resp, err := http.Get(ts.URL + ChromeWatchPath + "?path=" + url.QueryEscape(md))
 	if err != nil {

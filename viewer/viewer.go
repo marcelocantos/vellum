@@ -288,10 +288,14 @@ func renderToCache(ctx context.Context, absInput, cachePath string, opts *ViewOp
 	if err := convert.CheckDeps(opts.Backend); err != nil {
 		return err
 	}
+	info, err := os.Stat(absInput)
+	if err != nil {
+		return fmt.Errorf("stamp stat source: %w", err)
+	}
 	if err := convert.Convert(ctx, absInput, cachePath, cOpts); err != nil {
 		return err
 	}
-	return writeStamp(cachePath, absInput)
+	return writeStamp(cachePath, info)
 }
 
 func cacheName(absPath string, ext string) string {
@@ -304,18 +308,18 @@ func cacheName(absPath string, ext string) string {
 // page with diagrams inline rather than the deferred shell) is re-rendered
 // instead of served. Bump when the cached bytes change meaning (v3: the
 // KaTeX stylesheet is linked from ChromeKaTeXPrefix, not a CDN; v4: blocks
-// carry convert.SourceLineAttr for the editor's scroll mapping).
-const stampFormat = "v4"
+// carry convert.SourceLineAttr for the editor's scroll mapping; v5: the
+// document's HTML is sanitised, so a v4 page may still hold raw script).
+const stampFormat = "v5"
 
 func stampPath(cachePath string) string {
 	return cachePath + ".stamp"
 }
 
-func writeStamp(cachePath, absInput string) error {
-	info, err := os.Stat(absInput)
-	if err != nil {
-		return fmt.Errorf("stamp stat source: %w", err)
-	}
+// writeStamp records the source info a cache entry was made from. info
+// must be taken before the source was read, so a write during the render
+// leaves a stale stamp (a re-render), never a fresh stamp on old bytes.
+func writeStamp(cachePath string, info os.FileInfo) error {
 	body := strconv.FormatInt(info.ModTime().UnixNano(), 10) + " " + strconv.FormatInt(info.Size(), 10) + " " + stampFormat + "\n"
 	if err := os.WriteFile(stampPath(cachePath), []byte(body), 0o644); err != nil {
 		return fmt.Errorf("writing cache stamp: %w", err)

@@ -26,7 +26,7 @@ func TestServer_KaTeXServedLocally(t *testing.T) {
 	if err := os.WriteFile(doc, []byte("# Math\n\n$$a^2 + b^2 = c^2$$\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	s := &Server{CacheDir: filepath.Join(dir, "cache")}
+	s := &Server{CacheDir: filepath.Join(dir, "cache"), Roots: []string{dir}}
 	ts := startTestServer(t, s)
 
 	get := func(url string) (int, string, []byte) {

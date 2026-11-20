@@ -31,13 +31,15 @@ Markdown → pptx path: Mermaid preprocessor (PNG, inlined as images) → pandoc
 | `importer/` | Rich-text → Markdown via pandoc; PDF via Poppler |
 | `adf/` | Markdown → Confluence ADF (library only; not a `convert.Run` sink) |
 | `internal/pandoc/` | pandoc export helpers: HTML → RTF/plain (clipboard fallback) and Markdown → file (pptx); not a public API |
+| `internal/mdmath/` | Finds `$…$` / `$$…$$` math outside code, with code located by a goldmark parse (CommonMark fences, indented blocks, code spans); used by `convert` (KaTeX placeholders) and `adf` (latex fences). |
+| `internal/safehtml/` | Allow-list HTML sanitiser (x/net/html parse → filter → render) for the viewer: `Document` for a document's own HTML, `Rendered` scrubs KaTeX/Mermaid fragments. The viewer pairs it with a nonce CSP (`viewer/csp.go`). |
 | `internal/xdg/` | Per-user config directory (`$XDG_CONFIG_HOME/vellum`, else `~/.config/vellum`; `%APPDATA%\vellum` on Windows) shared by `config/` and template lookup |
 | `internal/fileurl/`, `internal/shim/`, `internal/hint/` | Portability helpers: drive-letter-safe `file://` URLs, running npm `.cmd` shims (mmdc) as `node <script>` on Windows, per-OS install/service hints |
 | `config/` | User configuration loaded from `~/.config/vellum/config.yaml` |
 | `mcp/` | MCP server (single `convert` tool; streamable HTTP + stdio) |
 | `embed/` | Embedded assets (CSS, HTML template, KaTeX stylesheet + fonts under `katex/`, refreshed by `scripts/vendor-katex.sh`) |
 | `internal/testdeps/` | Test gate for external converters (`VELLUM_REQUIRE_DEPS`) |
-| `viewer/` | Localhost daemon (HTML view + chrome + `/mcp`); cached PDF open; macOS default .md handler (`install-viewer`); Windows logon Scheduled Task (`install-service`). `viewer/edit.go` is the source editor's read/write endpoint and bundle server. |
+| `viewer/` | Localhost daemon (HTML view + chrome + `/mcp`); cached PDF open; macOS default .md handler (`install-viewer`); Windows logon Scheduled Task (`install-service`). `viewer/edit.go` is the source editor's read/write endpoint and bundle server. `viewer/roots.go` confines every path-taking route to the served folders (`Server.Roots` plus folders the user opened a document in), opening through `os.Root`. |
 | `editor/` | npm project for the viewer's CodeMirror 6 editor. `npm ci && npm run build` writes the embedded bundle to `viewer/editor/` (commit it with the change); `make test-editor` runs the Playwright journey (`editor/journey.cjs`) against a fresh build. Not part of `cv gate`. |
 
 ### External dependencies

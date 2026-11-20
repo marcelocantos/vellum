@@ -6,120 +6,54 @@ package viewer
 import (
 	"fmt"
 	"net/http"
-	"os"
-	"path/filepath"
-	"regexp"
-	"runtime"
 	"strconv"
 	"strings"
+
+	"github.com/marcelocantos/vellum/convert"
 )
 
-var (
-	liStartCheckboxRe = regexp.MustCompile(`(?is)<li(\b[^>]*)>(\s*)<input(\b[^>]*)>`)
-	liClassAttrRe     = regexp.MustCompile(`(?i)(\bclass\s*=\s*)(["'])([^"']*)(["'])`)
-	disabledAttrRe    = regexp.MustCompile(`(?i)\sdisabled(?:\s*=\s*(?:""|'')|\s*=\s*disabled)?`)
-	taskMarkerRe      = regexp.MustCompile(`(?m)^(\s*[-*+]\s+\[)([ xX])(\])`)
-)
+// A task toggle names the exact checkbox the reader clicked: its index
+// among the document's task checkboxes, the source line of its marker
+// (both rendered onto the list item, see convert.TaskIndexAttr), the state
+// the reader saw, and in StampHeader the source stamp the page was
+// rendered from. The server checks every one against the file before it
+// changes a byte, and answers 409 when any differs: the document changed
+// underneath the page, and a reload shows the reader what is there now.
 
-func isCheckboxAttrs(attrs string) bool {
-	lower := strings.ToLower(attrs)
-	return strings.Contains(lower, `type="checkbox"`) ||
-		strings.Contains(lower, `type='checkbox'`) ||
-		strings.Contains(lower, "type=checkbox")
-}
+// errTaskMoved wraps every reason a toggle no longer matches the file.
+type errTaskMoved struct{ msg string }
 
-func ensureClassAttr(attrs, class string) string {
-	if liClassAttrRe.MatchString(attrs) {
-		return liClassAttrRe.ReplaceAllStringFunc(attrs, func(m string) string {
-			sub := liClassAttrRe.FindStringSubmatch(m)
-			if len(sub) != 5 || containsWord(sub[3], class) {
-				return m
-			}
-			existing := sub[3]
-			if existing != "" {
-				existing += " "
-			}
-			return sub[1] + sub[2] + existing + class + sub[4]
-		})
+func (e *errTaskMoved) Error() string { return e.msg + "; reload to see the document as it is now" }
+
+// toggleTask flips the marker of task index in src after checking that
+// it is on line and currently checked (or not) as the reader saw it.
+func toggleTask(src []byte, index, line int, checked bool) ([]byte, error) {
+	tasks, err := convert.Tasks(src)
+	if err != nil {
+		return nil, err
 	}
-	return attrs + ` class="` + class + `"`
-}
-
-func annotateTaskCheckboxes(html string) string {
-	n := 0
-	return liStartCheckboxRe.ReplaceAllStringFunc(html, func(m string) string {
-		sub := liStartCheckboxRe.FindStringSubmatch(m)
-		if len(sub) != 4 || !isCheckboxAttrs(sub[3]) {
-			return m
-		}
-		liAttrs, ws, inAttrs := sub[1], sub[2], sub[3]
-		if !strings.Contains(strings.ToLower(liAttrs), "data-task-index=") {
-			liAttrs += ` data-task-index="` + strconv.Itoa(n) + `"`
-		}
-		liAttrs = ensureClassAttr(liAttrs, "task-list-item")
-		inAttrs = disabledAttrRe.ReplaceAllString(inAttrs, "")
-		if !strings.Contains(strings.ToLower(inAttrs), "data-task-index=") {
-			inAttrs += ` data-task-index="` + strconv.Itoa(n) + `"`
-		}
-		n++
-		return "<li" + liAttrs + ">" + ws + "<input" + inAttrs + ">"
-	})
-}
-
-func toggleTaskMarker(src []byte, index int) ([]byte, error) {
-	matches := taskMarkerRe.FindAllSubmatchIndex(src, -1)
-	if index < 0 || index >= len(matches) {
-		return nil, fmt.Errorf("task index %d out of range (have %d)", index, len(matches))
+	if index < 0 || index >= len(tasks) {
+		return nil, &errTaskMoved{fmt.Sprintf("task %d is not in the document (it has %d)", index, len(tasks))}
 	}
-	loc := matches[index]
-	mark := src[loc[4]:loc[5]]
-	next := byte('x')
-	if mark[0] != ' ' {
-		next = ' '
+	t := tasks[index]
+	if t.Line != line {
+		return nil, &errTaskMoved{fmt.Sprintf("task %d is on line %d now, not line %d", index, t.Line, line)}
+	}
+	if t.Checked != checked {
+		state := "unchecked"
+		if t.Checked {
+			state = "checked"
+		}
+		return nil, &errTaskMoved{fmt.Sprintf("the task on line %d is already %s", line, state)}
 	}
 	out := make([]byte, len(src))
 	copy(out, src)
-	out[loc[4]] = next
+	mark := byte('x')
+	if checked {
+		mark = ' '
+	}
+	out[t.Offset+1] = mark
 	return out, nil
-}
-
-// writeFileAtomic replaces path's contents via a temp file and rename, so
-// a reader never sees a half-written document. A symlinked path is
-// resolved first (the link stays a link), and the file keeps its mode:
-// CreateTemp makes 0600 files, which rename would otherwise install.
-func writeFileAtomic(path string, data []byte) error {
-	if resolved, err := filepath.EvalSymlinks(path); err == nil {
-		path = resolved
-	}
-	mode := os.FileMode(0o644)
-	if info, err := os.Stat(path); err == nil {
-		mode = info.Mode().Perm()
-	}
-	dir := filepath.Dir(path)
-	tmp, err := os.CreateTemp(dir, ".vellum-write-*.tmp")
-	if err != nil {
-		return err
-	}
-	tmpName := tmp.Name()
-	if err := tmp.Chmod(mode); err != nil && runtime.GOOS != "windows" {
-		_ = tmp.Close()
-		_ = os.Remove(tmpName)
-		return err
-	}
-	if _, err := tmp.Write(data); err != nil {
-		_ = tmp.Close()
-		_ = os.Remove(tmpName)
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		_ = os.Remove(tmpName)
-		return err
-	}
-	if err := os.Rename(tmpName, path); err != nil {
-		_ = os.Remove(tmpName)
-		return err
-	}
-	return nil
 }
 
 func (s *Server) handleTaskToggle(w http.ResponseWriter, r *http.Request) {
@@ -136,48 +70,58 @@ func (s *Server) handleTaskToggle(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "not a markdown path", http.StatusBadRequest)
 		return
 	}
-	indexStr := strings.TrimSpace(r.URL.Query().Get("index"))
-	index, err := strconv.Atoi(indexStr)
-	if err != nil {
-		http.Error(w, "missing or invalid index", http.StatusBadRequest)
+	q := r.URL.Query()
+	index, errIndex := strconv.Atoi(strings.TrimSpace(q.Get("index")))
+	line, errLine := strconv.Atoi(strings.TrimSpace(q.Get("line")))
+	was := q.Get("checked")
+	if errIndex != nil || errLine != nil || (was != "0" && was != "1") {
+		http.Error(w, "missing or invalid index, line or checked (reload the page)", http.StatusBadRequest)
 		return
 	}
-	if _, err := requireMarkdownFile(absPath); err != nil {
-		if os.IsNotExist(err) {
-			http.NotFound(w, r)
-			return
-		}
-		if err == errIsDirectory {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		http.Error(w, err.Error(), http.StatusBadRequest)
+	expected := strings.TrimSpace(r.Header.Get(StampHeader))
+	if expected == "" {
+		http.Error(w, "missing "+StampHeader+" (reload the page)", http.StatusPreconditionRequired)
 		return
 	}
-	src, err := os.ReadFile(absPath)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+	// The stamp comes from the open file before it is read, so the bytes
+	// checked below are never older than the stamp compared here. The
+	// same stamp is checked again immediately before the write: a change
+	// that landed after the read must not be replaced by this page's copy.
+	// writeMu keeps a second click that read the old stamp from writing
+	// after this one has committed.
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+	src, info, err := s.readServed(absPath)
+	if servedStatus(w, r, err) {
 		return
 	}
-	out, err := toggleTaskMarker(src, index)
+	w.Header().Set("Cache-Control", "no-store")
+	if current := sourceStamp(info); current != expected {
+		w.Header().Set(StampHeader, current)
+		http.Error(w, "the file changed on disk since this page was rendered; reload to see the document as it is now", http.StatusConflict)
+		return
+	}
+	out, err := toggleTask(src, index, line, was == "1")
 	if err != nil {
+		w.Header().Set(StampHeader, expected)
 		http.Error(w, err.Error(), http.StatusConflict)
 		return
 	}
-	writeFn := s.WriteFile
-	if writeFn == nil {
-		writeFn = writeFileAtomic
-	}
-	if err := writeFn(absPath, out); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+	again, err := s.statServed(absPath)
+	if servedStatus(w, r, err) {
 		return
 	}
-	info, err := os.Stat(absPath)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+	if current := sourceStamp(again); current != expected {
+		w.Header().Set(StampHeader, current)
+		http.Error(w, "the file changed on disk since this page was rendered; reload to see the document as it is now", http.StatusConflict)
 		return
 	}
+	after, err := s.writeServed(absPath, out)
+	if servedStatus(w, r, err) {
+		return
+	}
+	stamp := sourceStamp(after)
+	w.Header().Set(StampHeader, stamp)
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	w.Header().Set("Cache-Control", "no-store")
-	_, _ = w.Write([]byte("stamp " + sourceStamp(info) + "\n"))
+	_, _ = w.Write([]byte("stamp " + stamp + "\n"))
 }

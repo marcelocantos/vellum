@@ -64,6 +64,7 @@ func (sourceLineTransformer) Transform(doc *ast.Document, reader text.Reader, pc
 		n.SetAttributeString(SourceEndAttr, []byte(strconv.Itoa(max(last, first))))
 		return ast.WalkContinue, nil
 	})
+	annotateTasks(doc, lineOf)
 }
 
 // blockStart is the source offset of a block's first line: its own

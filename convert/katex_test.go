@@ -4,6 +4,7 @@
 package convert
 
 import (
+	"context"
 	"fmt"
 	"regexp"
 	"strconv"
@@ -199,5 +200,48 @@ func TestMathPreprocessor_NoMath(t *testing.T) {
 	}
 	if len(m.exprs) != 0 {
 		t.Errorf("expected no exprs, got %d", len(m.exprs))
+	}
+}
+
+// Defect hunt 2026-11-20 finding 4: a $ inside any form of CommonMark
+// code stays in the code; it never becomes a math placeholder that
+// goldmark then escapes into the code block's text.
+func TestRender_MathLeavesEveryCodeFormAlone(t *testing.T) {
+	for _, c := range []struct{ src, keep string }{
+		{" ```\n $E = mc^2$\n ```\n", "$E = mc^2$"},
+		{"~~~\n$E = mc^2$\n~~~\n", "$E = mc^2$"},
+		{"    price is $5 and $10\n", "price is $5 and $10"},
+		{"``$x$`` and `` $y$ ``\n", "$x$"},
+		{"- item\n\n      cost $5 and $10\n", "cost $5 and $10"},
+		{"> ~~~\n> $z$\n> ~~~\n", "$z$"},
+	} {
+		html, _, err := Render(context.Background(), []byte(c.src), &Options{Defer: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		body := html[strings.Index(html, "<body"):]
+		if strings.Contains(body, "MATH:") || strings.Contains(body, "vellum-deferred") || !strings.Contains(body, c.keep) {
+			t.Errorf("%q: code was rewritten:\n%s", c.src, body)
+		}
+	}
+	// Math outside the code still renders.
+	html, _, err := Render(context.Background(), []byte("~~~\n$a$\n~~~\n\nthen $b$\n"), &Options{Defer: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Count(html, "vellum-deferred-math") != 1 || !strings.Contains(html, ">b</span>") {
+		t.Errorf("math after code lost:\n%s", html[strings.Index(html, "<body"):])
+	}
+}
+
+// Code is no longer swapped out for <!--CODE:n--> sentinels and searched
+// for afterwards, so a document that contains that text keeps it where
+// it was (defect hunt 2026-11-20 finding 8, first case).
+func TestMathPreprocessor_CodeSentinelTextIsJustText(t *testing.T) {
+	m := newMathPreprocessor()
+	src := "<!--CODE:0-->\n\n`secret` and $x$\n"
+	out := m.Extract(src)
+	if !strings.HasPrefix(out, "<!--CODE:0-->\n\n`secret` and <!--MATH:0-->") {
+		t.Fatalf("sentinel-shaped text moved: %q", out)
 	}
 }

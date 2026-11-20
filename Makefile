@@ -37,6 +37,15 @@ test-table-layout:
 	go build -o /tmp/vellum-table-layout-journey ./cmd/vellum
 	VELLUM_BINARY=/tmp/vellum-table-layout-journey node scripts/table-layout-journey.cjs
 
+# Requires `npm ci` in editor/ (Playwright), Chrome, and node with katex and
+# mmdc. Opens hostile documents in the viewer and checks nothing they carry
+# runs, that the CSP refuses injected script on its own, and that the
+# viewer's own features (theme, math, diagrams, editor) still work.
+.PHONY: test-viewer-security
+test-viewer-security:
+	go build -o /tmp/vellum-security-journey ./cmd/vellum
+	NODE_PATH=editor/node_modules VELLUM_BINARY=/tmp/vellum-security-journey node scripts/viewer-security-journey.cjs
+
 # Requires `npm ci` in editor/ and Chrome; drives the source editor end to
 # end (open, save, outside edits, conflict, close, theme, layout, offline).
 # Rebuilds the embedded bundle first, so the journey never tests a stale one;

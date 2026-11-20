@@ -31,7 +31,7 @@ func TestFileManagerIcon_Served(t *testing.T) {
 }
 
 func TestInjectChrome_ToolbarIconButtons(t *testing.T) {
-	out := injectChrome(`<html><head></head><body><h1>x</h1></body></html>`, "/docs/note.md")
+	out := injectChrome(`<html><head></head><body><h1>x</h1></body></html>`, &chromePage{SourcePath: "/docs/note.md"})
 	out, _, _ = strings.Cut(out, "<script>\n"+chromeJS)
 	for _, action := range []string{"edit", "clipboard", "reveal"} {
 		i := strings.Index(out, `data-vellum="`+action+`"`)

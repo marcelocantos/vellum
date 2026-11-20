@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/marcelocantos/vellum/convert"
+	"github.com/marcelocantos/vellum/internal/safehtml"
 )
 
 // ChromeFragmentPath serves one deferred article fragment (a Mermaid
@@ -54,6 +55,9 @@ func lazyLoadImages(html string) string {
 			return m
 		}
 		tag, attrs := sub[1], sub[2]
+		// The sanitiser writes void elements as <img …/>; keep the slash
+		// out of the attribute list it would otherwise end up inside.
+		attrs = strings.TrimSuffix(strings.TrimRight(attrs, " "), "/")
 		if !loadingAttrRe.MatchString(attrs) {
 			attrs += ` loading="lazy"`
 		}
@@ -239,14 +243,17 @@ func (s *Server) renderFragmentsCached(ctx context.Context, key string, frags []
 // page) is errFragmentNotFound. Math fragments are rendered a document at
 // a time, because every expression costs the same single node start.
 func (s *Server) fragmentHTML(ctx context.Context, absPath, id string) (string, error) {
+	if err := s.checkServed(absPath); err != nil {
+		return "", err
+	}
 	cacheRoot, err := s.cacheRoot()
 	if err != nil {
 		return "", err
 	}
 	if html, ok := cachedFragment(cacheRoot, id, s.now()); ok {
-		return html, nil
+		return safehtml.Rendered(html), nil
 	}
-	src, err := os.ReadFile(absPath)
+	src, _, err := s.readServed(absPath)
 	if err != nil {
 		return "", err
 	}
@@ -279,21 +286,27 @@ func (s *Server) fragmentHTML(ctx context.Context, absPath, id string) (string, 
 	if res.Err != nil {
 		return "", res.Err
 	}
-	return res.HTML, nil
+	// Fragment HTML is inserted into the page as markup; strip anything a
+	// renderer let through that would run there.
+	return safehtml.Rendered(res.HTML), nil
 }
 
 // completeHTML is the fully rendered document: the cached shell with
 // every deferred fragment resolved (from the fragment cache or a fresh
 // render). It is what the clipboard carries. soft lists fragments that
 // failed to render and were replaced by their source fallback.
-var sourceLineAttrRe = regexp.MustCompile(` (?:` + convert.SourceLineAttr + `|` + convert.SourceEndAttr + `)="\d+"`)
+var sourceLineAttrRe = regexp.MustCompile(` (?:` + convert.SourceLineAttr + `|` + convert.SourceEndAttr + `|` + convert.TaskIndexAttr + `|` + convert.TaskLineAttr + `)="\d+"`)
+
+// clipboardTaskBoxRe matches a task checkbox as the viewer renders it
+// (enabled, for toggling); a paste gets the read-only one.
+var clipboardTaskBoxRe = regexp.MustCompile(`<input((?: checked="")?) type="checkbox"/?>`)
 
 func (s *Server) completeHTML(ctx context.Context, absPath string) (html string, soft []string, err error) {
-	shell, err := s.cachedHTML(ctx, absPath)
+	shell, _, err := s.cachedHTML(ctx, absPath)
 	if err != nil {
 		return "", nil, err
 	}
-	src, err := os.ReadFile(absPath)
+	src, _, err := s.readServed(absPath)
 	if err != nil {
 		return "", nil, err
 	}
@@ -302,9 +315,10 @@ func (s *Server) completeHTML(ctx context.Context, absPath string) (html string,
 	if err != nil {
 		return "", nil, err
 	}
-	html, soft = convert.ResolveFragments(string(shell), results)
-	// Scroll-mapping attributes are for the live page, not a paste.
-	return sourceLineAttrRe.ReplaceAllString(html, ""), soft, nil
+	html, soft = convert.ResolveFragments(string(shell), convert.ScrubFragments(results))
+	// Scroll-mapping and task attributes are for the live page, not a paste.
+	html = sourceLineAttrRe.ReplaceAllString(html, "")
+	return clipboardTaskBoxRe.ReplaceAllString(html, `<input$1 disabled="" type="checkbox">`), soft, nil
 }
 
 // handleFragment serves one deferred fragment for ?path=…&id=…. Ids are
@@ -330,6 +344,8 @@ func (s *Server) handleFragment(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		w.Header().Set("Cache-Control", "no-store")
 		switch {
+		case errors.Is(err, errOutsideRoots):
+			http.Error(w, err.Error(), http.StatusForbidden)
 		case os.IsNotExist(err), errors.Is(err, errFragmentNotFound):
 			http.NotFound(w, r)
 		default:

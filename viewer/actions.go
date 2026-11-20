@@ -47,12 +47,13 @@ func (s *Server) handlePDF(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	info, err := os.Stat(absPath)
+	f, err := s.openServed(absPath)
+	if servedStatus(w, r, err) {
+		return
+	}
+	defer f.Close()
+	info, err := f.Stat()
 	if err != nil {
-		if os.IsNotExist(err) {
-			http.NotFound(w, r)
-			return
-		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -86,23 +87,28 @@ func (s *Server) handlePDF(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if !hit {
-		convertFn := s.ConvertPDF
-		if convertFn == nil {
-			convertFn = func(ctx context.Context, in, out string) error {
-				if err := convert.CheckDeps(s.Backend); err != nil {
-					return err
-				}
-				return convert.Convert(ctx, in, out, &convert.Options{Style: s.Style, Backend: s.Backend})
-			}
-		}
-		if err := convertFn(r.Context(), absPath, cachePath); err != nil {
-			var se *convert.SoftError
-			if !errors.As(err, &se) {
+		var convErr error
+		if s.ConvertPDF != nil {
+			convErr = s.ConvertPDF(r.Context(), absPath, cachePath)
+		} else {
+			// Read the descriptor confine already opened. convert.Convert
+			// would open the path again, and the engine would then fetch
+			// every relative URL from the document's own directory.
+			src, err := io.ReadAll(f)
+			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
+			convErr = s.renderServedPDF(r.Context(), src, absPath, cachePath)
 		}
-		if err := writeStamp(cachePath, absPath); err != nil {
+		if convErr != nil {
+			var se *convert.SoftError
+			if !errors.As(convErr, &se) {
+				http.Error(w, convErr.Error(), http.StatusInternalServerError)
+				return
+			}
+		}
+		if err := writeStamp(cachePath, info); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -114,6 +120,46 @@ func (s *Server) handlePDF(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Disposition", `attachment; filename="`+name+`"`)
 	w.Header().Set("Cache-Control", "no-store")
 	http.ServeFile(w, r, cachePath)
+}
+
+// renderServedPDF renders markdown already read from a served file.
+// Sanitize cuts the document's HTML down to the allow-list, and
+// IsolateLocalFiles copies every body-local resource through readServed
+// into a fresh directory. That directory is the PDF engine's base URL,
+// and it is removed after the engine returns. The head's own stylesheet
+// stays an absolute file URL, so KaTeX's fonts still resolve next to it.
+func (s *Server) renderServedPDF(ctx context.Context, src []byte, absPath, cachePath string) error {
+	if err := convert.CheckDeps(s.Backend); err != nil {
+		return err
+	}
+	page, soft, err := convert.Render(ctx, src, &convert.Options{
+		Style:         s.Style,
+		Backend:       s.Backend,
+		Sanitize:      true,
+		MermaidFormat: convert.MermaidPNG,
+	})
+	if err != nil {
+		return err
+	}
+	docDir := filepath.Dir(absPath)
+	jailed, dir, err := convert.IsolateLocalFiles(page, docDir, func(p string) ([]byte, error) {
+		b, _, err := s.readServed(p)
+		return b, err
+	})
+	if err != nil {
+		return err
+	}
+	if dir == "" || dir == docDir {
+		return fmt.Errorf("pdf resource directory was not isolated")
+	}
+	defer os.RemoveAll(dir)
+	if err := convert.WritePDF(ctx, jailed, cachePath, dir, &convert.Options{Style: s.Style, Backend: s.Backend}); err != nil {
+		return err
+	}
+	if len(soft) > 0 {
+		return &convert.SoftError{Messages: soft}
+	}
+	return nil
 }
 
 func (s *Server) handleClipboard(w http.ResponseWriter, r *http.Request) {
@@ -129,16 +175,7 @@ func (s *Server) handleClipboard(w http.ResponseWriter, r *http.Request) {
 	// The clipboard carries the whole document, so every deferred
 	// diagram and expression is rendered now (cache hits are free).
 	html, _, err := s.completeHTML(r.Context(), absPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			http.NotFound(w, r)
-			return
-		}
-		if errors.Is(err, errIsDirectory) {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+	if servedStatus(w, r, err) {
 		return
 	}
 	writeFn := s.WriteClipboard
@@ -167,9 +204,14 @@ func (s *Server) handleReveal(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	if _, err := os.Stat(absPath); err != nil {
+	// statServed opens through the served root, so a symlink swapped in
+	// after the request was parsed cannot point the reveal outside it.
+	if _, err := s.statServed(absPath); err != nil {
 		if os.IsNotExist(err) {
 			http.NotFound(w, r)
+			return
+		}
+		if servedStatus(w, r, err) {
 			return
 		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)

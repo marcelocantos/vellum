@@ -31,16 +31,16 @@ func TestPDFWrite_IsOneImplementation(t *testing.T) {
 			t.Errorf("writeFileOutput PDF case contains %s; PDF writing is still inline", name)
 		}
 	}
-	pdfBody := funcBody(t, "convert.go", "writePDF")
+	pdfBody := funcBody(t, "convert.go", "WritePDF")
 	htmlBody := funcBody(t, "convert.go", "renderPDFHTML")
 	if !strings.Contains(pdfBody, "ResolveBackend") || !strings.Contains(pdfBody, "backend.Render") {
-		t.Error("writePDF must be the only backend.Render call for PDF")
+		t.Error("WritePDF must be the only backend.Render call for PDF")
 	}
 	if !strings.Contains(htmlBody, "MermaidPNG") {
 		t.Error("renderPDFHTML must force Mermaid PNG for every PDF")
 	}
 	if strings.Contains(pdfBody, "MermaidPNG") {
-		t.Error("Mermaid format drifted back into writePDF")
+		t.Error("Mermaid format drifted back into WritePDF")
 	}
 }
 

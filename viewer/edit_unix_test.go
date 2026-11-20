@@ -15,7 +15,7 @@ import (
 	"testing"
 )
 
-func TestWriteFileAtomic_FollowsSymlinkAndKeepsIt(t *testing.T) {
+func TestWriteServed_FollowsSymlinkAndKeepsIt(t *testing.T) {
 	dir := t.TempDir()
 	md := filepath.Join(dir, "doc.md")
 	if err := os.WriteFile(md, []byte("# Target\n"), 0o640); err != nil {
@@ -25,7 +25,8 @@ func TestWriteFileAtomic_FollowsSymlinkAndKeepsIt(t *testing.T) {
 	if err := os.Symlink(md, link); err != nil {
 		t.Fatal(err)
 	}
-	if err := writeFileAtomic(link, []byte("# Via link\n")); err != nil {
+	s := &Server{CacheDir: t.TempDir(), Roots: []string{dir}}
+	if _, err := s.writeServed(link, []byte("# Via link\n")); err != nil {
 		t.Fatal(err)
 	}
 	if fi, err := os.Lstat(link); err != nil || fi.Mode()&fs.ModeSymlink == 0 {

@@ -27,7 +27,7 @@ func stubHTML(_ context.Context, _ string, _ *convert.Options) (string, []string
 
 func TestInjectChrome_WrapsBodyAndAddsClass(t *testing.T) {
 	in := `<!DOCTYPE html><html><head><title>T</title></head><body><h1 id="hello">Hello</h1></body></html>`
-	out := injectChrome(in, "/docs/note.md")
+	out := injectChrome(in, &chromePage{SourcePath: "/docs/note.md"})
 	if !strings.Contains(out, `class="vellum-view"`) {
 		t.Fatalf("missing body class:\n%s", out)
 	}
@@ -103,7 +103,7 @@ func TestInjectChrome_KeepsInDocumentContents(t *testing.T) {
 </div>
 <h1 id="hello">Hello</h1>
 </body></html>`
-	out := injectChrome(in, "/docs/note.md")
+	out := injectChrome(in, &chromePage{SourcePath: "/docs/note.md"})
 	if !strings.Contains(out, `class="vellum-contents"`) {
 		t.Fatalf("in-document Contents stripped by chrome:\n%s", out)
 	}
@@ -121,7 +121,7 @@ func TestInjectChrome_KeepsInDocumentContents(t *testing.T) {
 
 func TestInjectChrome_PreservesExistingBodyClass(t *testing.T) {
 	in := `<html><head></head><body class="x" data-q="1"><p>hi</p></body></html>`
-	out := injectChrome(in, "/a.md")
+	out := injectChrome(in, &chromePage{SourcePath: "/a.md"})
 	if !strings.Contains(out, `class="x vellum-view"`) {
 		t.Fatalf("expected class merge:\n%s", out)
 	}
@@ -137,7 +137,7 @@ func TestServer_ChromeInjectedOnServeNotInCache(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := &Server{
-		CacheDir:   filepath.Join(dir, "cache"),
+		CacheDir: filepath.Join(dir, "cache"), Roots: []string{dir},
 		RenderFile: stubHTML,
 	}
 	ts := startTestServer(t, s)

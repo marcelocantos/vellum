@@ -494,7 +494,7 @@ func writeFileOutput(ctx context.Context, md, outPath, toFmt, baseDir string, op
 		if err != nil {
 			return soft, err
 		}
-		if err := writePDF(ctx, html, outPath, baseDir, opts); err != nil {
+		if err := WritePDF(ctx, html, outPath, baseDir, opts); err != nil {
 			return soft, err
 		}
 		return soft, nil

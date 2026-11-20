@@ -20,10 +20,12 @@ import (
 	meta "github.com/yuin/goldmark-meta"
 	"github.com/yuin/goldmark/extension"
 	"github.com/yuin/goldmark/parser"
+	"github.com/yuin/goldmark/renderer"
 	"github.com/yuin/goldmark/renderer/html"
 	"github.com/yuin/goldmark/util"
 
 	"github.com/marcelocantos/vellum/embed"
+	"github.com/marcelocantos/vellum/internal/safehtml"
 )
 
 // Options configures the conversion pipeline.
@@ -58,6 +60,12 @@ type Options struct {
 	// SourceLines puts SourceLineAttr on rendered blocks (the view server
 	// maps scroll positions between the page and the source editor).
 	SourceLines bool
+	// Sanitize passes the document's HTML through safehtml.Document: raw
+	// HTML and link URLs are cut down to an allow-list, so the page cannot
+	// run anything the document's author wrote. The view server sets it;
+	// outputs the user asks for by name (PDF, HTML files, clipboard from
+	// the CLI) keep the document's HTML as written.
+	Sanitize bool
 }
 
 var htmlTmpl = template.Must(template.New("page").Parse(embed.HTMLTemplate))
@@ -83,6 +91,7 @@ var md = goldmark.New(
 	),
 	goldmark.WithRendererOptions(
 		html.WithUnsafe(),
+		renderer.WithNodeRenderers(util.Prioritized(taskBoxRenderer{}, taskBoxRendererPriority)),
 	),
 )
 
@@ -115,9 +124,11 @@ func softError(messages []string) error {
 // *SoftError so callers can detect non-zero exit without discarding output.
 // Mermaid diagrams are rendered as PNG for PDF (Prince-safe labels).
 //
-// The viewer PDF cache is this function. CLI and MCP PDF go through Run
-// and writeFileOutput. Both call renderPDFHTML and writePDF so PDF/A,
-// the backend, and the Mermaid format cannot diverge.
+// CLI and MCP PDF go through Run and writeFileOutput. Both call
+// renderPDFHTML and WritePDF, so PDF/A, the backend, and the Mermaid
+// format cannot diverge. The view server does not use Convert: it
+// renders bytes it already read inside a served root, with Sanitize
+// set, and passes the page through IsolateLocalFiles before WritePDF.
 func Convert(ctx context.Context, inputPath, outputPath string, opts *Options) error {
 	absInput, err := filepath.Abs(inputPath)
 	if err != nil {
@@ -131,7 +142,7 @@ func Convert(ctx context.Context, inputPath, outputPath string, opts *Options) e
 	if err != nil {
 		return err
 	}
-	if err := writePDF(ctx, html, outputPath, filepath.Dir(absInput), opts); err != nil {
+	if err := WritePDF(ctx, html, outputPath, filepath.Dir(absInput), opts); err != nil {
 		return err
 	}
 	return softError(soft)
@@ -143,9 +154,11 @@ func renderPDFHTML(ctx context.Context, md string, opts *Options) (string, []str
 	return Render(ctx, []byte(md), withMermaidFormat(opts, MermaidPNG))
 }
 
-// writePDF is the only HTML→PDF backend call. baseDir resolves relative
-// images; an empty baseDir uses the output file's directory.
-func writePDF(ctx context.Context, html, outputPath, baseDir string, opts *Options) error {
+// WritePDF is the only HTML→PDF backend call. baseDir resolves relative
+// images; an empty baseDir uses the output file's directory. The view
+// server passes the directory from IsolateLocalFiles, not the document's
+// own folder.
+func WritePDF(ctx context.Context, html, outputPath, baseDir string, opts *Options) error {
 	if dir := filepath.Dir(outputPath); dir != "." && dir != "" {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return err
@@ -211,12 +224,20 @@ func Render(ctx context.Context, src []byte, opts *Options) (html string, soft [
 	if err != nil {
 		return "", nil, fmt.Errorf("rendering markdown: %w", err)
 	}
+	// Before vellum adds its own markup (placeholders, fragments, the
+	// Contents block), so only what the document brought is filtered.
+	if opts != nil && opts.Sanitize {
+		htmlContent = safehtml.Document(htmlContent)
+	}
 
 	htmlContent = mermaid.deferAll(math.deferAll(htmlContent))
 	if opts == nil || !opts.Defer {
 		results, err := RenderFragments(ctx, append(math.fragments(), mermaid.fragments()...))
 		if err != nil {
 			return "", nil, fmt.Errorf("rendering math: %w", err)
+		}
+		if opts != nil && opts.Sanitize {
+			results = ScrubFragments(results)
 		}
 		htmlContent, soft = ResolveFragments(htmlContent, results)
 	}

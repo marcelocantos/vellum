@@ -147,7 +147,7 @@ func TestServer_DeferredFragmentLinksResolveToDocument(t *testing.T) {
 	body := "# D\n\n```mermaid\ngraph TD\n  A --> B\n  click A \"#options\"\n```\n\n## Options\n"
 	dir, md := writeDoc(t, body)
 	s := &Server{
-		CacheDir: filepath.Join(dir, "cache"),
+		CacheDir: filepath.Join(dir, "cache"), Roots: []string{dir},
 		RenderFragments: func(_ context.Context, frags []convert.Fragment) (map[string]convert.FragmentResult, error) {
 			out := map[string]convert.FragmentResult{}
 			for _, f := range frags {
@@ -166,7 +166,7 @@ func TestServer_DeferredFragmentLinksResolveToDocument(t *testing.T) {
 		if status != http.StatusOK {
 			t.Fatalf("%s: status %d: %s", label, status, got)
 		}
-		want := `<svg id="d"><a xlink:href="` + pathURL(md) + `#options"><text>A</text></a><use href="#m"/></svg>`
+		want := `<svg id="d"><a xlink:href="` + pathURL(md) + `#options"><text>A</text></a><use href="#m"></use></svg>`
 		if got != want {
 			t.Fatalf("%s:\n got %s\nwant %s", label, got, want)
 		}

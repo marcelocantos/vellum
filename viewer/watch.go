@@ -6,7 +6,6 @@ package viewer
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -68,8 +67,14 @@ func (s *Server) handleWatch(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "not a markdown path", http.StatusBadRequest)
 		return
 	}
-	info, err := os.Stat(absPath)
+	// A watch reports only a path's stamp (mtime and size), but it still
+	// names a path. statServed opens it through the served root, so a
+	// symlink swapped in after the check cannot stamp a file outside.
+	info, err := s.statServed(absPath)
 	if err != nil && !os.IsNotExist(err) {
+		if servedStatus(w, r, err) {
+			return
+		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -128,20 +133,6 @@ func (s *Server) handleWatch(w http.ResponseWriter, r *http.Request) {
 
 func writeWatchText(ctx context.Context, conn *websocket.Conn, msg string) error {
 	return conn.Write(ctx, websocket.MessageText, []byte(msg))
-}
-
-func requireMarkdownFile(absPath string) (os.FileInfo, error) {
-	if !isMarkdownPath(absPath) {
-		return nil, fmt.Errorf("not a markdown path")
-	}
-	info, err := os.Stat(absPath)
-	if err != nil {
-		return nil, err
-	}
-	if info.IsDir() {
-		return nil, errIsDirectory
-	}
-	return info, nil
 }
 
 // A path is Absent (missing; the nearest existing directory is watched),
