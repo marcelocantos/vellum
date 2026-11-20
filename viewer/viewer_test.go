@@ -13,6 +13,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/marcelocantos/vellum/embed"
 )
 
 func startTestServer(t *testing.T, s *Server) *httptest.Server {
@@ -143,6 +145,234 @@ func TestServer_Healthz(t *testing.T) {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status %d", resp.StatusCode)
+	}
+}
+
+func TestServer_RequestBoundaries(t *testing.T) {
+	dir := t.TempDir()
+	md := filepath.Join(dir, "doc.md")
+	asset := filepath.Join(dir, "image.txt")
+	for _, path := range []string{md, asset} {
+		if err := os.WriteFile(path, []byte("viewer fixture\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s := &Server{
+		CacheDir: filepath.Join(dir, "cache"),
+		MCP: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusNoContent)
+		}),
+	}
+	handler := s.Handler()
+
+	// Every registration in Server.Handler, with both branches of the
+	// filesystem catch-all and concrete files under each asset prefix.
+	routes := []struct {
+		name, method, path string
+	}{
+		{"health", http.MethodGet, HealthPath},
+		{"mcp", http.MethodPost, MCPPath},
+		{"mcp subtree", http.MethodPost, MCPPath + "/"},
+		{"pdf", http.MethodGet, ChromePDFPath},
+		{"clipboard", http.MethodPost, ChromeClipboardPath},
+		{"reveal", http.MethodPost, ChromeRevealPath},
+		{"watch", http.MethodGet, ChromeWatchPath},
+		{"task toggle", http.MethodPost, ChromeTaskTogglePath},
+		{"edit read", http.MethodGet, ChromeEditPath},
+		{"edit write", http.MethodPut, ChromeEditPath},
+		{"editor bundle", http.MethodGet, ChromeEditorPrefix + EditorEntry},
+		{"fragment", http.MethodGet, ChromeFragmentPath},
+		{"favicon", http.MethodGet, ChromeFaviconPath},
+		{"file manager icon", http.MethodGet, ChromeFileManagerIconPath},
+		{"katex", http.MethodGet, ChromeKaTeXPrefix + embed.KaTeXCSSName},
+		{"favicon ico", http.MethodGet, FaviconICOPath},
+		{"markdown", http.MethodGet, pathURL(md)},
+		{"static file", http.MethodGet, pathURL(asset)},
+	}
+	const localHost = "127.0.0.1:18742"
+	const foreignHost = "foreign.example:18742"
+	for _, route := range routes {
+		t.Run(route.name, func(t *testing.T) {
+			requests := []struct {
+				name, method, host, origin, site string
+				healthStatus                     int
+			}{
+				{"foreign host", route.method, foreignHost, "", "", http.StatusOK},
+				{"foreign origin", route.method, localHost, "https://foreign.example", "", http.StatusOK},
+				{"cross-origin POST", http.MethodPost, localHost, "https://foreign.example", "", http.StatusMethodNotAllowed},
+				{"cross-site POST", http.MethodPost, localHost, "", "cross-site", http.StatusMethodNotAllowed},
+			}
+			for _, tc := range requests {
+				t.Run(tc.name, func(t *testing.T) {
+					req := httptest.NewRequest(tc.method, route.path, nil)
+					req.Host = tc.host
+					if tc.origin != "" {
+						req.Header.Set("Origin", tc.origin)
+					}
+					if tc.site != "" {
+						req.Header.Set("Sec-Fetch-Site", tc.site)
+					}
+					w := httptest.NewRecorder()
+					handler.ServeHTTP(w, req)
+					want := http.StatusForbidden
+					if route.path == HealthPath {
+						want = tc.healthStatus
+					}
+					if w.Code != want {
+						t.Errorf("status %d, want %d", w.Code, want)
+					}
+				})
+			}
+		})
+	}
+}
+
+func TestServer_AllowsLocalRequests(t *testing.T) {
+	s := &Server{MCP: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})}
+	handler := s.Handler()
+	for _, host := range []string{"127.0.0.1:18742", "127.0.0.1:18744", "127.0.0.2", "localhost:18742", "LOCALHOST", "[::1]:18742", "[::1]"} {
+		t.Run(host, func(t *testing.T) {
+			// A client without browser metadata can still POST to MCP.
+			req := httptest.NewRequest(http.MethodPost, MCPPath, nil)
+			req.Host = host
+			w := httptest.NewRecorder()
+			handler.ServeHTTP(w, req)
+			if w.Code != http.StatusNoContent {
+				t.Errorf("MCP POST status %d, want 204", w.Code)
+			}
+
+			req = httptest.NewRequest(http.MethodGet, ChromeFaviconPath, nil)
+			req.Host = host
+			req.Header.Set("Origin", "http://"+host)
+			req.Header.Set("Sec-Fetch-Site", "same-origin")
+			w = httptest.NewRecorder()
+			handler.ServeHTTP(w, req)
+			if w.Code != http.StatusOK {
+				t.Errorf("same-origin GET status %d, want 200", w.Code)
+			}
+		})
+	}
+}
+
+// TestServer_CrossSiteRule pins the request rule in localRequestAllowed
+// case by case: which requests caused by another site are refused, and the
+// one kind that is let through (a link followed to a page).
+func TestServer_CrossSiteRule(t *testing.T) {
+	dir := t.TempDir()
+	md := filepath.Join(dir, "doc.md")
+	asset := filepath.Join(dir, "image.txt")
+	for _, path := range []string{md, asset} {
+		if err := os.WriteFile(path, []byte("viewer fixture\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s := &Server{
+		CacheDir: filepath.Join(dir, "cache"),
+		MCP: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusNoContent)
+		}),
+	}
+	handler := s.Handler()
+
+	const (
+		localHost   = "127.0.0.1:18742"
+		localOrigin = "http://" + localHost
+		foreign     = "https://foreign.example"
+		ok          = http.StatusOK
+		forbidden   = http.StatusForbidden
+	)
+	page, static := pathURL(md), pathURL(asset)
+	cases := []struct {
+		name               string
+		method, path, host string
+		origin             string // "" omits the header
+		site, mode, dest   string // Sec-Fetch-*; "" omits the header
+		want               int
+	}{
+		// A link on another site followed to a page: the case that used to get 403.
+		{"cross-site link to a page", "GET", page, localHost, "", "cross-site", "navigate", "document", ok},
+		{"same-site link to a page", "GET", page, localHost, "", "same-site", "navigate", "document", ok},
+		{"cross-site link to a static file", "GET", static, localHost, "", "cross-site", "navigate", "document", ok},
+		{"cross-site link to the homepage", "GET", "/", localHost, "", "cross-site", "navigate", "document", ok},
+
+		// Cross-site requests that are not top-level GET navigations.
+		{"cross-site image load", "GET", static, localHost, "", "cross-site", "no-cors", "image", forbidden},
+		{"cross-site script load", "GET", page, localHost, "", "cross-site", "no-cors", "script", forbidden},
+		{"cross-site fetch", "GET", page, localHost, foreign, "cross-site", "cors", "empty", forbidden},
+		{"same-site fetch", "GET", page, localHost, "", "same-site", "cors", "empty", forbidden},
+		{"cross-site iframe", "GET", page, localHost, "", "cross-site", "navigate", "iframe", forbidden},
+		{"cross-site frame", "GET", page, localHost, "", "cross-site", "navigate", "frame", forbidden},
+		{"cross-site embed", "GET", page, localHost, "", "cross-site", "navigate", "embed", forbidden},
+		{"cross-site object", "GET", page, localHost, "", "cross-site", "navigate", "object", forbidden},
+		{"cross-site form post", "POST", page, localHost, foreign, "cross-site", "navigate", "document", forbidden},
+		{"cross-site post without Origin", "POST", page, localHost, "", "cross-site", "navigate", "document", forbidden},
+		{"cross-site HEAD", "HEAD", page, localHost, "", "cross-site", "navigate", "document", forbidden},
+		{"cross-site preflight", "OPTIONS", page, localHost, foreign, "cross-site", "cors", "empty", forbidden},
+		{"cross-site with no mode or dest", "GET", page, localHost, "", "cross-site", "", "", forbidden},
+		{"cross-site navigation with no dest", "GET", page, localHost, "", "cross-site", "navigate", "", forbidden},
+		{"cross-site document dest without navigate mode", "GET", page, localHost, "", "cross-site", "no-cors", "document", forbidden},
+		{"cross-site document dest with no mode", "GET", page, localHost, "", "cross-site", "", "document", forbidden},
+		{"unknown Sec-Fetch-Site value", "GET", page, localHost, "", "elsewhere", "cors", "empty", forbidden},
+		{"cross-site link carrying a foreign Origin", "GET", page, localHost, foreign, "cross-site", "navigate", "document", forbidden},
+
+		// State-changing routes refuse cross-site requests of every kind,
+		// a top-level GET navigation included.
+		{"cross-site link to mcp", "GET", MCPPath, localHost, "", "cross-site", "navigate", "document", forbidden},
+		{"cross-site link to mcp subtree", "GET", MCPPath + "/session", localHost, "", "cross-site", "navigate", "document", forbidden},
+		{"cross-site link to clipboard", "GET", ChromeClipboardPath, localHost, "", "cross-site", "navigate", "document", forbidden},
+		{"cross-site link to reveal", "GET", ChromeRevealPath, localHost, "", "cross-site", "navigate", "document", forbidden},
+		{"cross-site link to task toggle", "GET", ChromeTaskTogglePath, localHost, "", "cross-site", "navigate", "document", forbidden},
+		{"cross-site link to edit", "GET", ChromeEditPath, localHost, "", "cross-site", "navigate", "document", forbidden},
+		{"same-site link to edit", "GET", ChromeEditPath, localHost, "", "same-site", "navigate", "document", forbidden},
+		{"cross-site post to mcp", "POST", MCPPath, localHost, foreign, "cross-site", "cors", "empty", forbidden},
+		{"cross-site put to edit", "PUT", ChromeEditPath, localHost, foreign, "cross-site", "cors", "empty", forbidden},
+
+		// The viewer's own pages and the browser's address bar.
+		{"same-origin fetch of a page", "GET", page, localHost, "", "same-origin", "cors", "empty", ok},
+		{"same-origin post to mcp", "POST", MCPPath, localHost, localOrigin, "same-origin", "cors", "empty", http.StatusNoContent},
+		{"typed URL or bookmark", "GET", page, localHost, "", "none", "navigate", "document", ok},
+
+		// No fetch metadata: Origin decides.
+		{"plain client GET", "GET", page, localHost, "", "", "", "", ok},
+		{"plain client post to mcp", "POST", MCPPath, localHost, "", "", "", "", http.StatusNoContent},
+		{"own Origin post to mcp", "POST", MCPPath, localHost, localOrigin, "", "", "", http.StatusNoContent},
+		{"foreign Origin GET", "GET", page, localHost, foreign, "", "", "", forbidden},
+		{"null Origin GET", "GET", page, localHost, "null", "", "", "", forbidden},
+		{"foreign Origin post to mcp", "POST", MCPPath, localHost, foreign, "", "", "", forbidden},
+		{"own host on another port as Origin", "POST", MCPPath, localHost, "http://127.0.0.1:3000", "", "", "", forbidden},
+
+		// Host is checked on every route, before anything else.
+		{"rebinding Host on a link to a page", "GET", page, "foreign.example:18742", "", "cross-site", "navigate", "document", forbidden},
+		{"rebinding Host, same-origin metadata", "GET", page, "foreign.example:18742", "", "same-origin", "navigate", "document", forbidden},
+		{"rebinding Host, plain client", "GET", static, "foreign.example", "", "", "", "", forbidden},
+		{"rebinding Host, typed URL", "GET", "/", "127.0.0.1.foreign.example:18742", "", "none", "navigate", "document", forbidden},
+
+		// The liveness probe answers anyone.
+		{"health under a foreign Host", "GET", HealthPath, "foreign.example:18742", "", "", "", "", ok},
+		{"health cross-site", "GET", HealthPath, localHost, foreign, "cross-site", "cors", "empty", ok},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(tc.method, tc.path, nil)
+			req.Host = tc.host
+			for header, value := range map[string]string{
+				"Origin":         tc.origin,
+				"Sec-Fetch-Site": tc.site,
+				"Sec-Fetch-Mode": tc.mode,
+				"Sec-Fetch-Dest": tc.dest,
+			} {
+				if value != "" {
+					req.Header.Set(header, value)
+				}
+			}
+			w := httptest.NewRecorder()
+			handler.ServeHTTP(w, req)
+			if w.Code != tc.want {
+				t.Errorf("status %d, want %d", w.Code, tc.want)
+			}
+		})
 	}
 }
 

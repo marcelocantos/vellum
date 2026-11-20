@@ -49,11 +49,11 @@ func RequiredDeps(backendName string) []Dep {
 
 // PandocDep is pandoc as a conversion dependency. It is needed only when
 // a requested format goes through pandoc: a rich-text source (RTF, DOCX,
-// HTML, ODT, …) or a PowerPoint sink. It is not part of RequiredDeps, so
+// HTML, ODT, …) or an RTF or PowerPoint sink. It is not part of RequiredDeps, so
 // a Markdown → PDF or HTML user never has to install it.
 var PandocDep = Dep{
 	Name:    "pandoc",
-	Purpose: "rich-text import (RTF, DOCX, HTML, ODT, …) and PowerPoint output",
+	Purpose: "rich-text import (RTF, DOCX, HTML, ODT, …) and RTF or PowerPoint file output",
 	Install: hint.Pandoc(),
 }
 
@@ -103,7 +103,7 @@ func checkDeps(deps []Dep) error {
 // A PDF sink needs RequiredDeps for the selected backend, the same set
 // MCP and the viewer have always checked. pandoc stays lazy: it is
 // demanded only when a requested format goes through it (a rich-text
-// source or a pptx sink), never for Markdown → PDF/HTML. A clipboard
+// source or an RTF or pptx sink), never for Markdown → PDF/HTML. A clipboard
 // source's format is only known once the clipboard is read, so its
 // import check stays in the importer.
 func preflight(from, to Endpoint, inputs []inputItem, backend string) error {
@@ -117,12 +117,12 @@ func preflight(from, to Endpoint, inputs []inputItem, backend string) error {
 			fromFmt = FormatRTF // what ingest assumes for an undetected clipboard
 		}
 		if to.Media != MediaFile && to.Media != MediaFileReference {
-			continue // text and clipboard sinks cannot carry PDF or pptx
+			continue // only file sinks need an external writer here
 		}
 		switch inferToFormat(to, fromFmt) {
 		case FormatPDF:
 			needRenderer = true
-		case FormatPPTX:
+		case FormatRTF, FormatPPTX:
 			needPandoc = true
 		}
 	}

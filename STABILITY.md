@@ -54,7 +54,7 @@ Package paths are under `github.com/marcelocantos/vellum/…`.
 - `type Media`, `Endpoint`, `Request`, `Result`, `FilePair` — **needs review**
 - `Result.MediaDir`, `Result.Assets` — **needs review** (extracted import media; also on MCP `ConvertOutput`)
 - `const MediaFile, MediaContent, MediaClipboard, MediaFileReference` — **needs review**
-- `const FormatMarkdown, FormatHTML, FormatRTF, FormatPDF, FormatPPTX, FormatRich` — **needs review** (`FormatRTF` is inferred from `.rtf`; file sinks currently refuse it — 🎯T25; `FormatPPTX` added in v0.25.0, file sinks only, output-only — 🎯T47)
+- `const FormatMarkdown, FormatHTML, FormatRTF, FormatPDF, FormatPPTX, FormatRich` — **needs review** (`FormatRTF` is inferred from `.rtf` for file input and output — 🎯T25. `FormatPPTX` added in v0.25.0 for file output — 🎯T47.)
 - `func FormatForPath(path string) string` — **needs review** (added in v0.25.0; the format a file extension implies, or empty)
 - `Request.Template` — **needs review** (added in v0.25.0; pptx reference deck for this call)
 
@@ -118,11 +118,11 @@ Package paths are under `github.com/marcelocantos/vellum/…`.
 - `type ImagePolicy` / `const ImagePolicyExternal, ImagePolicyLink, ImagePolicyFail` — **needs review** (default external; no silent relative→link)
 - Math residue: `$…$` / `$$…$$` rewritten to `latex` codeBlock (declared in `adf/doc.go`). Footnotes and definition lists are not specially mapped.
 
-**`internal/pandoc`** — HTML → RTF/plain export helper. Not a public import path. Import (rich text → Markdown) stays in `importer/`. Used by the clipboard pandoc fallback.
+**`internal/pandoc`** — HTML → RTF/plain export helper shared by the RTF file writer and clipboard fallback. Rich-text import stays in `importer/`.
 
 - `const Binary = "pandoc"` — **needs review**
 - `func Available() error` — **needs review**
-- `func HTMLToRTF(html, resourcePath string) ([]byte, error)` — **needs review** (`--standalone`; CSS is ignored)
+- `func HTMLToRTF(ctx context.Context, html, resourcePath string) (rtf []byte, warnings []string, err error)` — **needs review** (writes standalone RTF and reports pandoc warnings. Pandoc ignores CSS.)
 - `func HTMLToPlain(html string) ([]byte, error)` — **needs review**
 
 **`viewer`** — localhost view server (HTML) + cached PDF open; macOS default Markdown handler (added in v0.6.0; view server in v0.14.0). Cache filename is `sha256(absPath)[:8]+ext` (not mtime). A `.stamp` sidecar records source mtime+size so HTML/PDF re-render in place when Markdown changes (🎯T28). HTML responses inject view chrome at serve time (TOC, figure lightbox, PDF/clipboard/Finder actions under `/_vellum/`); the convert-cache HTML file stays chrome-free (🎯T32). An open view tab watches the source over `/_vellum/watch` (WebSocket, 5-minute heartbeat) and reloads on stamp change after the file has been quiet for a moment (🎯T43). A rename redirects that tab; a deletion leaves the rendered page up and reports it; a missing file is a waiting page until the file appears. GFM task-list checkboxes can toggle the source via `POST /_vellum/task-toggle` after consent (🎯T34); the response is a source stamp that chrome adopts without `location.reload()` (🎯T44). Watch-triggered reloads restore heading-anchor or Y scroll and the focused task checkbox (or element id) from sessionStorage. A modal CodeMirror 6 editor (embedded bundle under `/_vellum/editor/`, built from `editor/`) reads `GET /_vellum/edit` and saves with `PUT /_vellum/edit`, whose `X-Vellum-Stamp` must name the stamp on disk (409 with the current stamp, 428 without one); both reject a non-loopback Host or a foreign Origin / Sec-Fetch-Site. Atomic source writes (task toggle and editor save) follow symlinks and keep the file mode.
@@ -311,7 +311,7 @@ Required external binaries on `PATH`:
   - `prince` — Prince 16.2 or later. **stable** (opt-in via `backend: prince`).
 - `node` — any recent Node.js. **stable**.
 - `mmdc` — mermaid-cli. **stable**.
-- `pandoc` — Pandoc 3.x. **needs review** (rich-text import: RTF/DOCX/HTML/… with `--extract-media`; pptx output via `--reference-doc`; lazily checked).
+- `pandoc` — Pandoc 3.x. **needs review** (rich-text import with `--extract-media`, RTF file output, and pptx output via `--reference-doc`. Checked when needed.)
 - `pdftoppm` / `pdftotext` — Poppler. **needs review** (PDF import: page images + text; lazily checked).
 
 Required Node package (installed globally):
@@ -357,9 +357,7 @@ Features and changes explicitly deferred past 1.0.
 - **Bundled Chromium.** Distributing a Chromium binary alongside
   vellum would solve the `mmdc` setup pain but adds ~200 MB to the
   release and introduces a security-update treadmill. Stays external.
-- **Further writers.** Markdown, HTML, PDF, PowerPoint (pptx), and
-  clipboard rich already ship. File RTF (🎯T25), EPUB, and ADF-as-a-`Run` sink (🎯T27) are not
-  1.0 commitments.
+- **Further writers.** EPUB and ADF as a `Run` sink (🎯T27) are deferred.
 - **Additional renderers.** vellum now supports WeasyPrint (default) and
   Prince (opt-in). No plans to add wkhtmltopdf (deprecated/abandoned) or
   headless Chrome (Chromium footprint is prohibitive for a CLI tool).
@@ -382,8 +380,8 @@ strings) can each gain a typed field beside the current value. Media
 `html`, `rtf`, `pdf`, `pptx`, `rich`), and backends (`weasyprint`,
 `prince`) can each gain a value. `Style` can gain fields. `--template`
 and `FormatPPTX` can gain behavior beside the v0.25.0 rules. The `-o`
-extension rule is the rule a lock would keep. Shipping the file RTF
-writer adds a sink for `FormatRTF`, which file sinks still refuse.
+extension rule is the rule a lock would keep. The `FormatRTF` file sink
+uses that rule.
 
 No expandability concern would force a fork.
 
@@ -406,7 +404,7 @@ slides, would break callers who depend on today's decks. Nothing now
 known requires that change.
 
 No closure concern would force a fork. A setup command, the
-audit-log convention, language bindings, file RTF, EPUB, and ADF as a
+audit-log convention, language bindings, EPUB, and ADF as a
 `Run` sink can land later by addition.
 
 ## 1.0 readiness check

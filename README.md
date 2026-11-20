@@ -22,7 +22,7 @@ vellum shells out to external tools at conversion time. Each must be on `PATH` w
 - **[Node.js](https://nodejs.org/)** — runtime for KaTeX math rendering.
 - **[KaTeX](https://katex.org/)** — `npm install -g katex`. Vellum embeds the matching stylesheet and fonts (`scripts/vendor-katex.sh` refreshes them after an upgrade), so rendering never fetches from a CDN.
 - **[mermaid-cli](https://github.com/mermaid-js/mermaid-cli)** (`mmdc`) — `brew install mermaid-cli` (or the equivalent on your platform). Required only if your documents contain Mermaid diagrams.
-- **[pandoc](https://pandoc.org/)** — `brew install pandoc`. Required for rich-text import (RTF, DOCX, HTML, …) with image extraction, and for PowerPoint (`.pptx`) output.
+- **[pandoc](https://pandoc.org/)** — `brew install pandoc`. Required for rich-text import (RTF, DOCX, HTML, …) with image extraction and for RTF and PowerPoint file output.
 - **[poppler](https://poppler.freedesktop.org/)** — `brew install poppler` (`pdftoppm`, `pdftotext`). Required for PDF import (page images + text).
 
 ### Switching to Prince
@@ -139,6 +139,7 @@ Examples:
 ```sh
 vellum report.md                       # writes report.pdf
 vellum deck.md -o deck.pptx            # writes a PowerPoint deck
+vellum report.md -o report.rtf         # writes a Rich Text Format file
 vellum convert --from file --to file deck.md --to-format pptx --template brand.pptx
 vellum convert --from file --to clipboard report.md
 echo '# Hi' | vellum convert --from content --to clipboard
@@ -266,7 +267,7 @@ Legacy batch sugar still works for Markdown → PDF:
 }
 ```
 
-Rich-text import paths and pptx output require `pandoc` on `PATH`.
+Rich-text import and RTF and PowerPoint file output require `pandoc` on `PATH`.
 `clipboard` and `file_reference` work on macOS and Windows (CF_HTML/RTF/text and CF_HDROP file lists); other platforms return a clear error.
 
 ## PowerPoint output
@@ -412,10 +413,10 @@ render cache that reloads in the same browser tab.
 | Default `.md` handler | **Yes** (macOS) | No | No | Yes |
 | Runtime footprint | Single static binary | Single binary | Node + Chromium | Desktop app |
 | Input formats | 8 | **51** | 1 | 1–2 |
-| Output formats | 5 <sub>(see roadmap)</sub> | **76** | 1–2 | Several |
+| Output formats | 6 <sub>(see roadmap)</sub> | **76** | 1–2 | Several |
 
 **Where pandoc wins, and it isn't close: breadth.** 51 readers and 76
-writers against vellum's 8 and 4. If you need DocBook, JATS, or Texinfo,
+writers against vellum's 8 and 6. If you need DocBook, JATS, or Texinfo,
 use pandoc — vellum literally shells out to it for rich-text import.
 vellum's claim is a different one: the conversions people actually run all
 day, wired into agents and the desktop, with diagrams and math that work
@@ -423,11 +424,9 @@ without a configuration session.
 
 ### Roadmap: output format expansion
 
-vellum writes Markdown, HTML, PDF, rich text, and PowerPoint. The pptx
-sink is the first arm of pandoc's writer catalogue; the same seam can
-expose docx, odt, rtf, epub, latex, typst, rst, org, asciidoc, ipynb and
-more, closing the loop with the existing DOCX and RTF import. Those are
-**not yet implemented**; the table above reflects what ships today.
+vellum writes Markdown, HTML, PDF, RTF, PowerPoint, and rich clipboard text.
+The pandoc export path could add writers for docx, odt, epub, latex, typst,
+rst, org, asciidoc, and ipynb.
 
 ## Markdown feature support
 

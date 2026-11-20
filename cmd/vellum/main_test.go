@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -189,6 +190,62 @@ func TestRun_PPTXByOutputExtension(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "no-such-template") {
 		t.Errorf("missing template: err = %v, want one naming it", err)
+	}
+}
+
+func TestRun_RTFByOutputExtension(t *testing.T) {
+	testdeps.Need(t, pandoc.Binary)
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	dir := t.TempDir()
+	in := filepath.Join(dir, "report.md")
+	const source = "A **bold phrase** and an *italic phrase*.\n\n![Line art](line-art.png)\n"
+	if err := os.WriteFile(in, []byte(source), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	image, err := os.ReadFile(filepath.Join("..", "..", "test", "line-art.png"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "line-art.png"), image, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct {
+		name string
+		args []string
+	}{
+		{"convert", []string{"vellum", "convert", "--from", "file", "--to", "file", in}},
+		{"shorthand", []string{"vellum", in}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			out := filepath.Join(t.TempDir(), "report.rtf")
+			var runErr error
+			_ = captureStdout(t, func() {
+				withArgs(t, append(tc.args, "-o", out), func() { runErr = run() })
+			})
+			if runErr != nil {
+				t.Fatalf("run: %v", runErr)
+			}
+			rtf, err := os.ReadFile(out)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.HasPrefix(rtf, []byte(`{\rtf`)) {
+				t.Fatal("output has no RTF signature")
+			}
+			if !bytes.Contains(rtf, []byte(`\pngblip`)) {
+				t.Fatal("output did not embed the source-relative PNG")
+			}
+			roundTrip, err := exec.Command(pandoc.Binary, "-f", "rtf", "-t", "gfm", out).CombinedOutput()
+			if err != nil {
+				t.Fatalf("pandoc round-trip: %v\n%s", err, roundTrip)
+			}
+			for _, want := range []string{"**bold phrase**", "*italic phrase*"} {
+				if !bytes.Contains(roundTrip, []byte(want)) {
+					t.Errorf("round-trip lost %q:\n%s", want, roundTrip)
+				}
+			}
+		})
 	}
 }
 

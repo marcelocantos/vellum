@@ -164,12 +164,12 @@ Do not aggregate these states into a scalar.
 
 - **Priority:** P2
 - **Dimensions:** Change amplification; Architecture topology; Redundancy
-- **Status:** observed fact
+- **Status:** resolved. `Convert` and `writeFileOutput` both call `renderPDFHTML` (PNG Mermaid) and `writePDF` (PDF/A, `ResolveBackend`, `backend.Render`, parent directory). Neither function calls the backend itself.
 - **Evidence:**
-  - `convert/convert.go:100-127` — `Convert` reads a file, `RenderFile` with `MermaidPNG`, `ResolveBackend`, `backend.Render`.
-  - `convert/run.go:463-489` — `writeFileOutput` for PDF does the same `Render` + `MermaidPNG` + `ResolveBackend` + `backend.Render` sequence on already-ingested Markdown.
-  - Sole production caller of `Convert` besides its definition: `viewer/viewer.go:250-254` (PDF view cache). CLI and MCP PDF go through `convert.Run` → `writeFileOutput` (`cmd/vellum/main.go:744`, `mcp/server.go:132`).
-- **Mechanism:** a change to PDF/A flags, temp-file handling, mermaid format, or backend error wrapping must be applied in both functions or the viewer PDF path silently diverges from `vellum convert` / MCP (different mermaid format, different baseDir, different mkdir/error text).
+  - Was: `Convert` read a file, `RenderFile` with `MermaidPNG`, `ResolveBackend`, `backend.Render`.
+  - Was: `writeFileOutput` for PDF did the same `Render` + `MermaidPNG` + `ResolveBackend` + `backend.Render` sequence on already-ingested Markdown.
+  - Sole production caller of `Convert` besides its definition: `viewer/viewer.go` (PDF view cache). CLI and MCP PDF go through `convert.Run` → `writeFileOutput`.
+- **Mechanism:** a change to PDF/A flags, temp-file handling, mermaid format, or backend error wrapping had to be applied in both functions or the viewer PDF path silently diverged from `vellum convert` / MCP (different mermaid format, different baseDir, different mkdir/error text). That split no longer exists.
 - **Blast radius:** `vellum view --pdf` / `install-viewer` vs every other PDF sink.
 - **Counterevidence checked:** both currently force PNG mermaid and pass `Style.PDFA`. Tests cover `Run` more densely than `Convert`. The duplication is small (~25 lines) but it is the PDF contract.
 - **Smallest coherent remediation:** make `Convert` a thin wrapper that builds a `Request` and calls `Run` (or extract one `writePDF(html, path, opts, baseDir)` used by both).
@@ -229,7 +229,7 @@ Do not aggregate these states into a scalar.
 
 - **Priority:** P2
 - **Dimensions:** Architecture topology; Correctness / verification
-- **Status:** observed fact
+- **Status:** resolved. The file sink uses `internal/pandoc.HTMLToRTF` with the source directory as its resource path. Tests cover CLI extension inference, explicit MCP format selection, and a pandoc round-trip under the T23 TextKit sandbox.
 - **Evidence:**
   - `convert/run.go:45` `FormatRTF = "rtf"`; `:606-607` `.rtf` → `FormatRTF`.
   - `convert/run.go:490-491` `writeFileOutput` default: `to.media file does not support format %q`.
@@ -261,13 +261,12 @@ Do not aggregate these states into a scalar.
 
 - **Priority:** P3
 - **Dimensions:** Change amplification; Architecture topology
-- **Status:** observed fact (isolation); inference (future drift)
+- **Status:** resolved by isolation. `adf` stays a library (not a `convert.Run` sink). `STABILITY.md` lists it as library-only. `TestGFMTablesAndHeadings_ConvertAndADF` asserts one GFM table/heading fixture in both convert HTML and ADF JSON. The two `goldmark.New` calls remain until ADF is a `Run` sink.
 - **Evidence:**
-  - `adf/convert.go:33-36` — `goldmark.New(GFM, AutoHeadingID)` only; math rewritten to latex fences (`adf/math.go`) before parse.
-  - `convert/convert.go:49-70` — GFM + Footnote + DefinitionList + Typographer + meta + chroma + `html.WithUnsafe()`.
-  - `go list` : `adf` imports nothing in-repo and is imported by nobody in-repo. Tests: `go test ./adf` 13 tests, green this run.
-  - Not in STABILITY, README, agents-guide, or MCP `to.format`.
-- **Mechanism:** GFM table/list/heading fixes in `convert` do not apply to Confluence ADF. When 🎯T27 or a convert sink lands, two parsers will disagree unless they share an AST walk or a documented subset.
+  - Was: `adf` called `goldmark.New(GFM, AutoHeadingID)` and `convert` called a richer goldmark, with no shared fixture.
+  - Was: `adf` was absent from STABILITY. It is now listed as library-only, not an MCP `to.format`.
+  - `TestGFMTablesAndHeadings_ConvertAndADF` failed when the ADF table walk returned nothing, and passes with both pipelines emitting the fixture's headings and cells.
+- **Mechanism:** GFM table/list/heading fixes in `convert` do not apply to Confluence ADF. When 🎯T27 or a convert sink lands, two parsers will disagree unless they share an AST walk or a documented subset. The shared fixture fails if tables or headings diverge before that sink exists.
 - **Blast radius:** Confluence publish (T27); any future `to.format=adf`.
 - **Counterevidence checked:** T26 acceptance is “package adf … no token required” — isolation is the target. Residue (math as latex codeBlock, no footnotes) is declared in `adf/doc.go:12-26`. This is not a premature-unification finding; it is a recorded fork to watch.
 - **Smallest coherent remediation:** when ADF becomes a `Run` sink, parse once (goldmark AST) and fan out HTML vs ADF; until then, leave isolated and list `adf` in STABILITY as library-only.
@@ -278,9 +277,9 @@ Do not aggregate these states into a scalar.
 
 - **Priority:** P3
 - **Dimensions:** Redundancy; Change amplification
-- **Status:** observed fact
-- **Evidence:** `mcp/server.go:19-32` `Endpoint` / `FilePair` vs `convert/run.go:52-65`. Mapping: `mcp/server.go:159-170` `toEndpoint`.
-- **Mechanism:** a new media field must be added twice or MCP silently drops it (`toEndpoint` is a manual field list).
+- **Status:** resolved. The DTOs stay separate (jsonschema tags stay out of `convert`). `TestEndpointSchemaMatchesConvert` compares exported fields and checks `toEndpoint` / `toFilePair` copy every one. Adding `Extra` to `convert.Endpoint` failed that test (6 fields vs 5) before the field was removed.
+- **Evidence:** Was: `mcp.Endpoint` / `FilePair` duplicated `convert.Endpoint` / `FilePair`, and `toEndpoint` was a manual field list that could drop a new field with no test.
+- **Mechanism:** a new media field must be added twice or MCP silently drops it (`toEndpoint` is a manual field list). The reflection test now fails unless the MCP struct and the copier both match.
 - **Blast radius:** MCP `convert` schema vs `convert.Run`.
 - **Counterevidence checked:** jsonschema tags cannot live on `convert.Endpoint` without pulling MCP concerns into the library — a real reason to duplicate. The mapping is small and tested (`mcp/server_test.go`).
 - **Smallest coherent remediation:** keep the DTO; generate `toEndpoint` from shared field names, or embed `convert.Endpoint` if the SDK allows jsonschema on the inner type.
@@ -309,9 +308,9 @@ Do not aggregate these states into a scalar.
 |---|---|---|
 | What “green” means | `cvfile` `!gate`, `Makefile` `bullseye`, `ci.yml`, `release.yml` `test` | ENT-001, ENT-002 |
 | Product architecture | `CLAUDE.md`, `README.md`, `docs/HANDOVER.md`, `STABILITY.md` | ENT-003, ENT-007, ENT-009 |
-| Markdown→PDF write | `convert.Convert`, `convert.writeFileOutput` | ENT-004 |
-| Markdown parse | `convert` goldmark, `adf` goldmark | ENT-010 |
-| Convert request shape | `convert.Endpoint`, `mcp.Endpoint` | ENT-011 |
+| Markdown→PDF write | `renderPDFHTML` + `writePDF`, called from `Convert` and `writeFileOutput` | ENT-004 resolved |
+| Markdown parse | `convert` goldmark, `adf` goldmark, shared GFM fixture | ENT-010 resolved (isolated) |
+| Convert request shape | `convert.Endpoint`, `mcp.Endpoint`, reflection parity test | ENT-011 resolved |
 | YAML | yaml.v3 (config), yaml.v2 (goldmark-meta) | ENT-012 |
 | Format constants | `convert.Format*`, `clipboard.Format*`, `viewer.Format*` (iota) | same strings, different types; not currently drifted |
 | Pandoc invocation | `importer` (import), `internal/pandoc` (HTML→RTF) | **deliberate**; package comment in `internal/pandoc/pandoc.go:4-13` |
