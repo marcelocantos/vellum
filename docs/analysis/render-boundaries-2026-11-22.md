@@ -30,8 +30,9 @@ any readable file to the PDF (D1), a pptx embeds any file byte for byte
 level under a filesystem root, such as `/Users/x.md`, serves the whole
 tree, home folder included (D7). Inside the viewer, every granted folder
 is open to every document, not only to its own (D5). Import copies local
-files the content names (D4). A document can take over the viewer's
-consent, editor and lightbox elements by id (D6).
+files the content names and splices in fetched iframe pages (D4). A
+document can take over the viewer's consent, editor and lightbox elements
+by id (D6).
 
 ## 1. The system, from the code
 
@@ -250,6 +251,14 @@ and `…png` is the canary (from `file:`); the recorder logged
 (pandoc fetches iframe sources). A `file:` iframe of a local HTML file was
 not inlined (tested; negative).
 
+Two follow-ups, both confirmed: (1) with a loopback server answering
+`frame.html` with `<p>REMOTE-IFRAME-TEXT-9</p>`, the imported Markdown
+contains `REMOTE-IFRAME-TEXT-9` inside `<div class="iframe">`: import
+splices fetched remote content into the result, not only images. (2) A
+source file at mode 0600 is copied at 0644, in cache folders created 0755
+(`importer.EnsureMediaDir`); on a default macOS install `~/Library` is
+0700, so other accounts cannot reach it, but the mode is not preserved.
+
 **Smallest fix.** Add `--sandbox` to the import pandoc run. Embedded media
 in docx/odt/epub still extract (they are inside the input); references to
 outside files and URLs are dropped with a warning, which becomes a soft
@@ -396,15 +405,6 @@ waiting page watch without granting. Cost: small.
 - **The tunnel.** 🎯T66's note mentions a tunnel presenting a loopback
   `Host`. If one exists, D7 means one request through it serves the whole
   of `/Users`. No tunnel configuration is in this repository; not checked.
-- **Import cache permissions.** Copies made by D4 are written 0644 by
-  pandoc whatever the source's mode (a 0600 key becomes 0644). Under
-  `~/Library/Caches` (mode 0700 on a default install) this matters only
-  where the parent is shared. Observed 0644 for a 0644 source; the 0600
-  case was not run.
-- **pandoc iframe inlining.** pandoc 3.14 fetched `http` iframe sources
-  during import (two requests logged); whether it inlines a fetched HTML
-  page's text into the Markdown was not tested (the recorder served a GIF).
-  A `file:` iframe of a local HTML file was not inlined (tested).
 - **Prince attachments.** Prince did not honour `rel=attachment`; Prince's
   own attachment syntax (`prince-pdf-attachment` / `--attach`) was not
   tried from document CSS. Since D1's fix sanitises `<style>`, it would be
