@@ -77,6 +77,7 @@ the question asks about), *unknown*.
 | V4 | A viewed document makes no network request except loading images (and fonts/stylesheets over https) | CSP `connect-src`, `form-action 'none'`, no script | loads any `http(s)` image on render, with no click; a GET to any LAN or loopback service | by design (README badges) |
 | V5 | A document (or its diagram) cannot restyle or replace the viewer's chrome | `cleanStyle`, reserved `vellum-` class prefix (`internal/safehtml`), `<style>` dropped from documents; Mermaid scopes its CSS under the diagram's id | `id` is not reserved, and `getElementById` returns the document's element for chrome nodes that come after the article | **violated (D6)**; Mermaid `themeCSS` stays scoped (tested, see 5) |
 | V6 | The viewer's PDF of a document contains no file outside the served roots, and its engine makes no request | `InlineResources`, `WriteSelfContainedPDF`, Mermaid confine hook | tested by 🎯T66/🎯T68 | holds (tested by their suites; not re-attacked) |
+| V8 | Assembling the page after the sanitiser keeps the sanitised structure: no document text can end the chrome's markup early or swallow it | regexes in `viewer/links.go`, `viewer/lazy.go`, `viewer/chrome.go` that only see tags and quoted attributes | comment text is raw and the regexes match inside it | **violated (reproduced, D8)** |
 | V7 | The viewer's own server-side fetches (PDF images) cannot grant a folder | `fetchRemoteImage` sends `cross-site`/`image` fetch metadata (`viewer/fetch.go`) | a fetch without metadata | holds (argument) |
 | C1 | A CLI or MCP conversion embeds no file from outside the document's folder unless the user names it | nothing | WeasyPrint draws `file:` and absolute-path images and embeds `rel=attachment` targets; Prince draws them; pandoc embeds any file named as an image in pptx | **violated (reproduced, D1, D2)** |
 | C2 | A CLI or MCP conversion makes no network request the document names unless asked | nothing | engines and pandoc fetch `http(s)` images and stylesheets, without fetch metadata | by design; violated as phrased (D1 reproduction log) |
@@ -464,11 +465,11 @@ with them.
 ## 6. Coverage
 
 Read in full: `viewer/server.go`, `viewer/roots.go`, `viewer/csp.go`,
-`viewer/fetch.go`, `internal/safehtml/safehtml.go`, `mcp/server.go`, the
+`viewer/fetch.go`, `viewer/links.go`, `internal/safehtml/safehtml.go`, `mcp/server.go`, the
 two PDF backend files.
 Read in part: `convert/convert.go` 120–300, `convert/run.go` 262–510,
 `convert/pptx.go` 100–180, `importer/importer.go` 40–200,
-`viewer/actions.go` 24–120, `viewer/lazy.go` 245–366, `viewer/chrome.go`
+`viewer/actions.go` 24–120, `viewer/lazy.go` 30–80 and 245–366, `viewer/chrome.go`
 60–241, `viewer/chrome.js` (element lookups, consent, fragment loader),
 `viewer/edit.go` (method and extension checks), `convert/katex.go` (render
 options), `convert/mermaid.go` (confinement entry points). Bullseye 🎯T57,
