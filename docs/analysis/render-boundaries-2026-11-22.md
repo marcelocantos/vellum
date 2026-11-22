@@ -16,8 +16,8 @@ touched. Tools and the reproduction driver are in
 **Status: complete for this run.**
 `python3 -I docs/analysis/render-boundaries/repro.py <vellum> <scratch dir>`
 prints REPRODUCED for D1, D2, D3, D4, D5 and D7 on `c47e428` (run
-2026-11-23, about 4 s). D6 and the V1 battery were run in headless Chrome
-with `browse.cjs` (the Puppeteer inside mermaid-cli, not the user's
+2026-11-23, about 4 s). D6, D8 and the V1 battery were run in headless
+Chrome with `browse.cjs` and `probe2.cjs` (the Puppeteer inside mermaid-cli, not the user's
 browser).
 
 **Answer in one paragraph.** In the browser, a document is well contained:
@@ -32,7 +32,7 @@ tree, home folder included (D7). Inside the viewer, every granted folder
 is open to every document, not only to its own (D5). Import copies local
 files the content names and splices in fetched iframe pages (D4). A
 document can take over the viewer's consent, editor and lightbox elements
-by id (D6).
+by id (D6), and one comment can stop the viewer's own script (D8).
 
 ## 1. The system, from the code
 
@@ -90,7 +90,7 @@ the question asks about), *unknown*.
 
 ## 3. Confirmed defects
 
-Titles state the desired state. By severity: D1, D2, D7, D3, D5, D4, D6 (numbered in the order found).
+Titles state the desired state. By severity: D1, D2, D7, D3, D5, D4, D6, D8 (numbered in the order found).
 
 ### D1. A CLI or MCP PDF carries no file the document names from outside its folder — high
 
@@ -319,6 +319,41 @@ GitHub does) any `id` and `name` that start with `vellum-`; or move the
 chrome lookups to `chrome.querySelector` scoped to the chrome's own
 containers.
 
+### D8. Nothing a document writes stops the viewer's own script or hides its later text — low
+
+**Severity.** Low. A document disables the viewer's chrome for itself
+(TOC, diagrams and math never load, the editor and consent dialogs are
+gone) and can hide the rest of its own text from the reader while the file,
+the PDF route and an editor elsewhere still hold it. No file or network
+boundary is crossed; no script of the document's runs.
+
+**Mechanism.** `safehtml.Document` keeps every comment verbatim
+(`cleanDocumentNode`: "Comments carry vellum's own placeholders"). The
+steps after it are regular expressions over the serialised page that do
+not know where comments are: `lazyLoadImages` (`viewer/lazy.go:51`)
+rewrites `<img a-->` inside a comment into `<img a-- loading="lazy"
+decoding="async">`, removing the comment's `-->`, so the browser's comment
+runs to the end of the page; `injectChrome` (`viewer/chrome.go:65`) takes
+the *first* `</body>` (`bodyCloseRe`) as the body's end, which can be one
+inside a document comment, and puts the chrome's closing markup and its
+nonce'd script there, inside the comment. `rewriteFragmentHrefs`
+(`<!--<a href=#x-->`) breaks a comment the same way.
+
+**Reproduction** (`h-control.md`, `h-comment.md`, `h-body.md`; tree
+viewer; `probe2.cjs` in headless Chrome). Control (an ordinary comment):
+text after it visible, 2 TOC links, 1 diagram, 2 nonce'd scripts, editor
+dialog present. With `<!--<img a-->`: text after it gone, 0 TOC links,
+0 diagrams, 1 script (the head's theme script only), no editor dialog;
+the served page holds `<!--<img a-- loading="lazy" decoding="async">`.
+With `<!-- </body> -->`: text visible, but 0 TOC links, 0 diagrams,
+1 script, no editor dialog.
+
+**Smallest fix.** In `cleanDocumentNode`, keep a comment only when it is
+one of vellum's own placeholders (exact grammar, the ids `ResolveFragments`
+knows) and drop the rest; that alone closes both spellings, since the
+later regexes then never see document-controlled comment text. The
+structural fix is F7.
+
 ## 4. Design findings
 
 ### F1. Two trust postures, and the dangerous one is the default for agents
@@ -392,6 +427,22 @@ a made-up name grants a real folder (D3, D7 both used absent names). The
 waiting page for a missing document is a feature, but it does not need a
 grant to show. Change: grant only when the document exists, or let the
 waiting page watch without granting. Cost: small.
+
+### F7. The page is assembled by regular expressions after it is sanitised
+
+`serveMarkdown` runs six string rewrites over the sanitised page
+(`rewriteMarkdownHrefs`, `rewriteFragmentHrefs`, `ensureBaseHref`,
+`reserveDiagramBoxes`, `lazyLoadImages`, `injectChrome`), each with its own
+regex for a tag or attribute. They are safe against attribute values
+(`html.Render` escapes quotes and angle brackets there, and the inserted
+paths are percent-escaped), but not against comment text, which the
+sanitiser passes through raw (D8). Every new rewrite inherits the risk.
+Change: do these edits on the parsed tree inside `safehtml` or one
+post-pass over `x/net/html` nodes, serialising once at the end; the
+chrome then wraps the body node rather than splicing at the first
+`</body>`. Cost: medium; the rewrites are small, the tests in
+`viewer/links_test.go`, `lazy_test.go` and `chrome_test.go` would move
+with them.
 
 ## 5. Unconfirmed suspicions
 
