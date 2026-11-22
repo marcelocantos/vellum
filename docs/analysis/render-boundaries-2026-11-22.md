@@ -13,8 +13,25 @@ would, with a real host name, have left the machine. The installed viewers
 touched. Tools and the reproduction driver are in
 `docs/analysis/render-boundaries/`.
 
-**Status: second pass.** `python3 -I docs/analysis/render-boundaries/repro.py <vellum> <scratch dir>` prints REPRODUCED for D1–D5 on `c47e428` (run 2026-11-23). Browser checks (V1, D6) follow.
-browser-side checks (section 2, V1 and V5) are still being run.
+**Status: complete for this run.**
+`python3 -I docs/analysis/render-boundaries/repro.py <vellum> <scratch dir>`
+prints REPRODUCED for D1, D2, D3, D4, D5 and D7 on `c47e428` (run
+2026-11-23, about 4 s). D6 and the V1 battery were run in headless Chrome
+with `browse.cjs` (the Puppeteer inside mermaid-cli, not the user's
+browser).
+
+**Answer in one paragraph.** In the browser, a document is well contained:
+none of 14 script and navigation vectors ran, and its page loads only
+images it names (from any host, by design). The holes are around it. The
+CLI and MCP paths trust the document completely: a PDF conversion attaches
+any readable file to the PDF (D1), a pptx embeds any file byte for byte
+(D2), and both reach the network and can get the viewer to serve a folder
+(D3). That last grant is wider than the code's comment says: a name one
+level under a filesystem root, such as `/Users/x.md`, serves the whole
+tree, home folder included (D7). Inside the viewer, every granted folder
+is open to every document, not only to its own (D5). Import copies local
+files the content names (D4). A document can take over the viewer's
+consent, editor and lightbox elements by id (D6).
 
 ## 1. The system, from the code
 
@@ -51,9 +68,10 @@ the question asks about), *unknown*.
 
 | ID | Invariant | Where maintained | How it could break | Status |
 |---|---|---|---|---|
-| V1 | A document shown in the viewer runs no script of its author's in the viewer's origin | `safehtml.Document` (`convert/convert.go:270`), nonce CSP (`viewer/csp.go`), `lockdownCSP` sandbox on raw files (`viewer/server.go`) | allow-list hole; a fragment carrying script past `safehtml.Rendered`; string rewriting after the sanitiser | holds (argument); browser battery pending |
+| V1 | A document shown in the viewer runs no script of its author's in the viewer's origin | `safehtml.Document` (`convert/convert.go:270`), nonce CSP (`viewer/csp.go`), `lockdownCSP` sandbox on raw files (`viewer/server.go`) | allow-list hole; a fragment carrying script past `safehtml.Rendered`; string rewriting after the sanitiser | holds (tested): headless Chrome on `v1-battery.md` (`<script>`, `onerror`, `<svg onload>`, meta refresh, `<iframe srcdoc>`, `ontoggle`, `<form>`, `javascript:` and `data:` links clicked, `<object>`, `<link rel=prefetch>`, KaTeX `\href{javascript:}` and `\includegraphics`, Mermaid `click … javascript:` and `call`): no dialog, no console error but one 404, and the only request off the viewer was the plain `<img>` |
 | V2 | A document in the viewer reads no file outside **its own** opened folder | nothing: confinement is to the union of every granted folder (`servedRoots`, `viewer/roots.go`) | any earlier grant is readable by every later document | **violated (reproduced, D5)** |
 | V2a | A document in the viewer reads no file outside the served roots | `confine` + `os.Root` (`viewer/roots.go`) | symlink race; a route that skips `openServed` | holds (argument; covered by `roots_test.go`) |
+| V3a | Opening one document serves at most its git work tree or its own folder, never a whole volume or the home folder | `rootFor` (`viewer/roots.go`): stops below home, and a document *directly* in home or `/` grants only itself | a document one level below a filesystem root: its folder is `/Users`, `/Volumes`, `/private/tmp`, which is neither home nor `/` | **violated (reproduced, D7)** |
 | V3 | Nothing a document contains can add a served root | `openedByUser` (`viewer/roots.go:68`) | any non-browser client that fetches a URL the document names sends no fetch metadata and is read as the user | **violated (reproduced, D3 = 🎯T67)** |
 | V4 | A viewed document makes no network request except loading images (and fonts/stylesheets over https) | CSP `connect-src`, `form-action 'none'`, no script | loads any `http(s)` image on render, with no click; a GET to any LAN or loopback service | by design (README badges) |
 | V5 | A document (or its diagram) cannot restyle or replace the viewer's chrome | `cleanStyle`, reserved `vellum-` class prefix (`internal/safehtml`), `<style>` dropped from documents; Mermaid scopes its CSS under the diagram's id | `id` is not reserved, and `getElementById` returns the document's element for chrome nodes that come after the article | **violated (D6)**; Mermaid `themeCSS` stays scoped (tested, see 5) |
@@ -71,7 +89,7 @@ the question asks about), *unknown*.
 
 ## 3. Confirmed defects
 
-Titles state the desired state.
+Titles state the desired state. By severity: D1, D2, D7, D3, D5, D4, D6 (numbered in the order found).
 
 ### D1. A CLI or MCP PDF carries no file the document names from outside its folder — high
 
@@ -157,6 +175,35 @@ folder) as `data:` URIs before pandoc, as `inlineMermaidPNG` already does
 for diagrams, and run pandoc with `--sandbox` (the clipboard route already
 does: `HTMLToRTFSandboxed`). `--sandbox` alone would also refuse images
 inside the folder, which breaks today's decks; hence the inlining step.
+
+### D7. Opening one document never serves a whole volume or the home folder — high (with D3), medium alone
+
+**Severity.** High in combination with D3: one converted document gets all
+of `/Users` (the home folder included) served to every page and to any
+client of the port, persistently. Medium alone: a user who opens a
+document saved at `/Volumes/<drive>/notes.md` or `/tmp/x.md` serves the
+whole drive or `/private/tmp` to every later document (D5).
+
+**Mechanism.** `rootFor` (`viewer/roots.go`) returns the document's folder
+unless a `.git` is found below the home folder. Its guard covers two cases:
+the folder *is* home, or the folder *is* a filesystem root. A folder one
+level down (`/Users`, `/Volumes`, `/Volumes/Storage`, `/private/tmp`) is
+neither, so the walk finds no `.git`, stops at `/`, and grants the folder.
+The grant does not need the document to exist (F6).
+
+**Reproduction** (tree viewer, fresh cache, navigation headers):
+`GET /Users/notes.md` (absent) → 404, and `roots.json` becomes
+`[{"path": "/Users"}]`; a `HEAD` of this worktree's `CLAUDE.md` under
+`/Users/marcelo/…` goes from 403 to 200. Likewise `/Volumes/Storage/notes.md`
+→ `/Volumes/Storage` (a file in the scratch tree went from 403 to 200) and
+`/tmp/notes.md` → `/private/tmp`. Through D3 (`repro.py`, case D7): a
+document converted by the CLI whose image is
+`http://127.0.0.1:P/Volumes/vellum-probe.md` makes `roots.json`
+`["/Volumes"]`, and a canary deep under it goes from 403 to 200.
+
+**Smallest fix.** In `rootFor`, refuse (or grant the file only) when the
+folder's parent is a filesystem root, and when the folder contains the
+home folder; and grant only documents that exist (F6).
 
 ### D3. Converting a document from the CLI or MCP cannot get the viewer to serve a folder — medium (🎯T67, reconfirmed)
 
@@ -247,7 +294,16 @@ boundary.
 `chrome.js` looks them up with `document.getElementById`, which returns the
 first in tree order: the document's.
 
-**Reproduction.** Pending browser run (section 5 keeps it until then).
+**Reproduction** (`v1-battery.md`, tree viewer, `browse.cjs`). The document
+holds `<div id="vellum-consent">FAKE CONSENT: enter your password</div>`,
+`<div id="vellum-lightbox-content">…</div>` and one task `- [ ] a task`.
+After load, `document.getElementById("vellum-consent")` is the document's
+div (`consentIsChrome: false`, text `FAKE CONSENT…`), likewise the lightbox
+slot. Clicking the task box: the real consent dialog stays `hidden: true`,
+the document's div is what `showConsent` "shows", and no
+`/_vellum/task-toggle` request is made; the file is unchanged. With
+`id="vellum-editor-host"` the editor would mount inside the document's
+element (read, not run).
 
 **Smallest fix.** In `cleanAttrs`, drop (or prefix with `user-content-`, as
 GitHub does) any `id` and `name` that start with `vellum-`; or move the
@@ -256,18 +312,126 @@ containers.
 
 ## 4. Design findings
 
-Pending (third pass).
+### F1. Two trust postures, and the dangerous one is the default for agents
+
+The viewer treats a document as hostile (allow-list sanitiser, nonce CSP,
+served roots, fetch-free engines, confined Mermaid); the CLI and MCP treat
+it as the user's own (raw HTML, engines with full file and network reach,
+pandoc unsandboxed). Nothing in the MCP tool description or `--help` says
+so, and MCP is exactly where documents arrive that the user did not write
+(an agent converting what it fetched or generated). D1, D2, D3 and D4 are
+all this one decision. Change: one "untrusted render" pipeline used by
+every sink by default — `Sanitize`, `InlineResources` with a reader
+confined to the document's folder (an `os.Root`), `WriteSelfContainedPDF`,
+pandoc `--sandbox` with images pre-inlined — and a single explicit opt-in
+(`--trusted`, MCP `trusted: true`) that restores today's behaviour. Cost:
+the viewer already has every piece; the work is threading a root through
+`convert.Run` and a decision on remote images for CLI (fetch with the
+viewer's fetcher, or only when asked). Medium: a day plus tests per sink.
+
+### F2. Who may grant a folder, and how much, are both decided by accident
+
+The grant rule conflates "no fetch metadata" with "the user" (D3, the
+🎯T66 note), the grant's width comes from `rootFor`'s two special cases
+(home and `/`) rather than from a rule (D7), and a grant, once made, is
+global and persistent for every document (D5). Each is defensible alone;
+together one hostile request widens every later page's reach to a whole
+volume. Change: grant by capability (a per-install secret presented by
+`vellum view` and the Finder handler, the 🎯T66 note's option 2) plus
+browser top-level navigation; never grant a folder whose parent is a
+filesystem root or that contains the home folder (`rel(dir, home)` not
+starting with `..` and dir ≠ home is the rule); and confine each document
+route to the document's own root (D5's fix). Cost: medium; `vellum view`,
+`scripts/verify-release.sh` and the roots tests change.
+
+### F3. The sanitiser reserves a namespace for classes only
+
+`reservedClassPrefix` exists so a document cannot dress up as chrome, but
+ids (and `name`) share the page's namespace with chrome lookups (D6).
+Change: apply the same prefix rule to `id` and `name`, and add the
+`user-content-` prefix that GitHub uses so heading anchors keep working.
+Cost: small, but anchor rewriting (`rewriteFragmentHrefs`, TOC) must agree.
+
+### F4. Every Mermaid diagram on a page has the same id
+
+mmdc emits `<svg id="my-svg">` and scopes its CSS as `#my-svg …`, so each
+diagram's stylesheet (including any `themeCSS` and `classDef`) applies to
+every diagram on the page, and to a document heading whose text slugs to
+"my-svg". Observed in the fragment for `e-style.md` (a scoped
+`#my-svg #my-svg{position:fixed…}` rule). Not a boundary crossing: the
+scoping held, so a diagram cannot reach the chrome. Change: pass
+`--svgId vellum-diagram-<fragment id>` to mmdc. Cost: small; fragment ids
+are already content hashes.
+
+### F5. No test can fail for the CLI and MCP boundaries
+
+Every confinement test (`viewer/pdf_*_test.go`, `roots_test.go`,
+`clipboard_confine_test.go`) exercises the viewer. Nothing asserts what a
+CLI or MCP conversion may read or fetch, so D1, D2 and D4 are not
+regressions anyone could see; the 🎯T66 attestation lists the CLI path as
+residue, which is accurate but not enforced. Change: once F1 decides the
+rule, turn `repro.py`'s cases into Go tests under `convert/` and `mcp/`
+(they need only weasyprint, pandoc and poppler, already gate
+dependencies), each failing today.
+
+### F6. A grant happens for documents that do not exist
+
+`handlePath` grants before it knows whether the `.md` exists
+(`viewer/server.go`, "a grant that fails (no such folder) leaves the check
+below to refuse the path"): only the *folder* must exist. So any probe for
+a made-up name grants a real folder (D3, D7 both used absent names). The
+waiting page for a missing document is a feature, but it does not need a
+grant to show. Change: grant only when the document exists, or let the
+waiting page watch without granting. Cost: small.
 
 ## 5. Unconfirmed suspicions
 
-- D6 until the browser run.
+- **Clipboard HTML flavour grants through the paste target.** The viewer's
+  clipboard copy carries the document's image URLs; a document image named
+  `http://127.0.0.1:18742/<folder>/x.md` is refused in the browser (fetch
+  metadata `same-origin`) but a paste target that fetches it without fetch
+  metadata (Mail, Notes, a chat client) would grant the folder (D3 by
+  another route). Not run: it writes the user's real clipboard. 🎯T66
+  residue (a) records the same thing in general terms.
+- **The tunnel.** 🎯T66's note mentions a tunnel presenting a loopback
+  `Host`. If one exists, D7 means one request through it serves the whole
+  of `/Users`. No tunnel configuration is in this repository; not checked.
+- **Import cache permissions.** Copies made by D4 are written 0644 by
+  pandoc whatever the source's mode (a 0600 key becomes 0644). Under
+  `~/Library/Caches` (mode 0700 on a default install) this matters only
+  where the parent is shared. Observed 0644 for a 0644 source; the 0600
+  case was not run.
+- **pandoc iframe inlining.** pandoc 3.14 fetched `http` iframe sources
+  during import (two requests logged); whether it inlines a fetched HTML
+  page's text into the Markdown was not tested (the recorder served a GIF).
+  A `file:` iframe of a local HTML file was not inlined (tested).
+- **Prince attachments.** Prince did not honour `rel=attachment`; Prince's
+  own attachment syntax (`prince-pdf-attachment` / `--attach`) was not
+  tried from document CSS. Since D1's fix sanitises `<style>`, it would be
+  covered either way.
 
 ## 6. Coverage
 
 Read in full: `viewer/server.go`, `viewer/roots.go`, `viewer/csp.go`,
-`viewer/fetch.go`, `internal/safehtml/safehtml.go`, `mcp/server.go`.
+`viewer/fetch.go`, `internal/safehtml/safehtml.go`, `mcp/server.go`, the
+two PDF backend files.
 Read in part: `convert/convert.go` 120–300, `convert/run.go` 262–510,
-`convert/pptx.go` 100–180, `importer/importer.go` 40–200, both backend
-files, `viewer/actions.go` 24–120, `viewer/lazy.go` 245–366,
-`viewer/chrome.go` 60–241, `viewer/chrome.js` (element lookups, consent,
-fragment loader). Bullseye 🎯T57, 🎯T66–🎯T69 read.
+`convert/pptx.go` 100–180, `importer/importer.go` 40–200,
+`viewer/actions.go` 24–120, `viewer/lazy.go` 245–366, `viewer/chrome.go`
+60–241, `viewer/chrome.js` (element lookups, consent, fragment loader),
+`viewer/edit.go` (method and extension checks), `convert/katex.go` (render
+options), `convert/mermaid.go` (confinement entry points). Bullseye 🎯T57,
+🎯T66–🎯T69 read; the vellum rows of `spare-capacity.md` and
+`defect-hunts-2026-11-20.md` read.
+
+Run: CLI PDF (WeasyPrint and Prince), RTF, pptx, HTML import; MCP over
+the tree daemon's `/mcp`; the viewer page, fragment and PDF routes; a
+headless-Chrome battery. Not run: the clipboard (the user's real
+pasteboard), `vellum view` and the Finder handler (they open the user's
+browser), Windows (🎯T69), `vellum --mcp` over stdio (same `convert.Run`
+as HTTP, by reading).
+
+Not reached: `viewer/task.go` and `viewer/watch*.go` beyond their path
+checks, `adf/`, `importer/pdf.go` (Poppler: `pdftoppm`/`pdftotext` read
+only the given PDF), `clipboard/` beyond the 🎯T66 notes, `config/`
+(a hostile config file is outside this question), the editor bundle.

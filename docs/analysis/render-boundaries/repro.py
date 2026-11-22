@@ -199,6 +199,31 @@ try:
     drawn = run("pdfimages", "-list", hpdf).stdout.count(" 40    40 ")
     report("D5", status == 200 and drawn == 1,
            "viewer PDF of hostile/README.md draws %d image(s) from private/" % drawn)
+
+    # D7 (with D3): one converted document gets a whole top-level tree
+    # served: the folder of /<top>/x.md is /<top>, which is neither the
+    # home folder nor a filesystem root, so rootFor grants all of it.
+    top = "/" + work.split("/")[1]
+    canary_url = view + urllib.parse.quote(os.path.join(secret_dir, "canary.png"))
+    os.remove(roots_json)
+    viewer.terminate()
+    viewer.wait(timeout=10)
+    viewer = subprocess.Popen([vellum, "serve-view", "--addr", "127.0.0.1:%d" % view_port], env=env,
+                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    for _ in range(100):
+        try:
+            if http_get(view + "/healthz")[0] == 200:
+                break
+        except OSError:
+            time.sleep(0.1)
+    before = http_get(canary_url)[0]
+    d7 = write_doc("g-top.md", "# Harmless\n\n![x](%s%s/vellum-probe.md)\n" % (view, top))
+    convert(d7, os.path.join(out, "g.pdf"))
+    after = http_get(canary_url)[0]
+    granted = [r["path"] for r in json.load(open(roots_json))] if os.path.exists(roots_json) else []
+    report("D7", before == 403 and after == 200 and granted == [top],
+           "converted g-top.md; roots.json %s; a file deep under it: before %d, after %d"
+           % (granted, before, after))
 finally:
     viewer.terminate()
     viewer.wait(timeout=10)
