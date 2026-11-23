@@ -108,9 +108,11 @@ func resolvePath(p string) (string, error) {
 }
 
 // rootFor is the root a user-opened document grants: the top of the git
-// work tree it is in, or else its own folder. The search stops below the
-// home folder, and a document directly in the home folder or a filesystem
-// root grants only itself, never everything beneath it.
+// work tree it is in, or else its own folder. A folder too wide to serve
+// (tooWideToServe: home, anything holding it, a filesystem root or a
+// folder directly under one, a volume's top, a shared temporary folder)
+// is never granted: a document directly in one grants only itself, and
+// the search for a work tree stops below it.
 //
 // The folder is the one the document's name is in, not its symlink
 // target's: opening a link that points out of its folder serves the
@@ -123,22 +125,47 @@ func rootFor(doc string) (servedRoot, error) {
 	if info, err := os.Stat(dir); err != nil || !info.IsDir() {
 		return servedRoot{}, fmt.Errorf("folder of %s: not a directory", doc)
 	}
-	home := ""
-	if h, err := os.UserHomeDir(); err == nil {
-		if rh, err := filepath.EvalSymlinks(h); err == nil {
-			home = rh
-		}
-	}
-	isTop := func(d string) bool { return d == home || filepath.Dir(d) == d }
-	if isTop(dir) {
+	home := resolvedHome()
+	if tooWideToServe(dir, home) {
 		return servedRoot{Path: filepath.Join(dir, filepath.Base(doc)), File: true}, nil
 	}
-	for d := dir; !isTop(d); d = filepath.Dir(d) {
+	for d := dir; !tooWideToServe(d, home); d = filepath.Dir(d) {
 		if _, err := os.Lstat(filepath.Join(d, gitMarker)); err == nil {
 			return servedRoot{Path: d}, nil
 		}
 	}
 	return servedRoot{Path: dir}, nil
+}
+
+// resolvedHome is the home folder with its symlinks resolved, or "".
+func resolvedHome() string {
+	h, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	rh, err := filepath.EvalSymlinks(h)
+	if err != nil {
+		return ""
+	}
+	return rh
+}
+
+// tooWideToServe reports whether opening one document may never serve
+// dir: it is home or holds home, it is a filesystem root or a folder
+// directly under one (/Users, /Volumes, /private, C:\Users), or it is
+// a volume's top or a shared temporary folder (isVolumeTop). dir and
+// home have their symlinks resolved.
+func tooWideToServe(dir, home string) bool {
+	parent := filepath.Dir(dir)
+	if parent == dir || filepath.Dir(parent) == parent {
+		return true
+	}
+	if home != "" {
+		if rel, err := filepath.Rel(dir, home); err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel) {
+			return true
+		}
+	}
+	return isVolumeTop(dir)
 }
 
 // servedRoots returns Server.Roots (resolved) and the granted roots.
@@ -178,10 +205,17 @@ func (s *Server) loadGrantsLocked() {
 	if json.Unmarshal(b, &saved) != nil {
 		return
 	}
+	// A folder grant an older vellum made for a folder too wide to
+	// serve (render-boundaries D7) is dropped, not honoured.
+	home := resolvedHome()
 	for _, r := range saved {
-		if filepath.IsAbs(r.Path) && filepath.Clean(r.Path) == r.Path {
-			s.granted = append(s.granted, r)
+		if !filepath.IsAbs(r.Path) || filepath.Clean(r.Path) != r.Path {
+			continue
 		}
+		if !r.File && tooWideToServe(r.Path, home) {
+			continue
+		}
+		s.granted = append(s.granted, r)
 	}
 }
 
