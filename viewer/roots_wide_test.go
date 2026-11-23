@@ -153,3 +153,44 @@ func TestRoots_StoredWideGrantIsNotHonoured(t *testing.T) {
 		t.Fatalf("stored ordinary grant lost: %d", code)
 	}
 }
+
+// TestRoots_DirectChildOfHomeAndFileGrantStay: the filter that drops a
+// stored folder grant of a volume or of a folder holding home must keep
+// a folder directly inside home, and a single-file grant in a wide folder.
+func TestRoots_DirectChildOfHomeAndFileGrantStay(t *testing.T) {
+	base, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	users := filepath.Join(base, "Users")
+	home := filepath.Join(users, "me")
+	notes := filepath.Join(home, "notes")
+	mustMkdir(t, notes)
+	t.Setenv("HOME", home)
+	doc := filepath.Join(notes, "a.md")
+	mustWrite(t, doc, "# A\n")
+	wideFile := filepath.Join(users, "notes.md")
+	mustWrite(t, wideFile, "# "+secretBytes+"\n")
+	other := filepath.Join(users, "other.md")
+	mustWrite(t, other, "# other\n")
+
+	cache := filepath.Join(base, "cache")
+	mustMkdir(t, cache)
+	b, err := json.Marshal([]servedRoot{{Path: notes}, {Path: wideFile, File: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustWrite(t, filepath.Join(cache, rootsFileName), string(b))
+
+	s := &Server{CacheDir: cache}
+	ts := startTestServer(t, s)
+	if code, _ := pageRequest(t, http.MethodGet, ts.URL+pathURL(doc)); code != http.StatusOK {
+		t.Fatalf("folder directly inside home was dropped: %d", code)
+	}
+	if code, _ := pageRequest(t, http.MethodGet, ts.URL+pathURL(wideFile)); code != http.StatusOK {
+		t.Fatalf("file grant in a wide folder was dropped: %d", code)
+	}
+	if code, _ := pageRequest(t, http.MethodGet, ts.URL+pathURL(other)); code != http.StatusForbidden {
+		t.Fatalf("file grant widened to its folder: %d", code)
+	}
+}
