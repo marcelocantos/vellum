@@ -166,9 +166,9 @@ func renderPDFHTML(ctx context.Context, md string, opts *Options) (string, []str
 // WritePDF is the HTML→PDF backend call for the CLI and MCP. baseDir
 // resolves relative names; an empty baseDir uses the output file's
 // directory. The PDF embeds local files only from baseDir: everything
-// the page names there is inlined as a data: URL, and the engine reads
-// no file itself. http and https are left to the engine. The view
-// server uses WriteSelfContainedPDF, whose engine fetches nothing.
+// the page names there is inlined as a data: URL, remote images,
+// stylesheets and fonts are fetched by vellum, and the engine fetches
+// nothing. The view server uses WriteSelfContainedPDF the same way.
 func WritePDF(ctx context.Context, html, outputPath, baseDir string, opts *Options) error {
 	if baseDir == "" {
 		baseDir = filepath.Dir(outputPath)
@@ -184,6 +184,7 @@ func writePDF(ctx context.Context, html, outputPath, baseDir string, files docFi
 			return err
 		}
 	}
+	files = files.withDir(baseDir)
 	var (
 		backendName string
 		pdfa        string
@@ -202,7 +203,14 @@ func writePDF(ctx context.Context, html, outputPath, baseDir string, files docFi
 	if err != nil {
 		return err
 	}
-	if err := backend.Render(ctx, page, outputPath, baseDir, pdfa); err != nil {
+	fl, ok := backend.(fetchlessRenderer)
+	if !ok {
+		return fmt.Errorf("%s: cannot render without fetching", backend.Name())
+	}
+	// baseDir keeps relative links pointing at the document folder. The
+	// engine still fetches nothing: only data: is allowed, and local
+	// files are already inlined.
+	if err := fl.renderFetchless(ctx, page, outputPath, baseDir, pdfa); err != nil {
 		return fmt.Errorf("%s: %w", backend.Name(), err)
 	}
 	return nil
@@ -238,7 +246,7 @@ func WriteSelfContainedPDF(ctx context.Context, html, outputPath string, opts *O
 	if !ok {
 		return fmt.Errorf("%s: cannot render without fetching", backend.Name())
 	}
-	if err := fl.renderFetchless(ctx, html, outputPath, pdfa); err != nil {
+	if err := fl.renderFetchless(ctx, html, outputPath, "", pdfa); err != nil {
 		return fmt.Errorf("%s: %w", backend.Name(), err)
 	}
 	return nil

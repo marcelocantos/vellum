@@ -25,11 +25,11 @@ type InlineArgs struct {
 	// Fetch returns an http or https resource's bytes and media type.
 	// An error drops the reference. Nil drops every remote reference.
 	Fetch func(ctx context.Context, rawURL string) (data []byte, mediaType string, err error)
-	// KeepRemote leaves http and https references as written, for an
-	// engine that may fetch them but reads no file (the CLI and MCP PDF).
-	// Fetch is then not called.
-	KeepRemote bool
 }
+
+// maxInlineDepth bounds how far a stylesheet's @import and url() are
+// followed. A cycle is also stopped by the seen map.
+const maxInlineDepth = 8
 
 // InlineResources prepares a rendered page for WriteSelfContainedPDF,
 // whose engine fetches nothing but data: URLs.
@@ -42,9 +42,10 @@ type InlineArgs struct {
 // <base> elements are removed, so nothing resolves against a base the
 // document chose.
 //
-// vellum decides every byte the engine sees. What a data: resource names
-// in turn (an SVG's <image> or <use>, an inlined stylesheet's url()) is
-// not followed here: the engine refuses it.
+// vellum decides every byte the engine sees. A stylesheet's own url()
+// and @import are rewritten before it becomes a data: URL. What a data:
+// resource names in turn (an SVG's <image> or <use>) is not followed
+// here: the engine refuses it.
 //
 // The head is left alone. It is vellum's own (the stylesheet, and KaTeX
 // inlined by Options.KaTeXInline); anything there that is not a data:
@@ -58,10 +59,11 @@ func InlineResources(ctx context.Context, fullHTML, baseDir string, args *Inline
 }
 
 type inliner struct {
-	ctx  context.Context
-	base string
-	args *InlineArgs
-	seen map[string]refDecision
+	ctx   context.Context
+	base  string
+	args  *InlineArgs
+	seen  map[string]refDecision
+	depth int
 }
 
 type refDecision struct {
@@ -242,9 +244,6 @@ func (in *inliner) decide(ref string) refDecision {
 	case "data":
 		return refDecision{kind: refKeep}
 	case "http", "https":
-		if in.args.KeepRemote {
-			return refDecision{kind: refKeep}
-		}
 		return in.remote(ref)
 	case "":
 	default:
@@ -273,10 +272,13 @@ func (in *inliner) local(abs string) refDecision {
 	if d, ok := in.seen[key]; ok {
 		return d
 	}
+	// A placeholder stops a stylesheet that imports itself. The real
+	// decision replaces it when the bytes are in hand.
+	in.seen[key] = refDecision{kind: refDrop}
 	d := refDecision{kind: refDrop}
-	if in.args.Read != nil {
+	if in.args.Read != nil && in.depth < maxInlineDepth {
 		if b, err := in.args.Read(abs); err == nil {
-			d = refDecision{kind: refReplace, repl: dataURL(mediaTypeFor(abs, b), b)}
+			d = in.packed(abs, filepath.Dir(abs), b, "")
 		}
 	}
 	in.seen[key] = d
@@ -288,17 +290,63 @@ func (in *inliner) remote(ref string) refDecision {
 	if d, ok := in.seen[key]; ok {
 		return d
 	}
+	in.seen[key] = refDecision{kind: refDrop}
 	d := refDecision{kind: refDrop}
-	if in.args.Fetch != nil {
+	if in.args.Fetch != nil && in.depth < maxInlineDepth {
 		if b, mediaType, err := in.args.Fetch(in.ctx, ref); err == nil {
-			if mediaType == "" {
-				mediaType = http.DetectContentType(b)
-			}
-			d = refDecision{kind: refReplace, repl: dataURL(mediaType, b)}
+			d = in.packed(ref, ref, b, mediaType)
 		}
 	}
 	in.seen[key] = d
 	return d
+}
+
+// packed turns bytes into a data: URL. A stylesheet's own url() and
+// @import are rewritten first, against cssBase: the file's directory, or
+// the stylesheet's URL. Relative names in a remote stylesheet stay on
+// that host; they are not read as local files.
+func (in *inliner) packed(name, cssBase string, b []byte, mediaType string) refDecision {
+	if mediaType == "" {
+		mediaType = mediaTypeFor(name, b)
+	}
+	if i := strings.IndexAny(mediaType, ";,"); i >= 0 {
+		mediaType = mediaType[:i]
+	}
+	mediaType = strings.ToLower(strings.TrimSpace(mediaType))
+	if mediaType == "text/css" && in.depth < maxInlineDepth {
+		in.depth++
+		rewritten := rewriteCSSURLs(string(b), func(ref string) refDecision {
+			return in.decide(resolveCSSRef(cssBase, ref))
+		})
+		in.depth--
+		b = []byte(rewritten)
+	}
+	return refDecision{kind: refReplace, repl: dataURL(mediaType, b)}
+}
+
+// resolveCSSRef makes a stylesheet-relative reference absolute against
+// cssBase. cssBase is a directory path or an http(s) URL. An absolute
+// reference, including a file: URL, is returned unchanged.
+func resolveCSSRef(cssBase, ref string) string {
+	ref = strings.Trim(ref, " \t\n\r\f")
+	if ref == "" || strings.HasPrefix(ref, "#") || strings.HasPrefix(strings.ToLower(ref), "data:") {
+		return ref
+	}
+	u, err := url.Parse(ref)
+	if err != nil || u.IsAbs() || strings.HasPrefix(ref, "//") {
+		return ref
+	}
+	if strings.HasPrefix(cssBase, "http://") || strings.HasPrefix(cssBase, "https://") {
+		base, err := url.Parse(cssBase)
+		if err != nil {
+			return ref
+		}
+		return base.ResolveReference(u).String()
+	}
+	if cssBase == "" {
+		return ref
+	}
+	return filepath.Join(cssBase, filepath.FromSlash(u.Path))
 }
 
 // inlineMediaTypes names the types of the files a page commonly shows,
@@ -340,10 +388,9 @@ func dataURL(mediaType string, data []byte) string {
 }
 
 // rewriteCSSURLs rewrites url() and @import in one CSS declaration or
-// stylesheet. Remote urls stay as written. A local url is replaced, or
-// becomes none when it cannot be copied. An @import that cannot be copied
-// is removed through its semicolon, so the engine does not resolve it
-// against the document base.
+// stylesheet. A reference decide replaces is written back; one it drops
+// becomes none, and an @import it drops is removed through its semicolon
+// so the engine does not resolve it against the document base.
 func rewriteCSSURLs(css string, decide func(string) refDecision) string {
 	var b strings.Builder
 	i := 0

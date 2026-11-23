@@ -479,6 +479,7 @@ func writeFileOutput(ctx context.Context, md, outPath, toFmt, baseDir string, fi
 			return nil, err
 		}
 	}
+	files = files.withDir(baseDir)
 	switch {
 	case isMarkdownFormat(toFmt):
 		return nil, os.WriteFile(outPath, []byte(md), 0o644)

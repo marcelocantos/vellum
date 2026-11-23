@@ -45,8 +45,12 @@ const weasyprintDataOnly = "--allowed-protocols=data"
 // and MCP read a document's local files themselves (WritePDF).
 const weasyprintNoFiles = "--allowed-protocols=data,http,https"
 
-func (weasyprintBackend) renderFetchless(ctx context.Context, htmlContent, outputPath, pdfaProfile string) error {
-	return weasyprintRun(ctx, htmlContent, outputPath, pdfaProfile, []string{weasyprintDataOnly})
+func (weasyprintBackend) renderFetchless(ctx context.Context, htmlContent, outputPath, baseDir, pdfaProfile string) error {
+	args := []string{weasyprintDataOnly}
+	if baseDir != "" {
+		args = append(args, "--base-url="+fileurl.FromPath(baseDir+string(filepath.Separator)))
+	}
+	return weasyprintRun(ctx, htmlContent, outputPath, pdfaProfile, args)
 }
 
 func weasyprintRun(ctx context.Context, htmlContent, outputPath, pdfaProfile string, args []string) error {

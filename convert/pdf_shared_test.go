@@ -23,7 +23,7 @@ import (
 func TestPDFWrite_IsOneImplementation(t *testing.T) {
 	convertBody := funcBody(t, "convert.go", "Convert")
 	pdfCase := pdfCaseBody(t, funcBody(t, "run.go", "writeFileOutput"))
-	for _, name := range []string{"ResolveBackend", "backend.Render", "MermaidPNG"} {
+	for _, name := range []string{"ResolveBackend", "backend.Render", "renderFetchless", "MermaidPNG"} {
 		if strings.Contains(convertBody, name) {
 			t.Errorf("Convert contains %s; PDF writing is still its own path", name)
 		}
@@ -33,8 +33,11 @@ func TestPDFWrite_IsOneImplementation(t *testing.T) {
 	}
 	pdfBody := funcBody(t, "convert.go", "writePDF")
 	htmlBody := funcBody(t, "convert.go", "renderPDFHTML")
-	if !strings.Contains(pdfBody, "ResolveBackend") || !strings.Contains(pdfBody, "backend.Render") {
-		t.Error("writePDF must be the only backend.Render call for PDF")
+	if !strings.Contains(pdfBody, "ResolveBackend") || !strings.Contains(pdfBody, "renderFetchless") {
+		t.Error("writePDF must be the only PDF engine call, and it must not fetch")
+	}
+	if strings.Contains(pdfBody, "backend.Render") {
+		t.Error("writePDF lets the engine fetch; PDF goes through renderFetchless")
 	}
 	if !strings.Contains(htmlBody, "MermaidPNG") {
 		t.Error("renderPDFHTML must force Mermaid PNG for every PDF")
