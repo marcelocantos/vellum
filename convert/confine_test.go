@@ -276,8 +276,51 @@ func TestPDF_CLIStillShowsRemoteImages(t *testing.T) {
 	if sizes := pdfImageSizes(t, out); len(sizes) != 1 || sizes[0] != "5x5" {
 		t.Fatalf("remote image not drawn: %v", sizes)
 	}
-	if len(rec.all()) == 0 {
+	reqs := rec.all()
+	if len(reqs) == 0 {
 		t.Fatal("remote image never requested")
+	}
+	// The engine used to fetch this itself, with no fetch metadata, which
+	// the viewer reads as the user opening a folder (D3). vellum fetches
+	// it and says so.
+	checkRemoteSaysImage(t, reqs)
+}
+
+// TestDocFiles_SwappedDirectoryIsNotRead: the folder is pinned when the
+// conversion starts. Replacing it with a symlink to a secret folder
+// before a file is read must not return the secret.
+func TestDocFiles_SwappedDirectoryIsNotRead(t *testing.T) {
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc := filepath.Join(root, "doc")
+	secret := filepath.Join(root, "secret")
+	if err := os.Mkdir(doc, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(secret, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(secret, "secret.txt"), []byte(confineSecret+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(doc, "inside.txt"), []byte("inside\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	files := newDocFiles(doc)
+	if b, err := files.read(filepath.Join(doc, "inside.txt")); err != nil || string(b) != "inside\n" {
+		t.Fatalf("inside file before the swap: %q %v", b, err)
+	}
+	if err := os.RemoveAll(doc); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(secret, doc); err != nil {
+		t.Fatal(err)
+	}
+	b, err := files.read(filepath.Join(doc, "secret.txt"))
+	if err == nil && strings.Contains(string(b), "SECRET-TOKEN") {
+		t.Fatalf("read the secret after the document folder was replaced by a symlink: %q", b)
 	}
 }
 

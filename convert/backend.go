@@ -25,8 +25,10 @@ type Backend interface {
 	// the URL base for resolving relative links. The engine reads no local
 	// file but its input: every local resource the page shows must already
 	// be a data: URL (InlineResources). It may fetch http and https.
-	// pdfaProfile, when non-empty, names a PDF/A variant in canonical form
-	// (e.g. "PDF/A-3b"); the backend translates to its engine's flag syntax.
+	// The CLI and MCP PDF path does not use Render; it uses renderFetchless
+	// so the engine makes no request. pdfaProfile, when non-empty, names a
+	// PDF/A variant in canonical form (e.g. "PDF/A-3b"); the backend
+	// translates to its engine's flag syntax.
 	Render(ctx context.Context, htmlContent, outputPath, baseDir, pdfaProfile string) error
 
 	// Dep returns the engine's runtime binary dependency for `CheckDeps`.
@@ -57,9 +59,11 @@ func ResolveBackend(name string) (Backend, error) {
 }
 
 // fetchlessRenderer is a backend that can run its engine with every
-// fetch refused but data: URLs (WriteSelfContainedPDF).
+// fetch refused but data: URLs (WriteSelfContainedPDF, writePDF).
+// baseDir, when set, is the document folder relative links resolve
+// against. It does not let the engine read a file.
 type fetchlessRenderer interface {
-	renderFetchless(ctx context.Context, htmlContent, outputPath, pdfaProfile string) error
+	renderFetchless(ctx context.Context, htmlContent, outputPath, baseDir, pdfaProfile string) error
 }
 
 // runEngine writes htmlContent to a temporary file and runs bin with the

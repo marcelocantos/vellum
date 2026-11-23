@@ -121,6 +121,61 @@ func TestInlineResources_InlinesOnlyWhatReadAndFetchAllow(t *testing.T) {
 	}
 }
 
+func TestInlineResources_LinkedStylesheetDoesNotReadOutside(t *testing.T) {
+	root := t.TempDir()
+	doc := filepath.Join(root, "doc")
+	if err := os.Mkdir(doc, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	css := []byte(`body{background:url("../secret.png")}p{background:url("dot.png")}b{background:url("https://cdn.example/a.png")}`)
+	if err := os.WriteFile(filepath.Join(doc, "site.css"), css, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(doc, "dot.png"), []byte("DOT"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "secret.png"), []byte("SECRET-BYTES"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	files := newDocFiles(doc)
+	var fetches []string
+	page := `<!DOCTYPE html><html><head></head><body><link rel="stylesheet" href="site.css"></body></html>`
+	out, err := InlineResources(context.Background(), page, doc, &InlineArgs{
+		Read: files.read,
+		Fetch: func(_ context.Context, u string) ([]byte, string, error) {
+			fetches = append(fetches, u)
+			return []byte("REMOTE"), "image/png", nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	const marker = `href="data:text/css;base64,`
+	i := strings.Index(out, marker)
+	if i < 0 {
+		t.Fatalf("stylesheet was not inlined:\n%s", out)
+	}
+	rest := out[i+len(marker):]
+	j := strings.Index(rest, `"`)
+	raw, err := base64.StdEncoding.DecodeString(rest[:j])
+	if err != nil {
+		t.Fatal(err)
+	}
+	sheet := string(raw)
+	if strings.Contains(sheet, "secret") || strings.Contains(sheet, "SECRET") {
+		t.Fatalf("stylesheet still names the outside file:\n%s", sheet)
+	}
+	if !strings.Contains(sheet, base64.StdEncoding.EncodeToString([]byte("DOT"))) {
+		t.Fatalf("stylesheet lost its own image:\n%s", sheet)
+	}
+	if len(fetches) != 1 || fetches[0] != "https://cdn.example/a.png" {
+		t.Fatalf("fetches %v", fetches)
+	}
+	if !strings.Contains(sheet, base64.StdEncoding.EncodeToString([]byte("REMOTE"))) {
+		t.Fatalf("stylesheet lost its remote image:\n%s", sheet)
+	}
+}
+
 func TestDataURL_StripsParameters(t *testing.T) {
 	if got := dataURL("Image/SVG+XML; charset=utf-8", []byte("<svg/>")); got != "data:image/svg+xml;base64,PHN2Zy8+" {
 		t.Fatalf("dataURL = %q", got)

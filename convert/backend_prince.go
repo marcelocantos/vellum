@@ -43,8 +43,12 @@ var princeFetchless = []string{"--no-network", princeNoLocalFiles}
 
 const princeNoLocalFiles = "--no-local-files"
 
-func (princeBackend) renderFetchless(ctx context.Context, htmlContent, outputPath, pdfaProfile string) error {
-	return princeRun(ctx, htmlContent, outputPath, pdfaProfile, append([]string(nil), princeFetchless...))
+func (princeBackend) renderFetchless(ctx context.Context, htmlContent, outputPath, baseDir, pdfaProfile string) error {
+	args := append([]string(nil), princeFetchless...)
+	if baseDir != "" {
+		args = append(args, "--baseurl="+fileurl.FromPath(baseDir+string(filepath.Separator)))
+	}
+	return princeRun(ctx, htmlContent, outputPath, pdfaProfile, args)
 }
 
 func princeRun(ctx context.Context, htmlContent, outputPath, pdfaProfile string, args []string) error {

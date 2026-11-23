@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package remoteimage fetches a document's http and https images for a
-// sink whose engine fetches nothing itself: the viewer's PDF, and the
-// CLI and MCP pptx and RTF sinks (pandoc runs sandboxed there).
+// sink whose engine fetches nothing itself: the viewer's PDF, the CLI
+// and MCP PDF (FetchAsset, which also accepts a stylesheet or a font),
+// and the CLI and MCP pptx and RTF sinks (pandoc runs sandboxed there).
 //
 // Each request says what it is: a cross-site, no-cors image load, the
 // fetch metadata a browser sends for a page's own <img>. A vellum viewer
@@ -64,6 +65,32 @@ var client = &http.Client{
 // rawURL. A response that is not an image (by its Content-Type) is
 // refused, as a page's <img> would show nothing for it.
 func Fetch(ctx context.Context, rawURL string) ([]byte, string, error) {
+	return fetch(ctx, rawURL, "image/*", func(mediaType string) bool {
+		return strings.HasPrefix(mediaType, "image/")
+	})
+}
+
+// FetchAsset is Fetch for the resources a PDF page names: an image, a
+// stylesheet or a font. The CLI and MCP PDF engines fetch nothing
+// themselves, so a remote stylesheet reaches the PDF only through here,
+// with the same cross-site fetch metadata as an image.
+func FetchAsset(ctx context.Context, rawURL string) ([]byte, string, error) {
+	return fetch(ctx, rawURL, "image/*,text/css,font/woff2,font/woff,*/*;q=0.1", acceptAsset)
+}
+
+func acceptAsset(mediaType string) bool {
+	if strings.HasPrefix(mediaType, "image/") || strings.HasPrefix(mediaType, "font/") || mediaType == "text/css" {
+		return true
+	}
+	switch mediaType {
+	case "application/font-woff", "application/font-sfnt", "application/vnd.ms-fontobject",
+		"application/x-font-ttf", "application/x-font-opentype", "application/x-font-woff":
+		return true
+	}
+	return false
+}
+
+func fetch(ctx context.Context, rawURL, accept string, ok func(mediaType string) bool) ([]byte, string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
 		return nil, "", err
@@ -74,7 +101,7 @@ func Fetch(ctx context.Context, rawURL string) ([]byte, string, error) {
 	req.Header.Set(SiteHeader, SiteCrossSite)
 	req.Header.Set(ModeHeader, ModeNoCORS)
 	req.Header.Set(DestHeader, DestImage)
-	req.Header.Set("Accept", "image/*")
+	req.Header.Set("Accept", accept)
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, "", err
@@ -84,7 +111,7 @@ func Fetch(ctx context.Context, rawURL string) ([]byte, string, error) {
 		return nil, "", fmt.Errorf("%s: %s", rawURL, resp.Status)
 	}
 	mediaType, _, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
-	if err != nil || !strings.HasPrefix(mediaType, "image/") {
+	if err != nil || !ok(mediaType) {
 		return nil, "", fmt.Errorf("%s: %w", rawURL, ErrNotAnImage)
 	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, MaxBytes+1))
