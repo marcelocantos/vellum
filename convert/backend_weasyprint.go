@@ -25,7 +25,7 @@ func (weasyprintBackend) Dep() Dep {
 }
 
 func (weasyprintBackend) Render(ctx context.Context, htmlContent, outputPath, inputDir, pdfaProfile string) error {
-	var args []string
+	args := []string{weasyprintNoFiles}
 	if inputDir != "" {
 		// WeasyPrint flag is --base-url (with a hyphen). url.URL handles
 		// path encoding for spaces/Unicode.
@@ -39,6 +39,11 @@ func (weasyprintBackend) Render(ctx context.Context, htmlContent, outputPath, in
 // name. WeasyPrint checks it for each fetch, so a redirect never gets as
 // far as a request.
 const weasyprintDataOnly = "--allowed-protocols=data"
+
+// weasyprintNoFiles refuses file: wherever it appears (an attachment, an
+// image, a stylesheet, a redirect) and leaves http and https: the CLI
+// and MCP read a document's local files themselves (WritePDF).
+const weasyprintNoFiles = "--allowed-protocols=data,http,https"
 
 func (weasyprintBackend) renderFetchless(ctx context.Context, htmlContent, outputPath, pdfaProfile string) error {
 	return weasyprintRun(ctx, htmlContent, outputPath, pdfaProfile, []string{weasyprintDataOnly})

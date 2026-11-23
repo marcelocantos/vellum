@@ -155,15 +155,30 @@ func Convert(ctx context.Context, inputPath, outputPath string, opts *Options) e
 
 // renderPDFHTML is the Markdown→HTML step shared by every PDF sink.
 // PDF forces PNG Mermaid (Prince-safe labels); HTML sinks keep SVG.
+// KaTeX's stylesheet and fonts are inlined, since the engine reads no
+// local file (WritePDF).
 func renderPDFHTML(ctx context.Context, md string, opts *Options) (string, []string, error) {
-	return Render(ctx, []byte(md), withMermaidFormat(opts, MermaidPNG))
+	pdfOpts := withMermaidFormat(opts, MermaidPNG)
+	pdfOpts.KaTeXInline = true
+	return Render(ctx, []byte(md), pdfOpts)
 }
 
 // WritePDF is the HTML→PDF backend call for the CLI and MCP. baseDir
-// resolves relative images; an empty baseDir uses the output file's
-// directory. The engine loads whatever the page names, so the view
-// server uses WriteSelfContainedPDF instead.
+// resolves relative names; an empty baseDir uses the output file's
+// directory. The PDF embeds local files only from baseDir: everything
+// the page names there is inlined as a data: URL, and the engine reads
+// no file itself. http and https are left to the engine. The view
+// server uses WriteSelfContainedPDF, whose engine fetches nothing.
 func WritePDF(ctx context.Context, html, outputPath, baseDir string, opts *Options) error {
+	if baseDir == "" {
+		baseDir = filepath.Dir(outputPath)
+	}
+	return writePDF(ctx, html, outputPath, baseDir, newDocFiles(baseDir), opts)
+}
+
+// writePDF is WritePDF with the folders local files may come from
+// (the document's, and an import's media folder).
+func writePDF(ctx context.Context, html, outputPath, baseDir string, files docFiles, opts *Options) error {
 	if dir := filepath.Dir(outputPath); dir != "." && dir != "" {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return err
@@ -183,10 +198,11 @@ func WritePDF(ctx context.Context, html, outputPath, baseDir string, opts *Optio
 	if err != nil {
 		return err
 	}
-	if baseDir == "" {
-		baseDir = filepath.Dir(outputPath)
+	page, err := inlineLocal(ctx, html, baseDir, files)
+	if err != nil {
+		return err
 	}
-	if err := backend.Render(ctx, html, outputPath, baseDir, pdfa); err != nil {
+	if err := backend.Render(ctx, page, outputPath, baseDir, pdfa); err != nil {
 		return fmt.Errorf("%s: %w", backend.Name(), err)
 	}
 	return nil

@@ -22,7 +22,9 @@ type Backend interface {
 	Name() string
 
 	// Render writes a PDF at outputPath from htmlContent. baseDir is used as
-	// the URL base for resolving relative paths (e.g. <img src="logo.svg">).
+	// the URL base for resolving relative links. The engine reads no local
+	// file but its input: every local resource the page shows must already
+	// be a data: URL (InlineResources). It may fetch http and https.
 	// pdfaProfile, when non-empty, names a PDF/A variant in canonical form
 	// (e.g. "PDF/A-3b"); the backend translates to its engine's flag syntax.
 	Render(ctx context.Context, htmlContent, outputPath, baseDir, pdfaProfile string) error

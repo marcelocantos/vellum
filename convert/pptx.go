@@ -4,7 +4,9 @@
 package convert
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/marcelocantos/vellum/internal/pandoc"
+	"github.com/marcelocantos/vellum/internal/remoteimage"
 	"github.com/marcelocantos/vellum/internal/xdg"
 )
 
@@ -112,7 +115,13 @@ func resolveTemplate(selector string) (path string, cleanup func(), err error) {
 // stays on its slide as a code block and is reported in soft, matching
 // the HTML and PDF sinks. pandoc warnings (dropped constructs, missing
 // resources it tolerated) are also soft errors.
-func writePPTX(ctx context.Context, md, outPath, baseDir string, opts *Options) (soft []string, err error) {
+//
+// pandoc embeds whatever an image names, byte for byte, so it reads
+// nothing here: it parses the Markdown, every image of that parse is
+// inlined as a data: URL by inlineDeckImages (an image file inside
+// files, or a remote image vellum fetched), and the deck is written from
+// the result, both runs under --sandbox.
+func writePPTX(ctx context.Context, md, outPath, baseDir string, files docFiles, opts *Options) (soft []string, err error) {
 	src, soft := inlineMermaidPNG(ctx, md)
 
 	var selector string
@@ -124,21 +133,112 @@ func writePPTX(ctx context.Context, md, outPath, baseDir string, opts *Options) 
 		return soft, err
 	}
 	defer cleanup()
+	if refDoc == "" {
+		// pandoc under --sandbox no longer finds its user default deck
+		// by itself; hand it over, so an omitted template is still the
+		// installed pandoc's choice.
+		if refDoc, err = pandoc.UserDataFile(ctx, pandocUserReferencePPTX); err != nil {
+			return soft, err
+		}
+	}
+
+	ast, err := pandoc.ToJSON(ctx, src, pptxReader)
+	if err != nil {
+		return soft, err
+	}
+	ast, dropped, err := inlineDeckImages(ctx, ast, baseDir, files)
+	if err != nil {
+		return soft, err
+	}
+	soft = append(soft, dropped...)
 
 	var args []string
 	if refDoc != "" {
 		args = append(args, "--reference-doc="+refDoc)
 	}
-	if baseDir != "" {
-		// Relative image paths resolve against the source document, not
-		// the daemon's working directory.
-		args = append(args, "--resource-path="+baseDir)
-	}
-	warnings, err := pandoc.ToFile(ctx, src, pptxReader, FormatPPTX, outPath, args...)
+	warnings, err := pandoc.ToFile(ctx, string(ast), pandocJSON, FormatPPTX, outPath, args...)
 	if err != nil {
 		return soft, err
 	}
 	return append(soft, warnings...), nil
+}
+
+// pandocJSON is pandoc's name for its own AST as JSON.
+const pandocJSON = "json"
+
+// pandocUserReferencePPTX is the default reference deck pandoc reads
+// from its user data directory.
+const pandocUserReferencePPTX = "reference.pptx"
+
+// inlineDeckImages rewrites every Image in a pandoc JSON AST to a data:
+// URL: a relative name, absolute path or file: URL only when it is an
+// image file inside files, an http or https URL fetched by vellum
+// (remoteimage.Fetch, which says it is an image). Any other image
+// becomes its description, and is reported in soft. Because the images
+// are pandoc's own parse, every spelling Markdown has for one (inline,
+// reference, angle brackets, escapes) is covered.
+func inlineDeckImages(ctx context.Context, ast []byte, baseDir string, files docFiles) ([]byte, []string, error) {
+	dec := json.NewDecoder(bytes.NewReader(ast))
+	dec.UseNumber()
+	var doc any
+	if err := dec.Decode(&doc); err != nil {
+		return nil, nil, fmt.Errorf("pandoc AST: %w", err)
+	}
+	fetchCtx, cancel := context.WithTimeout(ctx, remoteimage.Budget)
+	defer cancel()
+	in := &inliner{
+		ctx:  fetchCtx,
+		base: baseDir,
+		args: &InlineArgs{Read: files.readImage, Fetch: remoteimage.Fetch},
+		seen: map[string]refDecision{},
+	}
+	var soft []string
+	var walk func(v any) any
+	walk = func(v any) any {
+		switch x := v.(type) {
+		case []any:
+			for i := range x {
+				x[i] = walk(x[i])
+			}
+		case map[string]any:
+			// Image: {"t":"Image","c":[attr, [alt inlines], [url, title]]}
+			if x["t"] == "Image" {
+				c, _ := x["c"].([]any)
+				var target []any
+				if len(c) == 3 {
+					target, _ = c[2].([]any)
+				}
+				var ref string
+				ok := len(target) == 2
+				if ok {
+					ref, ok = target[0].(string)
+				}
+				if !ok {
+					return map[string]any{"t": "Str", "c": ""}
+				}
+				d := in.decide(ref)
+				switch {
+				case d.kind == refReplace:
+					target[0] = d.repl
+				case d.kind == refKeep && strings.HasPrefix(strings.ToLower(strings.TrimSpace(ref)), "data:"):
+				default:
+					soft = append(soft, fmt.Sprintf(
+						"pptx: image %s left out: only image files inside the document's folder, and http(s) images, are embedded", ref))
+					return map[string]any{"t": "Span", "c": []any{c[0], walk(c[1])}}
+				}
+			}
+			for k, e := range x {
+				x[k] = walk(e)
+			}
+		}
+		return v
+	}
+	doc = walk(doc)
+	out, err := json.Marshal(doc)
+	if err != nil {
+		return nil, nil, err
+	}
+	return out, soft, nil
 }
 
 // inlineMermaidPNG replaces every ```mermaid block in md with a Markdown

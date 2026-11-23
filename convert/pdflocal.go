@@ -25,6 +25,10 @@ type InlineArgs struct {
 	// Fetch returns an http or https resource's bytes and media type.
 	// An error drops the reference. Nil drops every remote reference.
 	Fetch func(ctx context.Context, rawURL string) (data []byte, mediaType string, err error)
+	// KeepRemote leaves http and https references as written, for an
+	// engine that may fetch them but reads no file (the CLI and MCP PDF).
+	// Fetch is then not called.
+	KeepRemote bool
 }
 
 // InlineResources prepares a rendered page for WriteSelfContainedPDF,
@@ -181,6 +185,23 @@ func isResourceHref(n *html.Node) bool {
 	switch strings.ToLower(n.Data) {
 	case "image", "use", "feimage", "link":
 		return true
+	case "a", "area":
+		// WeasyPrint embeds the target of rel=attachment as a file in the
+		// PDF; any other link is only a link.
+		return relHas(n, "attachment")
+	}
+	return false
+}
+
+func relHas(n *html.Node, token string) bool {
+	for _, a := range n.Attr {
+		if strings.EqualFold(a.Key, "rel") {
+			for _, f := range strings.Fields(a.Val) {
+				if strings.EqualFold(f, token) {
+					return true
+				}
+			}
+		}
 	}
 	return false
 }
@@ -221,6 +242,9 @@ func (in *inliner) decide(ref string) refDecision {
 	case "data":
 		return refDecision{kind: refKeep}
 	case "http", "https":
+		if in.args.KeepRemote {
+			return refDecision{kind: refKeep}
+		}
 		return in.remote(ref)
 	case "":
 	default:
