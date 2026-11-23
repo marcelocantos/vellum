@@ -18,7 +18,9 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/marcelocantos/vellum/internal/hint"
@@ -37,34 +39,21 @@ func Available() error {
 	return nil
 }
 
-// HTMLToRTF converts an HTML document to a standalone RTF document.
-// resourcePath, when non-empty, is where relative image references
-// resolve from; without it pandoc looks in the working directory and
-// silently drops images that were written next to the source.
-//
-// pandoc reads the markup, not the stylesheet, so structural formatting
-// (bold, italic, headings, lists) survives and CSS does not. Warnings
-// report content pandoc dropped while still producing a document.
-func HTMLToRTF(ctx context.Context, html, resourcePath string) (rtf []byte, warnings []string, err error) {
-	// --standalone emits the {\rtf … } wrapper; without it pandoc writes
-	// a bare fragment that no RTF consumer will accept as a document.
-	args := []string{"-f", "html", "-t", "rtf", "--standalone"}
-	if resourcePath != "" {
-		args = append(args, "--resource-path="+resourcePath)
-	}
-	return run(ctx, html, args...)
-}
-
 // sandbox stops pandoc reading anything but its input: no file, no
 // network. A data: URL is not a read, so a data: image still embeds.
 const sandbox = "--sandbox"
 
-// HTMLToRTFSandboxed is HTMLToRTF for HTML pandoc must not act on beyond
-// its text: pandoc reads no file and fetches no URL, so an image reaches
+// HTMLToRTFSandboxed converts an HTML document to a standalone RTF
+// document. pandoc reads no file and fetches no URL, so an image reaches
 // the RTF only as a data: URL. An image named by path, file: URL or
 // http(s) URL is left out (pandoc warns and writes its description).
 //
-// The clipboard uses it. Without it pandoc would embed whatever a
+// pandoc reads the markup, not the stylesheet, so structural formatting
+// (bold, italic, headings, lists) survives and CSS does not. Warnings
+// report content pandoc dropped while still producing a document.
+//
+// The clipboard and the CLI and MCP RTF sink use it (the latter inline
+// the images a document may show first). Without it pandoc would embed whatever a
 // document names, outside every folder the viewer serves, and its
 // requests to the viewer itself carry no fetch metadata, which the viewer
 // reads as the user opening a document.
@@ -79,19 +68,61 @@ func HTMLToPlain(html string) ([]byte, error) {
 	return plain, err
 }
 
+// userDataDirPrefix starts the line of pandoc --version that names its
+// user data directory.
+const userDataDirPrefix = "User data directory:"
+
+// UserDataFile returns the path of name in pandoc's user data directory
+// (as pandoc --version reports it) when that file exists, else "".
+// Under --sandbox pandoc no longer looks there itself, so a caller that
+// wants pandoc's own default (a user's reference.pptx) passes it.
+func UserDataFile(ctx context.Context, name string) (string, error) {
+	out, _, err := run(ctx, "", "--version")
+	if err != nil {
+		return "", err
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, userDataDirPrefix) {
+			continue
+		}
+		dir := strings.TrimSpace(strings.TrimPrefix(line, userDataDirPrefix))
+		if dir == "" {
+			return "", nil
+		}
+		p := filepath.Join(dir, name)
+		if info, err := os.Stat(p); err == nil && info.Mode().IsRegular() {
+			return p, nil
+		}
+		return "", nil
+	}
+	return "", nil
+}
+
+// ToJSON parses src as from and returns pandoc's JSON AST. pandoc runs
+// sandboxed: parsing reads nothing but the input.
+func ToJSON(ctx context.Context, src, from string) ([]byte, error) {
+	out, _, err := run(ctx, src, sandbox, "-f", from, "-t", "json")
+	return out, err
+}
+
 // ToFile converts src from one format to another and writes the result
 // to outPath (pandoc -o). It returns pandoc's [WARNING] lines so callers
 // can surface them as soft errors: pandoc still exits 0 when it drops an
 // unsupported construct, and silently losing content is the failure
 // mode a deck author cannot see.
 //
-// extra holds additional pandoc arguments (reference doc, resource path,
-// extensions), appended verbatim.
+// pandoc runs sandboxed: it reads only the files named on its command
+// line (a reference doc), so an image reaches the output only as a
+// data: URL. Callers inline what a document may embed first.
+//
+// extra holds additional pandoc arguments (reference doc, extensions),
+// appended verbatim.
 func ToFile(ctx context.Context, src, from, to, outPath string, extra ...string) (warnings []string, err error) {
 	if err := Available(); err != nil {
 		return nil, err
 	}
-	args := append([]string{"-f", from, "-t", to, "-o", outPath}, extra...)
+	args := append([]string{sandbox, "-f", from, "-t", to, "-o", outPath}, extra...)
 	cmd := exec.CommandContext(ctx, Binary, args...)
 	cmd.Stdin = strings.NewReader(src)
 	var stderr bytes.Buffer

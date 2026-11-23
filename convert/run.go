@@ -313,7 +313,14 @@ func runOne(ctx context.Context, in inputItem, from, to Endpoint, opts *Options)
 		if err != nil {
 			return nil, err
 		}
-		soft, err := writeFileOutput(ctx, md, outPath, toFmt, baseDir, opts)
+		// Content has no folder of its own: its relative names resolve
+		// against the output file's, and that is the folder it may embed
+		// files from, with an import's media folder.
+		if baseDir == "" {
+			baseDir = filepath.Dir(outPath)
+		}
+		files := newDocFiles(baseDir, ing.mediaDir)
+		soft, err := writeFileOutput(ctx, md, outPath, toFmt, baseDir, files, opts)
 		if err != nil {
 			return nil, err
 		}
@@ -463,7 +470,10 @@ func materializeText(ctx context.Context, md, toFmt string, opts *Options) (stri
 	}
 }
 
-func writeFileOutput(ctx context.Context, md, outPath, toFmt, baseDir string, opts *Options) (soft []string, err error) {
+// writeFileOutput writes md as toFmt at outPath. baseDir resolves the
+// document's relative names; files is the folders it may embed local
+// files from (see docFiles).
+func writeFileOutput(ctx context.Context, md, outPath, toFmt, baseDir string, files docFiles, opts *Options) (soft []string, err error) {
 	if dir := filepath.Dir(outPath); dir != "." {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return nil, err
@@ -484,7 +494,11 @@ func writeFileOutput(ctx context.Context, md, outPath, toFmt, baseDir string, op
 		if err != nil {
 			return soft, err
 		}
-		rtf, warnings, err := pandoc.HTMLToRTF(ctx, html, baseDir)
+		page, err := inlineImages(ctx, html, baseDir, files)
+		if err != nil {
+			return soft, err
+		}
+		rtf, warnings, err := pandoc.HTMLToRTFSandboxed(ctx, page)
 		if err != nil {
 			return soft, err
 		}
@@ -494,12 +508,12 @@ func writeFileOutput(ctx context.Context, md, outPath, toFmt, baseDir string, op
 		if err != nil {
 			return soft, err
 		}
-		if err := WritePDF(ctx, html, outPath, baseDir, opts); err != nil {
+		if err := writePDF(ctx, html, outPath, baseDir, files, opts); err != nil {
 			return soft, err
 		}
 		return soft, nil
 	case toFmt == FormatPPTX:
-		return writePPTX(ctx, md, outPath, baseDir, opts)
+		return writePPTX(ctx, md, outPath, baseDir, files, opts)
 	default:
 		return nil, fmt.Errorf("convert: to.media file does not support format %q", toFmt)
 	}

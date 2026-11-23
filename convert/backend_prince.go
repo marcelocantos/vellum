@@ -27,7 +27,9 @@ func (princeBackend) Render(ctx context.Context, htmlContent, outputPath, inputD
 	// Relative paths in <img src="..."> resolve against the source Markdown
 	// file's directory via --baseurl. url.URL ensures unusual paths (spaces,
 	// Unicode) are correctly encoded.
-	var args []string
+	// --no-local-files: Prince reads no file but its input; the CLI and
+	// MCP read a document's local files themselves (WritePDF).
+	args := []string{princeNoLocalFiles}
 	if inputDir != "" {
 		args = append(args, "--baseurl="+fileurl.FromPath(inputDir+string(filepath.Separator)))
 	}
@@ -37,7 +39,9 @@ func (princeBackend) Render(ctx context.Context, htmlContent, outputPath, inputD
 // princeFetchless loads nothing beyond the input file: no HTTP, no local
 // file but the one named on the command line. XInclude and XML external
 // entities stay off (Prince's default; vellum never turns them on).
-var princeFetchless = []string{"--no-network", "--no-local-files"}
+var princeFetchless = []string{"--no-network", princeNoLocalFiles}
+
+const princeNoLocalFiles = "--no-local-files"
 
 func (princeBackend) renderFetchless(ctx context.Context, htmlContent, outputPath, pdfaProfile string) error {
 	return princeRun(ctx, htmlContent, outputPath, pdfaProfile, append([]string(nil), princeFetchless...))
