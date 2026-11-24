@@ -22,6 +22,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/marcelocantos/vellum/internal/fileurl"
 	"github.com/marcelocantos/vellum/internal/testdeps"
 )
 
@@ -66,7 +67,11 @@ func TestMmdcCommand_ImportsTheConfineHook(t *testing.T) {
 	if len(cmd.Args) < 4 || cmd.Args[1] != "--import" || !strings.Contains(cmd.Args[2], "vellum-mmdc-confine-") || cmd.Args[3] != script {
 		t.Fatalf("args = %#v, want node --import <hook> %s", cmd.Args, script)
 	}
-	hook, err := os.ReadFile(cmd.Args[2])
+	hookPath, ok := fileurl.ToPath(cmd.Args[2])
+	if !ok {
+		t.Fatalf("--import %q is not a file: URL; Node on Windows refuses a bare path", cmd.Args[2])
+	}
+	hook, err := os.ReadFile(hookPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -192,7 +197,15 @@ func TestMermaid_ConfinedMatchesUnconfinedAndFetchesNothing(t *testing.T) {
 	if runtime.GOOS == "windows" && !strings.HasPrefix(secretPNG, "/") {
 		fileURL = "file:///" + filepath.ToSlash(secretPNG)
 	}
-	climb := strings.Repeat("../", 24) + strings.TrimPrefix(secretPNG, "/")
+	// A diagram names a file the way a file: page would: on Windows a
+	// path's backslashes are escapes in Mermaid's YAML and a leading
+	// drive letter reads as a URL scheme, so the path is spelled /C:/….
+	secretRef, insideRef := secretPNG, inside
+	if runtime.GOOS == "windows" {
+		secretRef = "/" + filepath.ToSlash(secretPNG)
+		insideRef = "/" + filepath.ToSlash(inside)
+	}
+	climb := strings.Repeat("../", 24) + strings.TrimPrefix(secretRef, "/")
 	// quiet: nothing is fetched and no probe pixel is drawn. Mermaid may
 	// drop the reference, or the renderer may answer it with an empty image.
 	// keep: the diagram still renders, and nothing is fetched.
@@ -205,19 +218,19 @@ func TestMermaid_ConfinedMatchesUnconfinedAndFetchesNothing(t *testing.T) {
 		src  string
 		mode string
 	}{
-		{"image shape absolute path", imageShape(secretPNG), keep},
+		{"image shape absolute path", imageShape(secretRef), keep},
 		{"image shape climbs out of mmdc", imageShape(climb), keep},
-		{"image shape protocol-relative", imageShape("//localhost" + secretPNG), keep},
+		{"image shape protocol-relative", imageShape("//localhost" + secretRef), keep},
 		{"image shape file url", imageShape(fileURL), keep},
 		{"image shape http", imageShape(probe.URL + "/secret.png"), keep},
-		{"html img file", htmlImg(secretPNG), quiet},
+		{"html img file", htmlImg(secretRef), quiet},
 		{"html img http", htmlImg(probe.URL + "/secret.png"), quiet},
-		{"html img inside the opened folder", htmlImg(inside), quiet},
-		{"image shape inside the opened folder", imageShape(inside), quiet},
+		{"html img inside the opened folder", htmlImg(insideRef), quiet},
+		{"image shape inside the opened folder", imageShape(insideRef), quiet},
 		{"init loose, img, script, font and stylesheet", looseProbe(probe.URL + "/x"), quiet},
-		{"classDef url file", classDef(secretPNG), quiet},
+		{"classDef url file", classDef(secretRef), quiet},
 		{"style url http", styleURL(probe.URL + "/secret.png"), quiet},
-		{"svg image in a label", svgImage(secretPNG), quiet},
+		{"svg image in a label", svgImage(secretRef), quiet},
 		{"click http", "flowchart TD\n  A[Hello] --> B[World]\n  click A \"" + probe.URL + "/go\" \"open\"\n", keep},
 		{"click file", "flowchart TD\n  A[Hello] --> B[World]\n  click A \"" + fileURL + "\" \"open\"\n", keep},
 		{"icon with no pack", "flowchart TD\n  A@{ icon: \"fa:user\", form: \"square\", label: \"User\" }\n", keep},
@@ -248,12 +261,12 @@ func TestMermaid_ConfinedMatchesUnconfinedAndFetchesNothing(t *testing.T) {
 	// command). The confined runs above must stay at zero blue, so the
 	// difference is the hook and not a diagram Mermaid never paints.
 	t.Run("unconfined html img draws the file", func(t *testing.T) {
-		if n := pureBlue(t, unconfinedMermaid(t, htmlImg(secretPNG), MermaidPNG)); n == 0 {
+		if n := pureBlue(t, unconfinedMermaid(t, htmlImg(secretRef), MermaidPNG)); n == 0 {
 			t.Fatal("unconfined mmdc drew no pure blue pixels from the html img")
 		}
 	})
 	t.Run("unconfined image shape draws the file", func(t *testing.T) {
-		if n := pureBlue(t, unconfinedMermaid(t, imageShape(secretPNG), MermaidPNG)); n == 0 {
+		if n := pureBlue(t, unconfinedMermaid(t, imageShape(secretRef), MermaidPNG)); n == 0 {
 			t.Fatal("unconfined mmdc drew no pure blue pixels from the image shape")
 		}
 	})

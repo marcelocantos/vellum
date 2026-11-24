@@ -19,6 +19,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/marcelocantos/vellum/internal/fileurl"
 	"github.com/marcelocantos/vellum/internal/shim"
 )
 
@@ -234,8 +235,10 @@ func mmdcCommand(ctx context.Context, args []string) (*exec.Cmd, error) {
 	if err != nil {
 		return nil, fmt.Errorf("mmdc: confine hook: %w", err)
 	}
+	// --import takes a module specifier, not a path: Node reads a Windows
+	// path's drive letter as a URL scheme and refuses it.
 	argv := make([]string, 0, 3+len(args))
-	argv = append(argv, "--import", hook, script)
+	argv = append(argv, "--import", fileurl.FromPath(hook), script)
 	argv = append(argv, args...)
 	return exec.CommandContext(ctx, node, argv...), nil
 }

@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/marcelocantos/vellum/internal/testdeps"
@@ -50,11 +51,18 @@ func TestPDF_MermaidCannotDrawAnOutsideImageByPath(t *testing.T) {
 		return "```mermaid\nflowchart TD\n" +
 			`  A@{ img: "` + img + `", label: "a", pos: "t", w: 60, h: 60, constraint: "on" }` + "\n  A --> B\n```\n\n"
 	}
+	// A diagram names a file the way a file: page would: on Windows a
+	// path's backslashes are escapes in Mermaid's YAML and a leading
+	// drive letter reads as a URL scheme, so the path is spelled /C:/….
+	secretRef := secretPNG
+	if runtime.GOOS == "windows" {
+		secretRef = "/" + filepath.ToSlash(secretPNG)
+	}
 	cases := []struct{ name, diagram string }{
-		{"image shape, absolute path", shape(secretPNG)},
-		{"image shape, path climbing out of mmdc's own folder", shape("../../../../../../../../../../../../../../.." + secretPNG)},
-		{"image shape, //localhost path", shape("//localhost" + secretPNG)},
-		{"HTML label, absolute path", "```mermaid\nflowchart TD\n  A[\"<img src='" + secretPNG + "' width=60 height=60>\"] --> B\n```\n\n"},
+		{"image shape, absolute path", shape(secretRef)},
+		{"image shape, path climbing out of mmdc's own folder", shape("../../../../../../../../../../../../../../.." + secretRef)},
+		{"image shape, //localhost path", shape("//localhost" + secretRef)},
+		{"HTML label, absolute path", "```mermaid\nflowchart TD\n  A[\"<img src='" + secretRef + "' width=60 height=60>\"] --> B\n```\n\n"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

@@ -63,8 +63,8 @@ func TestClipboard_ConverterCannotReadOutsideOrOpenAFolder(t *testing.T) {
 	ts := startTestServer(t, s)
 	doc := "# Note\n\nInside words.\n\n" +
 		"![abs](" + secretPNG + ")\n\n" +
-		"![open](" + ts.URL + filepath.Join(outside, "nothing.md") + ")\n\n" +
-		"![take](" + ts.URL + secretPNG + ")\n"
+		"![open](" + ts.URL + pathURL(filepath.Join(outside, "nothing.md")) + ")\n\n" +
+		"![take](" + ts.URL + pathURL(secretPNG) + ")\n"
 	if err := os.WriteFile(note, []byte(doc), 0o644); err != nil {
 		t.Fatal(err)
 	}

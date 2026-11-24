@@ -46,8 +46,8 @@ func TestPDF_EngineFetchCannotOpenAFolder(t *testing.T) {
 	// The first image asks for a Markdown path in the outside folder (the
 	// file need not exist); the second is the file wanted from it.
 	doc := "# Note\n\nInside words.\n\n" +
-		"![open](" + ts.URL + filepath.Join(outside, "nothing.md") + ")\n\n" +
-		"![take](" + ts.URL + secretPNG + ")\n"
+		"![open](" + ts.URL + pathURL(filepath.Join(outside, "nothing.md")) + ")\n\n" +
+		"![take](" + ts.URL + pathURL(secretPNG) + ")\n"
 	if err := os.WriteFile(note, []byte(doc), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +75,7 @@ func TestPDF_EngineFetchCannotOpenAFolder(t *testing.T) {
 		}
 	}
 	// A page request (same-origin) for the outside file is still refused.
-	req, _ := http.NewRequest(http.MethodGet, ts.URL+secretPNG, nil)
+	req, _ := http.NewRequest(http.MethodGet, ts.URL+pathURL(secretPNG), nil)
 	req.Header.Set(secFetchSiteHeader, secFetchSiteSameOrigin)
 	resp, err = http.DefaultClient.Do(req)
 	if err != nil {
