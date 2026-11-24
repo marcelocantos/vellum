@@ -70,9 +70,8 @@ function probe(page, where) {
     let top, left, right;
     if (where === "view") {
       const pane = document.querySelector(".vellum-scroll").getBoundingClientRect();
-      const title = document.querySelector(".vellum-pin-title");
       const p = document.querySelector(".vellum-article p").getBoundingClientRect();
-      top = title ? Math.max(pane.top, title.getBoundingClientRect().bottom) : pane.top;
+      top = pane.top;
       left = p.left + 24;
       right = p.right - 4;
     } else {
@@ -219,12 +218,7 @@ function scrollViewTo(page, token) {
       const at = m.index + m[1].length;
       range.setStart(node, at);
       range.setEnd(node, at + token.length);
-      for (let pass = 0; pass < 2; pass++) {
-        const title = document.querySelector(".vellum-pin-title");
-        const paneTop = pane.getBoundingClientRect().top;
-        const top = title ? Math.max(paneTop, title.getBoundingClientRect().bottom) : paneTop;
-        pane.scrollTop += range.getBoundingClientRect().top - top - 1;
-      }
+      pane.scrollTop += range.getBoundingClientRect().top - pane.getBoundingClientRect().top - 1;
       return true;
     }
     return false;

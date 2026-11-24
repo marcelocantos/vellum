@@ -312,8 +312,10 @@ func cacheName(absPath string, ext string) string {
 // document's HTML is sanitised, so a v4 page may still hold raw script;
 // v6: a PDF's Mermaid diagrams are drawn by a confined renderer and its
 // engine fetches nothing (🎯T66, 🎯T68), so a v5 PDF may hold pixels of an
-// image file from anywhere on disk).
-const stampFormat = "v6"
+// image file from anywhere on disk; v7: each SVG diagram has its own id
+// (convert's mermaidSVGID), and a v6 shell names fragments that were
+// rendered with the shared one).
+const stampFormat = "v7"
 
 func stampPath(cachePath string) string {
 	return cachePath + ".stamp"

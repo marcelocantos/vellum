@@ -43,8 +43,20 @@ func TestInjectChrome_WrapsBodyAndAddsClass(t *testing.T) {
 	if !strings.Contains(out, ".vellum-scroll") {
 		t.Fatalf("missing scroll-pane CSS")
 	}
-	if !strings.Contains(out, "vellum-pin-title") || !strings.Contains(out, "pinLeadingTitle") {
-		t.Fatalf("missing leading-title pin")
+	if !strings.Contains(out, `class="vellum-doctitle"`) || !strings.Contains(out, "trackTitle()") {
+		t.Fatalf("missing the bar's document title")
+	}
+	if strings.Contains(out, "vellum-pin-title") {
+		t.Fatalf("the pinned heading is back; the bar shows the title instead")
+	}
+	if !strings.Contains(out, `class="vellum-btn vellum-home" href="/"`) {
+		t.Fatalf("missing the home link:\n%s", out)
+	}
+	if !strings.Contains(out, "--v-bg:") || !strings.Contains(out, `html[data-vellum-theme="dark"] {`) {
+		t.Fatalf("missing the colour tokens (theme.css)")
+	}
+	if !strings.Contains(out, "vellum-toc-active") || !strings.Contains(out, "updateActiveHeading") {
+		t.Fatalf("missing section tracking in the contents panel")
 	}
 	if !strings.Contains(out, `<h1 id="hello">Hello</h1>`) {
 		t.Fatalf("lost body:\n%s", out)
@@ -66,7 +78,7 @@ func TestInjectChrome_WrapsBodyAndAddsClass(t *testing.T) {
 	if !strings.Contains(out, `data-vellum="theme"`) || !strings.Contains(out, "vellum-theme") {
 		t.Fatalf("missing theme toggle:\n%s", out)
 	}
-	if !strings.Contains(out, `data-vellum="toc-toggle"`) || !strings.Contains(out, `«`) {
+	if !strings.Contains(out, `data-vellum="toc-toggle"`) || !strings.Contains(out, `data-vellum="toc-close"`) {
 		t.Fatalf("missing TOC toggle chrome:\n%s", out)
 	}
 	if !strings.Contains(out, `id="vellum-toc-splitter"`) {
@@ -219,12 +231,12 @@ func mediaBlock(t *testing.T, css, query, marker string) string {
 	}
 }
 
-// Viewer tables leave the 980px reading column and size their columns to
+// Viewer tables leave the reading column and size their columns to
 // content, on screen only. Prose keeps the reading width, and print keeps
 // github.css's fixed, page-wide tables, which the PDF needs.
 func TestChromeCSS_TablesBreakOutAndAutosize(t *testing.T) {
-	if !strings.Contains(chromeCSS, ".vellum-article {\n  max-width: 980px;\n  margin: 0 auto;\n  padding: 32px;\n}") {
-		t.Fatal("prose reading column changed: .vellum-article must stay max-width 980px, margin 0 auto, padding 32px")
+	if !strings.Contains(chromeCSS, ".vellum-article {\n  --vellum-measure: 760px;\n  --vellum-gutter: 32px;\n  max-width: var(--vellum-measure);\n  margin: 0 auto;\n  padding: 40px var(--vellum-gutter) 96px;\n}") {
+		t.Fatal("prose reading column changed: .vellum-article must stay a 760px measure with 32px gutters, centred")
 	}
 	screen := mediaBlock(t, chromeCSS, "screen", ".vellum-article table")
 	for _, want := range []string{
@@ -235,12 +247,12 @@ func TestChromeCSS_TablesBreakOutAndAutosize(t *testing.T) {
 		"table-layout: auto",
 		"overflow-wrap: break-word",
 		"word-break: normal",
-		"max-width: calc(100cqw - 64px)",
+		"max-width: calc(100cqw - 2 * var(--vellum-gutter))",
 		"min-width: 100%",
-		"translateX(round(max(0px, 50% - 490px), 1px))",
+		"translateX(round(max(0px, 50% - var(--vellum-measure) / 2), 1px))",
 		"direction: rtl",
 		"direction: ltr",
-		"clip-path: inset(0 -100vmax)",
+		".vellum-article > :not(table) {\n    margin-right: auto;",
 	} {
 		if !strings.Contains(screen, want) {
 			t.Errorf("screen table rules missing %q:\n%s", want, screen)

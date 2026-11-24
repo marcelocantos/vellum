@@ -1,0 +1,104 @@
+/* Colour tokens for every page the viewer serves: documents (with
+   chrome.css) and the homepage. The values follow the editor bundle's
+   palette (editor/src/main.js), so the editor sits in the same colours.
+
+   data-vellum-theme on <html> is "light", "dark" or "system". The dark
+   values appear twice because a media query cannot share a rule with an
+   attribute selector.
+
+   --v-diagram-filter recolours Mermaid diagrams, which are always drawn
+   in the renderer's light palette: inverting nearly all the way turns a
+   white ground into the dark page's and dark ink light, and the half-turn
+   of hue brings each colour back to its own family. */
+
+:root {
+  color-scheme: light;
+  --v-bg: #ffffff;
+  --v-bg-subtle: #f6f8fa;
+  --v-bg-zebra: #fafbfc;
+  --v-bg-hover: rgba(129, 139, 152, 0.14);
+  --v-bg-active: rgba(129, 139, 152, 0.2);
+  --v-bg-code: rgba(129, 139, 152, 0.16);
+  --v-fg: #1f2328;
+  --v-fg-muted: #59636e;
+  --v-fg-faint: #8c959f;
+  --v-border: #e3e6ea;
+  --v-border-strong: #d1d9e0;
+  --v-accent: #0969da;
+  --v-accent-fg: #ffffff;
+  --v-accent-soft: rgba(9, 105, 218, 0.3);
+  --v-ok: #1a7f37;
+  --v-warn: #9a6700;
+  --v-danger: #cf222e;
+  --v-danger-soft: rgba(207, 34, 46, 0.08);
+  --v-notice-bg: #fff8c5;
+  --v-notice-border: #d4a72c;
+  --v-mark: #fff8c5;
+  --v-backdrop: rgba(27, 31, 36, 0.4);
+  --v-shadow: 0 8px 28px rgba(27, 31, 36, 0.16), 0 0 0 1px rgba(27, 31, 36, 0.06);
+  --v-toast-bg: #24292f;
+  --v-toast-fg: #ffffff;
+  --v-diagram-filter: none;
+}
+
+html[data-vellum-theme="dark"] {
+  color-scheme: dark;
+  --v-bg: #0d1117;
+  --v-bg-subtle: #161b22;
+  --v-bg-zebra: #11161d;
+  --v-bg-hover: rgba(139, 148, 158, 0.16);
+  --v-bg-active: rgba(139, 148, 158, 0.24);
+  --v-bg-code: rgba(110, 118, 129, 0.4);
+  --v-fg: #e6edf3;
+  --v-fg-muted: #9198a1;
+  --v-fg-faint: #6e7681;
+  --v-border: #262c34;
+  --v-border-strong: #30363d;
+  --v-accent: #4493f8;
+  --v-accent-fg: #0d1117;
+  --v-accent-soft: rgba(68, 147, 248, 0.4);
+  --v-ok: #3fb950;
+  --v-warn: #d29922;
+  --v-danger: #f85149;
+  --v-danger-soft: rgba(248, 81, 73, 0.12);
+  --v-notice-bg: #272115;
+  --v-notice-border: #9e6a03;
+  --v-mark: rgba(187, 128, 9, 0.35);
+  --v-backdrop: rgba(1, 4, 9, 0.6);
+  --v-shadow: 0 8px 28px rgba(1, 4, 9, 0.6), 0 0 0 1px #30363d;
+  --v-toast-bg: #e6edf3;
+  --v-toast-fg: #0d1117;
+  --v-diagram-filter: invert(0.93) hue-rotate(180deg);
+}
+
+@media (prefers-color-scheme: dark) {
+  html[data-vellum-theme="system"] {
+    color-scheme: dark;
+    --v-bg: #0d1117;
+    --v-bg-subtle: #161b22;
+    --v-bg-zebra: #11161d;
+    --v-bg-hover: rgba(139, 148, 158, 0.16);
+    --v-bg-active: rgba(139, 148, 158, 0.24);
+    --v-bg-code: rgba(110, 118, 129, 0.4);
+    --v-fg: #e6edf3;
+    --v-fg-muted: #9198a1;
+    --v-fg-faint: #6e7681;
+    --v-border: #262c34;
+    --v-border-strong: #30363d;
+    --v-accent: #4493f8;
+    --v-accent-fg: #0d1117;
+    --v-accent-soft: rgba(68, 147, 248, 0.4);
+    --v-ok: #3fb950;
+    --v-warn: #d29922;
+    --v-danger: #f85149;
+    --v-danger-soft: rgba(248, 81, 73, 0.12);
+    --v-notice-bg: #272115;
+    --v-notice-border: #9e6a03;
+    --v-mark: rgba(187, 128, 9, 0.35);
+    --v-backdrop: rgba(1, 4, 9, 0.6);
+    --v-shadow: 0 8px 28px rgba(1, 4, 9, 0.6), 0 0 0 1px #30363d;
+    --v-toast-bg: #e6edf3;
+    --v-toast-fg: #0d1117;
+    --v-diagram-filter: invert(0.93) hue-rotate(180deg);
+  }
+}

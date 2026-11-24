@@ -238,7 +238,7 @@ func TestAction_Favicon(t *testing.T) {
 		if got := resp.Header.Get("Content-Type"); !strings.Contains(got, "image/svg+xml") {
 			t.Fatalf("%s Content-Type %q", path, got)
 		}
-		if !strings.Contains(string(body), `viewBox="0 0 32 32"`) || !strings.Contains(string(body), "#f3e6c8") {
+		if !strings.Contains(string(body), `viewBox="0 0 32 32"`) || !strings.Contains(string(body), "vellum-mark-left") {
 			t.Fatalf("%s missing mark:\n%s", path, body)
 		}
 	}

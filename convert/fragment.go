@@ -78,9 +78,19 @@ func mathFragment(e mathExpr) Fragment {
 	return Fragment{ID: fragmentID(FragmentMath, mode, e.Expr), Kind: FragmentMath, Source: e.Expr, Display: e.DisplayMode}
 }
 
+// mermaidSVGRevision is hashed into an SVG diagram's fragment id. Bump it
+// when the rendered markup changes for the same source, so fragments a
+// viewer cached under the old rendering are not served again. "own-id":
+// each SVG carries its own id (mermaidSVGID) instead of mmdc's default.
+const mermaidSVGRevision = "own-id"
+
 func mermaidFragment(d mermaidDiagram, format string) Fragment {
 	format = resolveMermaidFormat(format)
-	return Fragment{ID: fragmentID(FragmentMermaid, format, d.source), Kind: FragmentMermaid, Source: d.source, Format: format}
+	mode := format
+	if format == MermaidSVG {
+		mode += "/" + mermaidSVGRevision
+	}
+	return Fragment{ID: fragmentID(FragmentMermaid, mode, d.source), Kind: FragmentMermaid, Source: d.source, Format: format}
 }
 
 // Placeholder markup emitted for deferred fragments. The element carries

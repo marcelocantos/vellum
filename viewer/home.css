@@ -1,0 +1,135 @@
+/* The homepage: recent documents and the Markdown files beside them.
+   Colours come from theme.css. The page has no script, so it follows the
+   system's light or dark setting. */
+
+body {
+  margin: 0;
+  background: var(--v-bg);
+  color: var(--v-fg);
+  font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;
+}
+
+main {
+  max-width: 44rem;
+  margin: 0 auto;
+  padding: 48px 24px 96px;
+}
+
+header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 40px;
+}
+
+h1 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+h2 {
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--v-fg-muted);
+}
+
+section + section {
+  margin-top: 40px;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+a:focus-visible {
+  outline: 2px solid var(--v-accent);
+  outline-offset: -2px;
+}
+
+ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+p {
+  margin: 0;
+  color: var(--v-fg-muted);
+}
+
+code {
+  padding: 0.15em 0.35em;
+  border-radius: 5px;
+  background: var(--v-bg-code);
+  font: 0.9em ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+/* Recent: one row per document, its title over its path. */
+.docs {
+  margin: 0 -12px;
+}
+
+.docs a {
+  display: block;
+  padding: 8px 12px;
+  border-radius: 8px;
+}
+
+.docs a:hover,
+.tree a:hover {
+  background: var(--v-bg-hover);
+}
+
+.title {
+  display: block;
+  font-weight: 600;
+}
+
+.path {
+  display: block;
+  color: var(--v-fg-muted);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+/* Files: each opened folder, then its tree. */
+.folder + .folder {
+  margin-top: 24px;
+}
+
+h3 {
+  margin: 0 0 4px;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--v-fg-muted);
+  overflow-wrap: anywhere;
+}
+
+.tree {
+  margin: 0 -8px;
+}
+
+.tree ul ul {
+  margin-left: 15px;
+  padding-left: 8px;
+  border-left: 1px solid var(--v-border);
+}
+
+.tree a,
+.tree .dir {
+  display: block;
+  padding: 3px 8px;
+  border-radius: 6px;
+}
+
+.tree a {
+  color: var(--v-accent);
+}
+
+.tree .dir {
+  color: var(--v-fg-muted);
+}

@@ -25,7 +25,7 @@ verify-release:
 	./scripts/verify-release.sh $(VERSION)
 
 # Requires Playwright and Chrome; exercises the live viewer on an isolated port.
-.PHONY: test-table-headers test-table-layout test-editor
+.PHONY: test-table-headers test-table-layout test-chrome test-editor
 test-table-headers:
 	go build -o /tmp/vellum-table-journey ./cmd/vellum
 	NODE_PATH=editor/node_modules VELLUM_BINARY=/tmp/vellum-table-journey node scripts/table-header-journey.cjs
@@ -36,6 +36,14 @@ test-table-headers:
 test-table-layout:
 	go build -o /tmp/vellum-table-layout-journey ./cmd/vellum
 	VELLUM_BINARY=/tmp/vellum-table-layout-journey node scripts/table-layout-journey.cjs
+
+# Requires `npm ci` in editor/, Chrome, Playwright's Firefox, and mmdc. The
+# viewer's chrome in a real browser: the bar's name and title, the contents
+# panel's section tracking and narrow-window drawer, themes, dark diagrams,
+# the homepage link.
+test-chrome:
+	go build -o /tmp/vellum-chrome-journey ./cmd/vellum
+	VELLUM_BINARY=/tmp/vellum-chrome-journey node scripts/viewer-chrome-journey.cjs
 
 # Requires `npm ci` in editor/ (Playwright), Chrome, and node with katex and
 # mmdc. Opens hostile documents in the viewer and checks nothing they carry

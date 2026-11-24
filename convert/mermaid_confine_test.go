@@ -392,6 +392,10 @@ func unconfinedMermaid(t *testing.T, src, format string) []byte {
 	args := []string{"-i", in, "-o", out, "-e", format, "--quiet"}
 	if format == MermaidPNG {
 		args = append(args, "-s", "2")
+	} else {
+		// The same id renderMermaid asks for, so the two differ only by
+		// the confinement.
+		args = append(args, "--svgId", mermaidSVGID(src))
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()

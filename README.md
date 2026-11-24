@@ -173,13 +173,19 @@ brew services start vellum
 
 Each GET converts **one** Markdown path (no link-graph crawl). Relative
 `.md`/`.markdown` links are rewritten to same-origin URLs. The served page
-adds view chrome (not written into the convert cache): a leading H1 that stays under the toolbar and shrinks as the page scrolls, a heading table of
-contents with expand/collapse and a « / » sidebar toggle, icon buttons
-to download a PDF, edit the source, copy to clipboard and reveal in
-Finder (the reveal button shows Finder's own icon, or a folder on
-Windows),
-a theme control (dark / system / light, persisted in the browser),
-dark-mode article styling with syntax highlighting, tables that use the full panel width with columns sized to their content (wide tables scroll within the panel) and headings that stay visible beneath the pinned title until the table scrolls away, and a full-viewport
+adds view chrome (not written into the convert cache): one top bar with a
+link to the homepage (recent documents and the Markdown files beside
+them), a toggle for the contents panel, the file's name (the document's
+title once its heading has scrolled away; click it to return to the top)
+and icon buttons to edit the source, copy to the clipboard, download a
+PDF and reveal in Finder (Finder's own icon, or a folder on Windows);
+a contents panel that marks the section being read, with expand/collapse,
+and on a narrow window opens over the page;
+a theme control (dark / system / light, persisted in the browser) with
+syntax highlighting and Mermaid diagrams recoloured for the dark theme;
+prose set in a 760px column, with tables that use the full panel width,
+columns sized to their content (wide tables scroll within the panel) and
+headings that stay visible until the table scrolls away; and a full-viewport
 zoom/pan viewer for images and SVG (including Mermaid), and GFM
 task-list checkboxes that edit the source file after consent
 (once per session or permanently) when you click or Space the box, not

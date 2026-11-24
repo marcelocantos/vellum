@@ -4,6 +4,7 @@
 package viewer
 
 import (
+	"html"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -144,4 +145,64 @@ func splitHome(t *testing.T, body string) (recent, files string) {
 		t.Fatalf("homepage missing recent and files sections:\n%s", body)
 	}
 	return body[ri:fi], body[fi:]
+}
+
+// A document deleted since it was viewed, and a folder with no Markdown
+// left in it, are not listed: each would be a row that leads nowhere.
+func TestHome_DropsDeletedDocumentsAndEmptyFolders(t *testing.T) {
+	dir := t.TempDir()
+	kept := filepath.Join(dir, "kept")
+	gone := filepath.Join(dir, "gone")
+	for _, d := range []string{kept, gone} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	keptDoc := filepath.Join(kept, "stays.md")
+	goneDoc := filepath.Join(gone, "leaves.md")
+	if err := os.WriteFile(keptDoc, []byte("# Stays here\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(goneDoc, []byte("# Leaves soon\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ts := startTestServer(t, &Server{CacheDir: filepath.Join(dir, "cache")})
+	getBody(t, ts.URL+pathURL(keptDoc))
+	getBody(t, ts.URL+pathURL(goneDoc))
+	if body := getBody(t, ts.URL+"/"); !strings.Contains(body, "Leaves soon") || !strings.Contains(body, homePath(gone)) {
+		t.Fatalf("homepage does not list a viewed document and its folder:\n%s", body)
+	}
+
+	if err := os.Remove(goneDoc); err != nil {
+		t.Fatal(err)
+	}
+	body := getBody(t, ts.URL+"/")
+	if strings.Contains(body, "Leaves soon") || strings.Contains(body, "leaves.md") {
+		t.Fatalf("homepage lists a deleted document:\n%s", body)
+	}
+	if strings.Contains(body, html.EscapeString(homePath(gone))+"<") {
+		t.Fatalf("homepage lists a folder with no Markdown left:\n%s", body)
+	}
+	if !strings.Contains(body, "Stays here") || !strings.Contains(body, pathURL(keptDoc)) {
+		t.Fatalf("homepage lost the document that is still there:\n%s", body)
+	}
+}
+
+// Paths under the home folder are shown the way a shell shows them.
+func TestHomePath(t *testing.T) {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		t.Skip("no home folder")
+	}
+	sep := string(filepath.Separator)
+	for in, want := range map[string]string{
+		home:                                  "~",
+		filepath.Join(home, "docs", "a.md"):   "~" + sep + filepath.Join("docs", "a.md"),
+		home + "-other" + sep + "a.md":        home + "-other" + sep + "a.md",
+		filepath.Join(sep+"tmp", "x", "a.md"): filepath.Join(sep+"tmp", "x", "a.md"),
+	} {
+		if got := homePath(in); got != want {
+			t.Errorf("homePath(%q) = %q, want %q", in, got, want)
+		}
+	}
 }

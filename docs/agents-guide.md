@@ -404,10 +404,12 @@ already work with files and `convert`.
   scroll restore). A rename redirects the tab; a deletion leaves the
   rendered page up and reports it; a missing file stays on a waiting
   page until it appears. Served HTML is wrapped with view
-  chrome (TOC sidebar with expand/collapse and « / » toggle, an icon
-  toolbar for PDF download, editing, clipboard and Finder, dark /
-  system / light theme with dark-mode syntax highlighting, figure
-  lightbox, editable GFM task lists). The raw source is reached through
+  chrome (one top bar: homepage link, contents toggle, the file's name
+  or the document's title, and icon buttons for editing, clipboard, PDF
+  download and Finder; a contents panel that marks the section being
+  read; dark / system / light theme with dark-mode syntax highlighting
+  and recoloured Mermaid diagrams; figure lightbox; editable GFM task
+  lists). The raw source is reached through
   the editor (pencil); there is no separate source view.
   Task-list boxes toggle the source on the box itself (click or
   Space), not the label text. The toggle POST returns a source stamp

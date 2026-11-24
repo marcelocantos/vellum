@@ -13,6 +13,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/marcelocantos/vellum/internal/testdeps"
 )
 
 var mermaidPlaceholderRe = regexp.MustCompile(`<!--MERMAID:(\d+)\n*-->`)
@@ -479,5 +481,36 @@ func TestMermaidReplaceAll_OrderStableUnderConcurrency(t *testing.T) {
 	}
 	if !strings.Contains(soft[1], "diagram 2:") || !strings.Contains(soft[1], "boom-fast") {
 		t.Errorf("soft[1] should be the fast diagram 2, got %q", soft[1])
+	}
+}
+
+// Inline SVG shares the page's id space, and Mermaid scopes a diagram's
+// stylesheet to its SVG's id. Two diagrams on one page must not share an
+// id, or each one's styles apply to the other.
+func TestRenderMermaid_EachSVGHasItsOwnID(t *testing.T) {
+	testdeps.Need(t, "mmdc", "node")
+	var svgs []string
+	for _, src := range []string{"graph TD\n  A --> B\n", "pie title Share\n  \"A\" : 3\n  \"B\" : 1\n"} {
+		svg, err := renderMermaid(context.Background(), src, MermaidSVG)
+		if err != nil {
+			t.Fatal(err)
+		}
+		id := mermaidSVGID(src)
+		if !strings.Contains(svg, `<svg id="`+id+`"`) {
+			t.Fatalf("SVG root does not carry %s:\n%.300s", id, svg)
+		}
+		if !strings.Contains(svg, "#"+id+"{") && !strings.Contains(svg, "#"+id+" ") {
+			t.Fatalf("stylesheet is not scoped to %s:\n%.600s", id, svg)
+		}
+		if strings.Contains(svg, "my-svg") {
+			t.Fatalf("mmdc's default id is still in the SVG:\n%.300s", svg)
+		}
+		svgs = append(svgs, svg)
+	}
+	if a, b := mermaidSVGID("graph TD\n  A --> B\n"), mermaidSVGID("pie title Share\n"); a == b {
+		t.Fatalf("different sources share the id %s", a)
+	}
+	if strings.Contains(svgs[1], mermaidSVGID("graph TD\n  A --> B\n")) {
+		t.Fatal("the second diagram names the first one's id")
 	}
 }

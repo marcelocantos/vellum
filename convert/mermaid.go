@@ -156,6 +156,8 @@ func renderMermaid(ctx context.Context, src string, format string) (string, erro
 	// PNG at 2× for print sharpness; SVG is vector (no raster scale).
 	if format == MermaidPNG {
 		args = append(args, "-s", "2")
+	} else {
+		args = append(args, "--svgId", mermaidSVGID(src))
 	}
 
 	cmd, err := mmdcCommand(ctx, args)
@@ -189,6 +191,20 @@ func renderMermaid(ctx context.Context, src string, format string) (string, erro
 	}
 	b64 := base64.StdEncoding.EncodeToString(data)
 	return fmt.Sprintf(`<img src="data:image/png;base64,%s" alt="Mermaid diagram">`, b64), nil
+}
+
+// mermaidSVGID is the id of one diagram's SVG element. Mermaid scopes a
+// diagram's stylesheet and its marker definitions to that id, and inline
+// SVG shares the page's id space: with mmdc's default id on every diagram,
+// each one's styles applied to all the others (a later diagram's font
+// size clipped an earlier one's labels). The id follows from the source,
+// so a diagram repeated on a page shares it, with identical styles.
+func mermaidSVGID(src string) string {
+	// The id is repeated in every rule of the diagram's stylesheet (a few
+	// hundred times), so it is kept short: 48 bits tell apart the diagrams
+	// of one page.
+	sum := sha256.Sum256([]byte(src))
+	return "mmd-" + hex.EncodeToString(sum[:6])
 }
 
 // embedMermaidSVG returns inline SVG markup suitable for HTML/view paths.

@@ -10,7 +10,7 @@ try {
 const page=await browser.newPage();page.on('pageerror',e=>console.error(e));
 await page.goto('http://127.0.0.1:19843'+file);
 await page.waitForSelector('thead'); await page.waitForFunction(() => document.querySelector('thead').dataset.vellumPinOffset !== undefined);
-const measure=()=>page.evaluate(()=>{const t=document.querySelector('article table')||document.querySelector('.vellum-article table');const h=t.tHead.getBoundingClientRect();return {head:h.top,bottom:h.bottom,table:t.getBoundingClientRect().bottom,offset:Number(t.tHead.dataset.vellumPinOffset||0),top:Math.max(document.querySelector('.vellum-scroll').getBoundingClientRect().top,document.querySelector('.vellum-pin-title').getBoundingClientRect().bottom)};});
+const measure=()=>page.evaluate(()=>{const t=document.querySelector('article table')||document.querySelector('.vellum-article table');const h=t.tHead.getBoundingClientRect();return {head:h.top,bottom:h.bottom,table:t.getBoundingClientRect().bottom,offset:Number(t.tHead.dataset.vellumPinOffset||0),top:document.querySelector('.vellum-scroll').getBoundingClientRect().top};});
 let m=await measure(); if(m.offset!==0)throw Error('Header moved before scrolling');
 await page.locator('.vellum-scroll').evaluate(e=>e.scrollTop=600);await page.waitForTimeout(150);
 m=await measure();if(Math.abs(m.head-m.top)>2)throw Error('Not pinned: '+JSON.stringify(m));

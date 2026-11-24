@@ -1,4 +1,5 @@
-/* View-server chrome. Injected at serve time; not present in convert-cache HTML. */
+/* View-server chrome. Injected at serve time, after theme.css (the colour
+   tokens); not present in convert-cache HTML. */
 
 html:has(body.vellum-view) {
   height: 100%;
@@ -10,13 +11,239 @@ body.vellum-view {
   padding: 0 !important;
   height: 100%;
   overflow: hidden;
+  /* The top bar's height; the figure viewer's bar matches it. */
+  --vellum-bar-height: 44px;
+}
+
+/* The theme colours the screen only: a page printed from the dark theme
+   comes out as the document's own light print styles. */
+@media screen {
+  body.vellum-view {
+    background: var(--v-bg);
+    color: var(--v-fg);
+  }
 }
 
 .vellum-chrome {
   display: flex;
-  align-items: stretch;
+  flex-direction: column;
   height: 100%;
   --vellum-toc-width: 16.5rem;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;
+}
+
+.vellum-toc[hidden],
+.vellum-btn[hidden],
+.vellum-status[hidden],
+.vellum-consent[hidden],
+.vellum-lightbox[hidden] {
+  display: none;
+}
+
+/* --- Buttons -----------------------------------------------------------
+   .vellum-btn is a borderless icon button; .vellum-tbtn a labelled one. */
+
+.vellum-btn {
+  appearance: none;
+  flex: 0 0 auto;
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--v-fg-muted);
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.vellum-btn:hover:not(:disabled) {
+  background: var(--v-bg-hover);
+  color: var(--v-fg);
+}
+
+.vellum-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.vellum-btn:focus-visible,
+.vellum-tbtn:focus-visible,
+.vellum-doc:focus-visible {
+  outline: 2px solid var(--v-accent);
+  outline-offset: -2px;
+}
+
+.vellum-icon {
+  display: block;
+  width: 16px;
+  height: 16px;
+}
+
+.vellum-tbtn {
+  appearance: none;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.2;
+  padding: 6px 12px;
+  border: 1px solid var(--v-border-strong);
+  border-radius: 6px;
+  background: var(--v-bg);
+  color: var(--v-fg);
+  cursor: pointer;
+}
+
+.vellum-tbtn:hover:not(:disabled) {
+  background: var(--v-bg-subtle);
+}
+
+.vellum-tbtn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.vellum-tbtn.is-primary:not(:disabled) {
+  background: var(--v-accent);
+  border-color: var(--v-accent);
+  color: var(--v-accent-fg);
+}
+
+.vellum-tbtn.is-primary:not(:disabled):hover {
+  background: var(--v-accent);
+  filter: brightness(1.08);
+}
+
+/* --- Top bar ----------------------------------------------------------- */
+
+.vellum-toolbar {
+  flex: 0 0 var(--vellum-bar-height);
+  box-sizing: border-box;
+  height: var(--vellum-bar-height);
+  z-index: 7;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 10px;
+  background: var(--v-bg);
+  border-bottom: 1px solid var(--v-border);
+  font-size: 13px;
+}
+
+.vellum-home .vellum-icon {
+  width: 18px;
+  height: 18px;
+}
+
+/* The document's name; once its title has scrolled off, the title. Both
+   sit in one grid cell, so the label keeps its width as they swap. */
+.vellum-doc {
+  appearance: none;
+  flex: 0 1 auto;
+  min-width: 0;
+  display: grid;
+  align-items: center;
+  height: 30px;
+  margin-left: 4px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--v-fg-muted);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.vellum-doc:hover {
+  background: var(--v-bg-hover);
+}
+
+.vellum-docname,
+.vellum-doctitle {
+  grid-area: 1 / 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: opacity 0.15s ease;
+}
+
+.vellum-doctitle {
+  color: var(--v-fg);
+  font-weight: 600;
+  opacity: 0;
+}
+
+.vellum-doc.is-titled .vellum-docname {
+  opacity: 0;
+}
+
+.vellum-doc.is-titled .vellum-doctitle {
+  opacity: 1;
+}
+
+.vellum-toolbar-end {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
+  padding-left: 8px;
+}
+
+.vellum-sep {
+  width: 1px;
+  height: 16px;
+  margin: 0 6px;
+  background: var(--v-border-strong);
+}
+
+/* One of the three theme icons shows, by the mode on <html>. */
+.vellum-theme-btn .vellum-icon {
+  display: none;
+}
+
+html[data-vellum-theme="light"] .vellum-theme-btn .vellum-icon-light,
+html[data-vellum-theme="dark"] .vellum-theme-btn .vellum-icon-dark,
+html[data-vellum-theme="system"] .vellum-theme-btn .vellum-icon-system {
+  display: block;
+}
+
+/* A short message after an action, low in the window. An error stays
+   until clicked. */
+.vellum-status {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  z-index: 50;
+  transform: translateX(-50%);
+  max-width: min(36rem, calc(100vw - 32px));
+  box-sizing: border-box;
+  padding: 8px 14px;
+  border-radius: 8px;
+  background: var(--v-toast-bg);
+  color: var(--v-toast-fg);
+  font-size: 13px;
+  line-height: 1.4;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+  cursor: default;
+}
+
+.vellum-status.is-error {
+  background: var(--v-danger);
+  color: #ffffff;
+  cursor: pointer;
+}
+
+/* --- Contents panel ---------------------------------------------------- */
+
+.vellum-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: stretch;
 }
 
 .vellum-toc {
@@ -24,16 +251,19 @@ body.vellum-view {
   width: var(--vellum-toc-width);
   height: 100%;
   overflow: auto;
-  padding: 12px 12px 24px;
-  background: #f6f8fa;
-  border-right: 1px solid #d1d9e0;
+  padding: 10px 8px 32px;
+  background: var(--v-bg);
+  border-right: 1px solid var(--v-border);
   box-sizing: border-box;
   font-size: 13px;
   line-height: 1.4;
 }
 
-.vellum-toc[hidden],
 .vellum-toc.is-collapsed {
+  display: none;
+}
+
+.vellum-toc-scrim {
   display: none;
 }
 
@@ -56,11 +286,11 @@ body.vellum-view {
 
 .vellum-toc-splitter:hover,
 .vellum-toc-splitter.is-dragging {
-  background: rgba(9, 105, 218, 0.25);
+  background: var(--v-accent-soft);
 }
 
 .vellum-toc-splitter:focus-visible {
-  outline: 2px solid #0969da;
+  outline: 2px solid var(--v-accent);
   outline-offset: -1px;
 }
 
@@ -71,82 +301,37 @@ body.vellum-view {
 
 .vellum-toc-header {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: 8px;
-  margin-bottom: 8px;
+  height: 26px;
+  margin-bottom: 4px;
+  padding-left: 8px;
 }
 
 .vellum-toc-title {
+  font-size: 12px;
   font-weight: 600;
-  color: #1f2328;
+  color: var(--v-fg-muted);
 }
 
 .vellum-toc-actions {
   display: flex;
-  gap: 6px;
+  gap: 2px;
 }
 
-.vellum-toc-actions button,
-.vellum-toolbar button {
-  appearance: none;
-  font: inherit;
-  font-size: 12px;
-  line-height: 1.2;
-  padding: 4px 8px;
-  border: 1px solid #d1d9e0;
-  border-radius: 6px;
-  background: #fff;
-  color: #1f2328;
-  cursor: pointer;
+.vellum-toc-actions .vellum-btn {
+  width: 24px;
+  height: 24px;
 }
 
-.vellum-toolbar button .vellum-icon {
-  vertical-align: -2px;
-  margin-left: 4px;
-}
-
-.vellum-icon-btn {
-  line-height: 0;
-}
-
-.vellum-icon-btn .vellum-icon {
-  margin-left: 0;
-  vertical-align: middle;
-  display: block;
-}
-
-/* Icons that need more room than the 14px line icons (the file
-   manager's full-colour app icon, the lettered PDF page) draw at 16px
-   but take only 14px of height, so their buttons line up. */
-.vellum-icon-btn .vellum-icon-lg {
-  width: 16px;
-  height: 16px;
-  margin: -1px 0;
-}
-
-.vellum-toolbar .vellum-toc-toggle-btn {
-  margin-right: 20px;
-  min-width: auto;
-  font-size: 14px;
-  line-height: 1;
-}
-.vellum-toc-actions button:hover,
-.vellum-toolbar button:hover {
-  background: #f3f4f6;
-}
-
-.vellum-toc-actions button:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
-
-.vellum-toc-actions button:disabled:hover {
-  background: #fff;
+.vellum-toc-actions .vellum-icon {
+  width: 14px;
+  height: 14px;
 }
 
 .vellum-toc-nav {
-  --toc-gutter: 1.4rem;
+  --toc-gutter: 18px;
 }
 
 .vellum-toc-nav ol {
@@ -156,8 +341,7 @@ body.vellum-view {
 }
 
 .vellum-toc-nav ol ol {
-  padding-left: var(--toc-gutter);
-  margin-top: 2px;
+  padding-left: 12px;
 }
 
 .vellum-toc-item {
@@ -170,23 +354,44 @@ body.vellum-view {
 }
 
 .vellum-toc-twist {
+  appearance: none;
   flex: 0 0 var(--toc-gutter);
   width: var(--toc-gutter);
-  height: 1.5rem;
+  height: 24px;
   padding: 0;
   border: 0;
+  border-radius: 4px;
   background: transparent;
-  color: #656d76;
+  color: var(--v-fg-faint);
   cursor: pointer;
-  font-size: 13px;
-  line-height: 1.5rem;
+  display: grid;
+  place-items: center;
+}
+
+.vellum-toc-twist:hover {
+  color: var(--v-fg);
+}
+
+/* A chevron: down when the section is open, right when collapsed. */
+.vellum-toc-twist::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: translateY(-1.5px) rotate(45deg);
+  transition: transform 0.12s ease;
+}
+
+.vellum-toc-item.is-collapsed > .vellum-toc-row > .vellum-toc-twist::before {
+  transform: translateX(-1.5px) rotate(-45deg);
 }
 
 /* Keep the gutter on leaves so parent titles are not more inset than their children.
    [hidden] is display:none in the UA sheet; override so the column still measures. */
 .vellum-toc-twist[hidden] {
   visibility: hidden;
-  display: inline-block !important;
+  display: grid;
 }
 
 .vellum-toc-item.is-collapsed > .vellum-toc-kids {
@@ -197,17 +402,30 @@ body.vellum-view {
   display: block;
   flex: 1;
   min-width: 0;
-  padding: 2px 4px;
-  border-radius: 4px;
-  color: #1f2328;
+  padding: 3px 8px 3px 4px;
+  border-radius: 5px;
+  color: var(--v-fg-muted);
   text-decoration: none;
-  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.vellum-toc-nav > ol > .vellum-toc-item > .vellum-toc-row > a {
+  color: var(--v-fg);
 }
 
 .vellum-toc-nav a:hover {
-  background: rgba(175, 184, 193, 0.2);
+  background: var(--v-bg-hover);
+  color: var(--v-fg);
   text-decoration: none;
 }
+
+/* The section being read. */
+.vellum-toc-nav a.vellum-toc-active {
+  background: var(--v-bg-active);
+  color: var(--v-fg);
+}
+
+/* --- Document pane ----------------------------------------------------- */
 
 .vellum-main {
   flex: 1;
@@ -217,125 +435,145 @@ body.vellum-view {
   flex-direction: column;
 }
 
-.vellum-toolbar {
-  flex: 0 0 auto;
-  z-index: 4;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 16px 8px 0;
-  background: #fff;
-  border-bottom: 1px solid #d1d9e0;
-}
-
 .vellum-scroll {
   flex: 1;
   min-height: 0;
   overflow: auto;
-}
-
-/* The pinned title changes height as it lerps. Scroll anchoring would
-   pull scrollTop back to cancel that, and the lerp would chase itself. */
-.vellum-scroll:has(.vellum-pin-title) {
-  overflow-anchor: none;
+  background: var(--v-bg);
 }
 
 .vellum-scroll:focus {
   outline: none;
 }
 
-.vellum-docname {
-  font-size: 12px;
-  color: #656d76;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  min-width: 0;
-}
-
-.vellum-toolbar-end {
-  margin-left: auto;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  flex-shrink: 0;
-  max-width: 40%;
-}
-
-.vellum-theme-btn {
-  min-width: 32px;
-  padding: 4px 10px;
-  font-size: 16px;
-  line-height: 1;
-}
-
-.vellum-status {
-  font-size: 12px;
-  color: #1a7f37;
-}
-
-.vellum-status.is-error {
-  color: #cf222e;
-}
-
-.vellum-consent {
-  position: fixed;
-  inset: 0;
-  z-index: 40;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(27, 31, 36, 0.45);
-}
-
-.vellum-consent[hidden] {
-  display: none;
-}
-
-.vellum-consent-card {
-  margin: 16px;
-  padding: 16px 20px;
-  max-width: 28rem;
-  border: 1px solid #d1d9e0;
-  border-radius: 8px;
-  background: #fff8c5;
-  color: #1f2328;
-  font-size: 14px;
-  line-height: 1.45;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
-}
-
-.vellum-consent-card p {
-  margin: 0 0 12px;
-}
-
-.vellum-consent-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.vellum-consent-actions button {
-  font: inherit;
-  cursor: pointer;
+/* The reading column. --vellum-measure is the text's width and
+   --vellum-gutter the space kept on either side of it. */
+.vellum-article {
+  --vellum-measure: 760px;
+  --vellum-gutter: 32px;
+  max-width: var(--vellum-measure);
+  margin: 0 auto;
+  padding: 40px var(--vellum-gutter) 96px;
 }
 
 .vellum-article .task-list-item input[type="checkbox"] {
   cursor: pointer;
 }
 
-.vellum-article {
-  max-width: 980px;
-  margin: 0 auto;
-  padding: 32px;
-}
-
-/* Screen only: tables leave the 980px reading column. github.css keeps
-   its fixed, 100%-wide tables for the PDF, where WeasyPrint and Prince
-   clip rather than scroll; print and PDF output are unchanged. */
+/* Screen only: the viewer sets its own type over github.css, and tables
+   leave the reading column. Print and the PDF keep github.css as it is,
+   with the fixed, 100%-wide tables WeasyPrint and Prince need (they clip
+   rather than scroll). */
 @media screen {
+  .vellum-article {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif,
+      "Apple Color Emoji", "Segoe UI Emoji";
+    font-size: 16px;
+    line-height: 1.6;
+    color: var(--v-fg);
+    overflow-wrap: break-word;
+  }
+
+  .vellum-article > :first-child {
+    margin-top: 0;
+  }
+
+  .vellum-article :is(h1, h2, h3, h4, h5, h6) {
+    margin-top: 1.6em;
+    margin-bottom: 0.6em;
+    line-height: 1.25;
+    /* A heading the contents panel jumps to lands a little below the bar. */
+    scroll-margin-top: 16px;
+  }
+
+  .vellum-article h1 {
+    font-size: 2em;
+    letter-spacing: -0.015em;
+    padding-bottom: 0;
+    border-bottom: 0;
+    margin-bottom: 0.7em;
+  }
+
+  .vellum-article h2 {
+    font-size: 1.45em;
+    letter-spacing: -0.01em;
+    margin-top: 2em;
+    padding-bottom: 0.3em;
+    border-bottom: 1px solid var(--v-border);
+  }
+
+  .vellum-article h3 {
+    font-size: 1.2em;
+  }
+
+  .vellum-article h6,
+  .vellum-article blockquote,
+  .vellum-article .footnotes {
+    color: var(--v-fg-muted);
+  }
+
+  .vellum-article a {
+    color: var(--v-accent);
+  }
+
+  .vellum-article code {
+    padding: 0.15em 0.35em;
+    border-radius: 5px;
+    background-color: var(--v-bg-code);
+    color: var(--v-fg);
+  }
+
+  .vellum-article pre {
+    padding: 14px 16px;
+    border-radius: 8px;
+    line-height: 1.5;
+  }
+
+  /* The highlighter's own stylesheets give a code block a page-coloured
+     background (the dark one scoped under the theme attribute), so these
+     carry the attribute too. Its "error" token marks syntax its lexers do
+     not know, which in a document is noise: draw it as plain text. */
+  html[data-vellum-theme] .vellum-article pre,
+  html[data-vellum-theme] .vellum-article pre.chroma {
+    color: var(--v-fg);
+    background-color: var(--v-bg-subtle);
+  }
+
+  html[data-vellum-theme] .vellum-article pre.chroma .err {
+    color: inherit;
+    background-color: transparent;
+  }
+
+  /* The highlighter lays each line out as a flex row (for line numbers,
+     which the viewer does not show). Flex items cannot wrap between one
+     another, so a long line ran out of its block and widened the page.
+     Inline lines wrap like the rest of the block. */
+  html[data-vellum-theme] .vellum-article pre.chroma .line {
+    display: inline;
+  }
+
+  .vellum-article pre code {
+    padding: 0;
+    background-color: transparent;
+    color: inherit;
+  }
+
+  .vellum-article blockquote {
+    border-left: 3px solid var(--v-border-strong);
+  }
+
+  .vellum-article hr {
+    height: 1px;
+    margin: 2em 0;
+    background-color: var(--v-border-strong);
+    border: 0;
+  }
+
+  .vellum-article mark {
+    background-color: var(--v-mark);
+    color: var(--v-fg);
+  }
+
   .vellum-article thead {
     position: relative;
     z-index: 1;
@@ -354,6 +592,8 @@ body.vellum-view {
     max-width: 100%;
     overflow-x: auto;
     table-layout: auto;
+    font-size: 0.9375em;
+    line-height: 1.5;
   }
 
   /* github.css breaks cells anywhere, so no word sets a column's
@@ -365,10 +605,24 @@ body.vellum-view {
     min-width: 4ch;
     overflow-wrap: break-word;
     word-break: normal;
+    border-color: var(--v-border-strong);
+    color: var(--v-fg);
+  }
+
+  .vellum-article th {
+    background-color: var(--v-bg-subtle);
+  }
+
+  .vellum-article tr {
+    background-color: var(--v-bg);
+  }
+
+  .vellum-article tr:nth-child(2n) {
+    background-color: var(--v-bg-zebra);
   }
 
   /* A top-level table may be as wide as the panel less the article's
-     32px gutters. Up to 980px it lines up with the prose; past that it
+     gutters. Up to the measure it lines up with the prose; past that it
      grows outward on both sides, centred on the column.
 
      The untransformed box must not stick out to the right: Firefox counts
@@ -388,39 +642,41 @@ body.vellum-view {
     direction: ltr;
   }
 
+  /* In the rtl block a child narrower than the column would sit at its
+     right edge. Everything but a table goes back to the left; a diagram
+     is centred. */
+  .vellum-article > :not(table) {
+    margin-right: auto;
+  }
+
+  .vellum-article > .mermaid-svg {
+    margin-left: auto;
+  }
+
+  /* A diagram is drawn dark on a white ground. The ground goes (the
+     renderer sets it inline, hence !important) and the theme's filter
+     recolours the rest, so the same drawing serves both themes. */
+  .vellum-article .mermaid-svg svg {
+    background-color: transparent !important;
+  }
+
+  .vellum-article .mermaid-svg svg,
+  .vellum-article .mermaid-svg img {
+    filter: var(--v-diagram-filter);
+  }
+
   .vellum-article > table {
     min-width: 100%;
-    max-width: calc(100cqw - 64px);
-    transform: translateX(round(max(0px, 50% - 490px), 1px));
-  }
-
-  /* The pinned title's bar spans the panel, so a wide table scrolling
-     under it doesn't show either side of it. */
-  .vellum-article > h1.vellum-pin-title {
-    box-shadow: 0 0 0 100vmax var(--vellum-pin-bg, #fff);
-    clip-path: inset(0 -100vmax);
+    max-width: calc(100cqw - 2 * var(--vellum-gutter));
+    transform: translateX(round(max(0px, 50% - var(--vellum-measure) / 2), 1px));
   }
 }
 
-/* A leading h1 sticks under the toolbar. --vellum-title-pin runs from 0
-   (resting title) to 1 (compact bar); chrome.js sets it from scroll. */
-.vellum-article > h1.vellum-pin-title {
-  position: sticky;
-  top: 0;
-  z-index: 3;
-  text-align: left;
-  background: #fff;
-  /* Padding, not margin, so the bar's background covers everything that
-     sticks. Margin would stay transparent and let text show through it. */
-  margin-top: 0;
-  margin-bottom: calc(16px * (1 - var(--vellum-title-pin, 0)));
-  padding-top: calc(24px * (1 - var(--vellum-title-pin, 0)) + 8px * var(--vellum-title-pin, 0));
-  font-size: calc(2em + (1.15em - 2em) * var(--vellum-title-pin, 0));
-}
-
-.vellum-article:has(> h1.vellum-pin-title) :is(h2, h3, h4, h5, h6),
-.vellum-article:has(> h1.vellum-pin-title) > h1.vellum-pin-title ~ h1 {
-  scroll-margin-top: var(--vellum-pin-h, 2.5rem);
+@media screen and (max-width: 600px) {
+  .vellum-article {
+    --vellum-gutter: 20px;
+    padding-top: 24px;
+  }
 }
 
 .vellum-article img,
@@ -438,8 +694,8 @@ body.vellum-view {
   width: 100%;
   margin: 0 auto;
   min-height: 6em;
-  border-radius: 6px;
-  background: rgba(175, 184, 193, 0.12);
+  border-radius: 8px;
+  background: var(--v-bg-hover);
   cursor: progress;
   overflow: hidden;
 }
@@ -451,18 +707,13 @@ body.vellum-view {
 }
 
 .vellum-article .vellum-deferred-mermaid.is-loading {
-  background: linear-gradient(
-    100deg,
-    rgba(175, 184, 193, 0.12) 30%,
-    rgba(175, 184, 193, 0.32) 50%,
-    rgba(175, 184, 193, 0.12) 70%
-  );
+  background: linear-gradient(100deg, var(--v-bg-hover) 30%, var(--v-bg-active) 50%, var(--v-bg-hover) 70%);
   background-size: 300% 100%;
   animation: vellum-shimmer 1.4s ease-in-out infinite;
 }
 
 .vellum-article .vellum-deferred-math {
-  color: var(--vellum-muted, #656d76);
+  color: var(--v-fg-muted);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.9em;
   cursor: progress;
@@ -475,24 +726,24 @@ body.vellum-view {
 .vellum-article .vellum-deferred.is-failed {
   cursor: auto;
   animation: none;
+  color: var(--v-danger);
 }
 
 .vellum-article .vellum-deferred-mermaid.is-failed {
   padding: 8px 12px;
   text-align: left;
-  color: #cf222e;
-  background: rgba(207, 34, 46, 0.08);
+  background: var(--v-danger-soft);
 }
 
 .vellum-article .vellum-deferred-mermaid.is-failed > pre {
   display: block;
   margin-top: 8px;
   color: inherit;
+  background: transparent;
   opacity: 0.85;
 }
 
 .vellum-article .vellum-deferred-math.is-failed {
-  color: #cf222e;
   text-decoration: underline dashed;
   text-underline-offset: 3px;
 }
@@ -543,7 +794,58 @@ body.vellum-view {
   .vellum-article .vellum-deferred-math.is-loading {
     animation: none;
   }
+  .vellum-docname,
+  .vellum-doctitle,
+  .vellum-toc-twist::before {
+    transition: none;
+  }
 }
+
+/* --- Dialogs ----------------------------------------------------------- */
+
+.vellum-consent {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--v-backdrop);
+}
+
+.vellum-consent-card {
+  margin: 16px;
+  padding: 20px;
+  width: 26rem;
+  max-width: calc(100vw - 32px);
+  box-sizing: border-box;
+  border-radius: 10px;
+  background: var(--v-bg);
+  color: var(--v-fg);
+  font-size: 14px;
+  line-height: 1.5;
+  box-shadow: var(--v-shadow);
+}
+
+.vellum-consent-title {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.vellum-consent-text {
+  margin-top: 4px;
+  color: var(--v-fg-muted);
+}
+
+.vellum-consent-actions {
+  margin-top: 20px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* --- Figure viewer ----------------------------------------------------- */
 
 .vellum-lightbox {
   position: fixed;
@@ -551,12 +853,8 @@ body.vellum-view {
   z-index: 20;
   display: flex;
   flex-direction: column;
-  background: rgba(15, 17, 21, 0.92);
-  color: #fff;
-}
-
-.vellum-lightbox[hidden] {
-  display: none;
+  background: rgba(13, 17, 23, 0.96);
+  color: #e6edf3;
 }
 
 .vellum-lightbox-bar {
@@ -564,24 +862,31 @@ body.vellum-view {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 8px 12px;
+  height: var(--vellum-bar-height);
+  padding: 0 10px;
   flex: 0 0 auto;
-}
-
-.vellum-lightbox-bar button {
-  appearance: none;
-  font: inherit;
   font-size: 13px;
-  padding: 4px 10px;
-  border: 1px solid rgba(255, 255, 255, 0.25);
-  border-radius: 6px;
-  background: transparent;
-  color: #fff;
-  cursor: pointer;
 }
 
-.vellum-lightbox-bar button:hover {
-  background: rgba(255, 255, 255, 0.1);
+.vellum-lightbox-zoom {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.vellum-lightbox .vellum-btn {
+  color: #c9d1d9;
+}
+
+.vellum-lightbox .vellum-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+}
+
+.vellum-lightbox-level {
+  min-width: 3.5em;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
 }
 
 .vellum-lightbox-stage {
@@ -602,6 +907,11 @@ body.vellum-view {
   height: max-content;
 }
 
+/* A diagram keeps its ground here, recoloured with it in the dark theme. */
+.vellum-lightbox-content img.is-diagram {
+  filter: var(--v-diagram-filter);
+}
+
 .vellum-lightbox-content img,
 .vellum-lightbox-content svg {
   display: block;
@@ -612,49 +922,55 @@ body.vellum-view {
 }
 
 .vellum-lightbox-hint {
+  flex: 0 0 auto;
+  padding: 0 12px 12px;
+  text-align: center;
   font-size: 12px;
-  opacity: 0.7;
+  color: #8b949e;
 }
+
+/* --- Narrow windows: the contents panel opens over the page ------------- */
 
 @media (max-width: 880px) {
   .vellum-toc {
     position: fixed;
+    top: var(--vellum-bar-height);
+    bottom: 0;
+    left: 0;
     z-index: 6;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+    width: min(20rem, 86vw);
+    height: auto;
+    box-shadow: var(--v-shadow);
   }
   .vellum-toc:not(.is-open) {
     display: none;
   }
+  .vellum-toc.is-open ~ .vellum-toc-scrim {
+    display: block;
+    position: fixed;
+    inset: var(--vellum-bar-height) 0 0 0;
+    z-index: 5;
+    background: var(--v-backdrop);
+  }
   .vellum-toc-splitter {
     display: none;
   }
+  .vellum-docname,
+  .vellum-doctitle {
+    max-width: 44vw;
+  }
 }
 
-/* --- Editor modal ------------------------------------------------------
-   Colours are tokens on the root so one block per theme recolours it. */
+/* --- Editor modal ------------------------------------------------------- */
 
 .vellum-editor {
-  --ved-backdrop: rgba(27, 31, 36, 0.45);
-  --ved-bg: #ffffff;
-  --ved-bar: #f6f8fa;
-  --ved-fg: #1f2328;
-  --ved-muted: #656d76;
-  --ved-border: #d1d9e0;
-  --ved-btn: #ffffff;
-  --ved-btn-hover: #f3f4f6;
-  --ved-primary: #1f883d;
-  --ved-primary-fg: #ffffff;
-  --ved-banner: #fff8c5;
-  --ved-banner-border: #d4a72c;
-  --ved-ok: #1a7f37;
-  --ved-warn: #9a6700;
-  --ved-error: #cf222e;
   position: fixed;
   inset: 0;
   z-index: 30;
   display: flex;
   padding: 24px;
-  background: var(--ved-backdrop);
+  background: var(--v-backdrop);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;
 }
 
 .vellum-editor[hidden] {
@@ -668,11 +984,10 @@ body.vellum-view {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  border: 1px solid var(--ved-border);
-  border-radius: 8px;
-  background: var(--ved-bg);
-  color: var(--ved-fg);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.25);
+  border-radius: 10px;
+  background: var(--v-bg);
+  color: var(--v-fg);
+  box-shadow: var(--v-shadow);
 }
 
 .vellum-editor-bar {
@@ -680,10 +995,11 @@ body.vellum-view {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 8px 12px;
-  background: var(--ved-bar);
-  border-bottom: 1px solid var(--ved-border);
-  font-size: 12px;
+  height: 48px;
+  box-sizing: border-box;
+  padding: 0 10px 0 16px;
+  border-bottom: 1px solid var(--v-border);
+  font-size: 13px;
 }
 
 .vellum-editor-title {
@@ -695,16 +1011,16 @@ body.vellum-view {
 }
 
 .vellum-editor-state {
-  color: var(--ved-muted);
+  color: var(--v-fg-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   min-width: 0;
 }
 
-.vellum-editor-state[data-kind="dirty"] { color: var(--ved-warn); }
-.vellum-editor-state[data-kind="saved"] { color: var(--ved-ok); }
-.vellum-editor-state[data-kind="error"] { color: var(--ved-error); }
+.vellum-editor-state[data-kind="dirty"] { color: var(--v-warn); }
+.vellum-editor-state[data-kind="saved"] { color: var(--v-ok); }
+.vellum-editor-state[data-kind="error"] { color: var(--v-danger); }
 
 .vellum-editor-actions {
   margin-left: auto;
@@ -713,50 +1029,15 @@ body.vellum-view {
   flex-shrink: 0;
 }
 
-.vellum-editor button {
-  appearance: none;
-  font: inherit;
-  font-size: 12px;
-  line-height: 1.2;
-  padding: 4px 10px;
-  border: 1px solid var(--ved-border);
-  border-radius: 6px;
-  background: var(--ved-btn);
-  color: var(--ved-fg);
-  cursor: pointer;
-}
-
-.vellum-editor button:hover:not(:disabled) {
-  background: var(--ved-btn-hover);
-}
-
-.vellum-editor button:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
-.vellum-editor [data-vellum="ed-save"]:not(:disabled),
-.vellum-editor button.is-primary {
-  background: var(--ved-primary);
-  border-color: var(--ved-primary);
-  color: var(--ved-primary-fg);
-}
-
-.vellum-editor [data-vellum="ed-save"]:not(:disabled):hover,
-.vellum-editor button.is-primary:hover {
-  background: var(--ved-primary);
-  filter: brightness(1.08);
-}
-
 .vellum-editor-banner {
   flex: 0 0 auto;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px 12px;
-  padding: 8px 12px;
-  background: var(--ved-banner);
-  border-bottom: 1px solid var(--ved-banner-border);
+  padding: 8px 10px 8px 16px;
+  background: var(--v-notice-bg);
+  border-bottom: 1px solid var(--v-notice-border);
   font-size: 13px;
 }
 
@@ -768,6 +1049,7 @@ body.vellum-view {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+  margin-left: auto;
 }
 
 .vellum-editor-host {
@@ -781,7 +1063,6 @@ body.vellum-view {
     padding: 0;
   }
   .vellum-editor-panel {
-    border: 0;
     border-radius: 0;
   }
 }
@@ -789,7 +1070,10 @@ body.vellum-view {
 @media print {
   .vellum-toc,
   .vellum-toc-splitter,
+  .vellum-toc-scrim,
   .vellum-toolbar,
+  .vellum-status,
+  .vellum-consent,
   .vellum-editor,
   .vellum-lightbox {
     display: none !important;
@@ -805,346 +1089,16 @@ body.vellum-view {
     padding: 0 !important;
   }
   .vellum-chrome,
+  .vellum-body,
   .vellum-main,
   .vellum-scroll {
     height: auto;
     overflow: visible;
     display: block;
+    background: none;
   }
   .vellum-article {
+    max-width: none;
     padding: 0;
-  }
-  .vellum-article > h1.vellum-pin-title {
-    position: static;
-  }
-}
-
-/* --- Theme (after convert CSS in head; beats github.css on specificity) --- */
-
-html[data-vellum-theme="dark"] { color-scheme: dark; }
-html[data-vellum-theme="light"] { color-scheme: light; }
-html[data-vellum-theme="system"] { color-scheme: light dark; }
-
-html[data-vellum-theme="dark"] body.vellum-view,
-html[data-vellum-theme="dark"] .vellum-scroll {
-  background: #0d1117;
-  color: #e6edf3;
-}
-
-html[data-vellum-theme="dark"] .vellum-toolbar {
-  background: #161b22;
-  border-bottom-color: #30363d;
-}
-
-html[data-vellum-theme="dark"] .vellum-toc {
-  background: #161b22;
-  border-right-color: #30363d;
-}
-
-html[data-vellum-theme="dark"] .vellum-toc-splitter:hover,
-html[data-vellum-theme="dark"] .vellum-toc-splitter.is-dragging {
-  background: rgba(88, 166, 255, 0.35);
-}
-
-html[data-vellum-theme="dark"] .vellum-toc-title {
-  color: #e6edf3;
-}
-
-html[data-vellum-theme="dark"] .vellum-toc-twist {
-  color: #8b949e;
-}
-
-html[data-vellum-theme="dark"] .vellum-toc-actions button,
-html[data-vellum-theme="dark"] .vellum-toolbar button {
-  background: #21262d;
-  border-color: #30363d;
-  color: #e6edf3;
-}
-html[data-vellum-theme="dark"] .vellum-toc-actions button:hover,
-html[data-vellum-theme="dark"] .vellum-toolbar button:hover {
-  background: #30363d;
-}
-
-html[data-vellum-theme="dark"] .vellum-toc-actions button:disabled:hover {
-  background: #21262d;
-}
-
-html[data-vellum-theme="dark"] .vellum-docname {
-  color: #8b949e;
-}
-
-html[data-vellum-theme="dark"] .vellum-toc-nav a {
-  color: #e6edf3;
-}
-
-html[data-vellum-theme="dark"] .vellum-toc-nav a:hover {
-  background: #21262d;
-}
-
-html[data-vellum-theme="dark"] .vellum-toc-nav a.vellum-toc-active {
-  background: #388bfd26;
-  color: #4493f8;
-}
-
-html[data-vellum-theme="dark"] .vellum-article {
-  color: #e6edf3;
-}
-
-html[data-vellum-theme="dark"] .vellum-article h1,
-html[data-vellum-theme="dark"] .vellum-article h2 {
-  border-bottom-color: #30363d;
-}
-
-html[data-vellum-theme="dark"] .vellum-article > h1.vellum-pin-title {
-  background: #0d1117;
-  --vellum-pin-bg: #0d1117;
-}
-
-html[data-vellum-theme="dark"] .vellum-article h6,
-html[data-vellum-theme="dark"] .vellum-article blockquote,
-html[data-vellum-theme="dark"] .vellum-article .footnotes {
-  color: #8b949e;
-}
-
-html[data-vellum-theme="dark"] .vellum-article a {
-  color: #4493f8;
-}
-
-html[data-vellum-theme="dark"] .vellum-article code {
-  background-color: rgba(110, 118, 129, 0.4);
-  color: #e6edf3;
-}
-
-html[data-vellum-theme="dark"] .vellum-article pre {
-  color: #e6edf3;
-  background-color: #161b22;
-}
-
-html[data-vellum-theme="dark"] .vellum-article pre code {
-  background-color: transparent;
-  color: inherit;
-}
-
-html[data-vellum-theme="dark"] .vellum-article blockquote {
-  border-left-color: #30363d;
-}
-
-html[data-vellum-theme="dark"] .vellum-article th,
-html[data-vellum-theme="dark"] .vellum-article td {
-  border-color: #30363d;
-  color: #e6edf3;
-}
-
-html[data-vellum-theme="dark"] .vellum-article th {
-  background-color: #161b22;
-}
-
-html[data-vellum-theme="dark"] .vellum-article tr {
-  background-color: #0d1117;
-}
-
-html[data-vellum-theme="dark"] .vellum-article tr:nth-child(2n) {
-  background-color: #161b22;
-}
-
-html[data-vellum-theme="dark"] .vellum-article hr {
-  background-color: #30363d;
-  border-color: #30363d;
-}
-
-html[data-vellum-theme="dark"] .vellum-article .vellum-deferred-math {
-  color: #8b949e;
-}
-
-html[data-vellum-theme="dark"] .vellum-article .vellum-deferred-mermaid {
-  background: rgba(110, 118, 129, 0.2);
-}
-
-html[data-vellum-theme="dark"] .vellum-article .vellum-deferred.is-failed {
-  color: #f85149;
-}
-
-html[data-vellum-theme="dark"] .vellum-article .vellum-deferred-mermaid.is-failed {
-  background: rgba(248, 81, 73, 0.12);
-}
-
-html[data-vellum-theme="dark"] .vellum-article mark {
-  background-color: rgba(187, 128, 9, 0.35);
-  color: #e6edf3;
-}
-
-@media (prefers-color-scheme: dark) {
-  html[data-vellum-theme="system"] body.vellum-view,
-  html[data-vellum-theme="system"] .vellum-scroll {
-    background: #0d1117;
-    color: #e6edf3;
-  }
-
-  html[data-vellum-theme="system"] .vellum-toolbar {
-    background: #161b22;
-    border-bottom-color: #30363d;
-  }
-
-  html[data-vellum-theme="system"] .vellum-toc {
-    background: #161b22;
-    border-right-color: #30363d;
-  }
-
-  html[data-vellum-theme="system"] .vellum-toc-splitter:hover,
-  html[data-vellum-theme="system"] .vellum-toc-splitter.is-dragging {
-    background: rgba(88, 166, 255, 0.35);
-  }
-
-  html[data-vellum-theme="system"] .vellum-toc-title {
-    color: #e6edf3;
-  }
-
-  html[data-vellum-theme="system"] .vellum-toc-twist {
-    color: #8b949e;
-  }
-
-  html[data-vellum-theme="system"] .vellum-toc-actions button,
-  html[data-vellum-theme="system"] .vellum-toolbar button {
-    background: #21262d;
-    border-color: #30363d;
-    color: #e6edf3;
-  }
-
-
-
-
-  html[data-vellum-theme="system"] .vellum-toc-actions button:hover,
-  html[data-vellum-theme="system"] .vellum-toolbar button:hover {
-    background: #30363d;
-  }
-
-  html[data-vellum-theme="system"] .vellum-toc-actions button:disabled:hover {
-    background: #21262d;
-  }
-
-  html[data-vellum-theme="system"] .vellum-docname {
-    color: #8b949e;
-  }
-
-  html[data-vellum-theme="system"] .vellum-toc-nav a {
-    color: #e6edf3;
-  }
-
-  html[data-vellum-theme="system"] .vellum-toc-nav a:hover {
-    background: #21262d;
-  }
-
-  html[data-vellum-theme="system"] .vellum-toc-nav a.vellum-toc-active {
-    background: #388bfd26;
-    color: #4493f8;
-  }
-
-  html[data-vellum-theme="system"] .vellum-article {
-    color: #e6edf3;
-  }
-
-  html[data-vellum-theme="system"] .vellum-article h1,
-  html[data-vellum-theme="system"] .vellum-article h2 {
-    border-bottom-color: #30363d;
-  }
-
-  html[data-vellum-theme="system"] .vellum-article > h1.vellum-pin-title {
-    background: #0d1117;
-    --vellum-pin-bg: #0d1117;
-  }
-
-  html[data-vellum-theme="system"] .vellum-article h6,
-  html[data-vellum-theme="system"] .vellum-article blockquote,
-  html[data-vellum-theme="system"] .vellum-article .footnotes {
-    color: #8b949e;
-  }
-
-  html[data-vellum-theme="system"] .vellum-article a {
-    color: #4493f8;
-  }
-
-  html[data-vellum-theme="system"] .vellum-article code {
-    background-color: rgba(110, 118, 129, 0.4);
-    color: #e6edf3;
-  }
-
-  html[data-vellum-theme="system"] .vellum-article pre {
-    color: #e6edf3;
-    background-color: #161b22;
-  }
-
-  html[data-vellum-theme="system"] .vellum-article pre code {
-    background-color: transparent;
-    color: inherit;
-  }
-
-  html[data-vellum-theme="system"] .vellum-article blockquote {
-    border-left-color: #30363d;
-  }
-
-  html[data-vellum-theme="system"] .vellum-article th,
-  html[data-vellum-theme="system"] .vellum-article td {
-    border-color: #30363d;
-    color: #e6edf3;
-  }
-
-  html[data-vellum-theme="system"] .vellum-article th {
-    background-color: #161b22;
-  }
-
-  html[data-vellum-theme="system"] .vellum-article tr {
-    background-color: #0d1117;
-  }
-
-  html[data-vellum-theme="system"] .vellum-article tr:nth-child(2n) {
-    background-color: #161b22;
-  }
-
-  html[data-vellum-theme="system"] .vellum-article hr {
-    background-color: #30363d;
-    border-color: #30363d;
-  }
-
-  html[data-vellum-theme="system"] .vellum-article mark {
-    background-color: rgba(187, 128, 9, 0.35);
-    color: #e6edf3;
-  }
-}
-
-html[data-vellum-theme="dark"] .vellum-editor {
-  --ved-backdrop: rgba(1, 4, 9, 0.6);
-  --ved-bg: #0d1117;
-  --ved-bar: #161b22;
-  --ved-fg: #e6edf3;
-  --ved-muted: #8b949e;
-  --ved-border: #30363d;
-  --ved-btn: #21262d;
-  --ved-btn-hover: #30363d;
-  --ved-primary: #238636;
-  --ved-primary-fg: #ffffff;
-  --ved-banner: #272115;
-  --ved-banner-border: #9e6a03;
-  --ved-ok: #3fb950;
-  --ved-warn: #d29922;
-  --ved-error: #f85149;
-}
-
-@media (prefers-color-scheme: dark) {
-  html[data-vellum-theme="system"] .vellum-editor {
-    --ved-backdrop: rgba(1, 4, 9, 0.6);
-    --ved-bg: #0d1117;
-    --ved-bar: #161b22;
-    --ved-fg: #e6edf3;
-    --ved-muted: #8b949e;
-    --ved-border: #30363d;
-    --ved-btn: #21262d;
-    --ved-btn-hover: #30363d;
-    --ved-primary: #238636;
-    --ved-primary-fg: #ffffff;
-    --ved-banner: #272115;
-    --ved-banner-border: #9e6a03;
-    --ved-ok: #3fb950;
-    --ved-warn: #d29922;
-    --ved-error: #f85149;
   }
 }

@@ -28,6 +28,9 @@ const (
 	FaviconICOPath    = "/favicon.ico"
 )
 
+//go:embed theme.css
+var themeCSS string
+
 //go:embed chrome.css
 var chromeCSS string
 
@@ -88,7 +91,9 @@ func injectChrome(htmlDoc string, page *chromePage) string {
 }
 
 func chromeStyleTag() string {
-	return "<style>\n" + chromeCSS + "\n" + chromaDarkThemeCSS + "</style>\n"
+	// The dark syntax colours are for the screen, like the rest of the
+	// theme: print keeps the document's own light highlighting.
+	return "<style>\n" + themeCSS + "\n" + chromeCSS + "\n@media screen {\n" + chromaDarkThemeCSS + "}\n</style>\n"
 }
 
 func chromeFaviconLink() string {
@@ -103,79 +108,127 @@ func chromeScriptTag(nonce string) string {
 	return `<script nonce="` + html.EscapeString(nonce) + `">` + "\n" + chromeJS + "\n</script>\n"
 }
 
-func pencilIconSVG() string {
-	return `<svg class="vellum-icon" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.17 6.81a2.83 2.83 0 0 0-4-4L3.84 16.17a2 2 0 0 0-.5.83l-1.32 4.35a.5.5 0 0 0 .62.62l4.35-1.32a2 2 0 0 0 .83-.5Z"/><path d="m15 5 4 4"/></svg>`
+// lineIcon is a 16px line icon drawn from 24-unit paths, in the current
+// text colour.
+func lineIcon(class, paths string) string {
+	if class != "" {
+		class = " " + class
+	}
+	return `<svg class="vellum-icon` + class + `" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">` + paths + `</svg>`
 }
 
-func copyIconSVG() string {
-	return `<svg class="vellum-icon" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>`
-}
+const (
+	iconSidebar     = `<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/>`
+	iconPencil      = `<path d="M21.17 6.81a2.83 2.83 0 0 0-4-4L3.84 16.17a2 2 0 0 0-.5.83l-1.32 4.35a.5.5 0 0 0 .62.62l4.35-1.32a2 2 0 0 0 .83-.5Z"/><path d="m15 5 4 4"/>`
+	iconCopy        = `<rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>`
+	iconSun         = `<circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/>`
+	iconMoon        = `<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>`
+	iconHalf        = `<circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor" stroke="none"/>`
+	iconCollapseAll = `<path d="m7 20 5-5 5 5"/><path d="m7 4 5 5 5-5"/>`
+	iconExpandAll   = `<path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/>`
+	iconMinus       = `<path d="M5 12h14"/>`
+	iconPlus        = `<path d="M5 12h14"/><path d="M12 5v14"/>`
+	iconFit         = `<path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/>`
+	iconClose       = `<path d="M18 6 6 18"/><path d="m6 6 12 12"/>`
+)
 
 // pdfIconSVG is a page with "PDF" lettered across it: the generic PDF
 // glyph, not Adobe's mark. The page's stroke is masked out behind the
 // letters so they read at toolbar size.
 func pdfIconSVG() string {
-	return `<svg class="vellum-icon vellum-icon-lg" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><defs><mask id="vellum-pdf-gap" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24"><rect x="0" y="0" width="24" height="24" fill="#fff"/><rect x="0" y="11.5" width="24" height="8" fill="#000"/></mask></defs><g mask="url(#vellum-pdf-gap)"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></g><text x="12" y="18.6" text-anchor="middle" textLength="23" lengthAdjust="spacingAndGlyphs" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="8.6" font-weight="800" fill="currentColor" stroke="none">PDF</text></svg>`
+	return `<svg class="vellum-icon" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><defs><mask id="vellum-pdf-gap" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24"><rect x="0" y="0" width="24" height="24" fill="#fff"/><rect x="0" y="11.5" width="24" height="8" fill="#000"/></mask></defs><g mask="url(#vellum-pdf-gap)"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></g><text x="12" y="18.6" text-anchor="middle" textLength="23" lengthAdjust="spacingAndGlyphs" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="8.6" font-weight="800" fill="currentColor" stroke="none">PDF</text></svg>`
+}
+
+// markSVG is the Vellum mark, favicon.svg's drawing: two strokes of
+// translucent sheet crossing at the foot of a V.
+func markSVG() string {
+	return `<svg class="vellum-icon" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 32 32" fill="none" stroke-width="6.5" stroke-linecap="round">` +
+		`<defs><mask id="vellum-mark-left" maskUnits="userSpaceOnUse" x="0" y="0" width="32" height="32"><path d="M7.5 8 16 24.5" stroke="#fff"/></mask></defs>` +
+		`<path d="M7.5 8 16 24.5M24.5 8 16 24.5" stroke="#d99f86"/>` +
+		`<path d="M24.5 8 16 24.5" stroke="#cb7a58" mask="url(#vellum-mark-left)"/></svg>`
+}
+
+// iconButton is a borderless toolbar button: label is both its tooltip
+// and its accessible name.
+func iconButton(action, label, extra, icon string) string {
+	if extra != "" {
+		extra = " " + extra
+	}
+	return `<button type="button" class="vellum-btn" data-vellum="` + action + `" title="` + label + `" aria-label="` + label + `"` + extra + `>` + icon + `</button>`
 }
 
 func chromeOpen(page *chromePage) string {
-	name := filepath.Base(page.SourcePath)
-	attrs := `data-source="` + html.EscapeString(page.SourcePath) + `"`
+	name := html.EscapeString(filepath.Base(page.SourcePath))
+	path := html.EscapeString(page.SourcePath)
+	attrs := `data-source="` + path + `"`
 	if page.Stamp != "" {
 		attrs += ` data-stamp="` + html.EscapeString(page.Stamp) + `"`
 	}
-	edit := ""
+	fm := hint.FileManager()
+	actions := ""
 	if page.Waiting {
+		// A waiting page has no file yet: nothing to edit, copy, print or
+		// reveal.
 		attrs += ` data-waiting="1"`
 	} else {
-		// A waiting page has no file yet, so nothing to edit.
 		attrs += ` data-editor="` + html.EscapeString(editorEntryURL()) + `"`
-		edit = `<button type="button" class="vellum-icon-btn" data-vellum="edit" title="Edit the Markdown source (E)" aria-label="Edit the Markdown source" aria-haspopup="dialog" aria-controls="vellum-editor">` + pencilIconSVG() + `</button>`
+		actions = iconButton("edit", "Edit the Markdown source (E)", `aria-haspopup="dialog" aria-controls="vellum-editor"`, lineIcon("", iconPencil)) +
+			iconButton("clipboard", "Copy the rendered document to the clipboard", "", lineIcon("", iconCopy)) +
+			iconButton("pdf", "Download as PDF", "", pdfIconSVG()) +
+			iconButton("reveal", "Show in "+fm, `data-file-manager="`+fm+`"`,
+				`<img class="vellum-icon vellum-fm-icon" src="`+ChromeFileManagerIconPath+`" width="16" height="16" alt="">`) +
+			`<span class="vellum-sep" aria-hidden="true"></span>`
 	}
 	return `<div class="vellum-chrome" ` + attrs + `>` +
+		`<header class="vellum-toolbar">` +
+		`<a class="vellum-btn vellum-home" href="/" title="Recent documents" aria-label="Recent documents">` + markSVG() + `</a>` +
+		iconButton("toc-toggle", "Hide contents", `aria-controls="vellum-toc"`, lineIcon("", iconSidebar)) +
+		`<button type="button" class="vellum-doc" data-vellum="top" title="` + path + `">` +
+		`<span class="vellum-docname">` + name + `</span>` +
+		`<span class="vellum-doctitle" aria-hidden="true"></span>` +
+		`</button>` +
+		`<div class="vellum-toolbar-end">` +
+		actions +
+		`<button type="button" class="vellum-btn vellum-theme-btn" data-vellum="theme" title="Theme: System" aria-label="Theme: System">` +
+		lineIcon("vellum-icon-light", iconSun) + lineIcon("vellum-icon-dark", iconMoon) + lineIcon("vellum-icon-system", iconHalf) +
+		`</button>` +
+		`</div>` +
+		`</header>` +
+		`<div class="vellum-body">` +
 		`<aside class="vellum-toc" id="vellum-toc">` +
 		`<div class="vellum-toc-header">` +
 		`<span class="vellum-toc-title">Contents</span>` +
 		`<div class="vellum-toc-actions">` +
-		`<button type="button" data-vellum="toc-collapse" title="Collapse all" aria-label="Collapse all">↖</button>` +
-		`<button type="button" data-vellum="toc-expand" title="Expand all" aria-label="Expand all">↘</button>` +
+		iconButton("toc-collapse", "Collapse all", "", lineIcon("", iconCollapseAll)) +
+		iconButton("toc-expand", "Expand all", "", lineIcon("", iconExpandAll)) +
 		`</div></div>` +
 		`<nav class="vellum-toc-nav" id="vellum-toc-nav" aria-label="Table of contents"></nav>` +
 		`</aside>` +
 		`<div class="vellum-toc-splitter" id="vellum-toc-splitter" role="separator" aria-orientation="vertical" aria-label="Resize table of contents" tabindex="0"></div>` +
+		`<div class="vellum-toc-scrim" data-vellum="toc-close"></div>` +
 		`<div class="vellum-main">` +
-		`<header class="vellum-toolbar">` +
-		`<button type="button" class="vellum-toc-toggle-btn" data-vellum="toc-toggle" title="Hide table of contents" aria-label="Hide table of contents">«</button>` +
-		`<button type="button" class="vellum-icon-btn" data-vellum="pdf" title="Download as PDF" aria-label="Download as PDF">` + pdfIconSVG() + `</button>` +
-		edit +
-		`<button type="button" class="vellum-icon-btn" data-vellum="clipboard" title="Copy the rendered document to the clipboard" aria-label="Copy the rendered document to the clipboard">` + copyIconSVG() + `</button>` +
-		`<button type="button" class="vellum-icon-btn" data-vellum="reveal" data-file-manager="` + hint.FileManager() + `" title="Show in ` + hint.FileManager() + `" aria-label="Show in ` + hint.FileManager() + `">` +
-		`<img class="vellum-icon vellum-icon-lg vellum-fm-icon" src="` + ChromeFileManagerIconPath + `" width="16" height="16" alt=""></button>` +
-		`<div class="vellum-toolbar-end">` +
-		`<span class="vellum-docname">` + html.EscapeString(name) + `</span>` +
-		`<button type="button" class="vellum-theme-btn" data-vellum="theme" title="Theme: System">◐</button>` +
-		`</div>` +
-		`<span class="vellum-status" id="vellum-status" hidden></span>` +
-		`</header>` +
 		`<div class="vellum-scroll" id="vellum-scroll" tabindex="0" role="region" aria-label="Document">` +
 		`<article class="vellum-article">`
 }
 
 func chromeClose() string {
-	return `</article></div></div>` +
+	return `</article></div></div></div>` +
+		`<span class="vellum-status" id="vellum-status" role="status" hidden></span>` +
 		`<div class="vellum-consent" id="vellum-consent" hidden role="dialog" aria-modal="true" aria-labelledby="vellum-consent-title">` +
 		`<div class="vellum-consent-card">` +
-		`<p id="vellum-consent-title">Toggling a checkbox edits the Markdown file on disk.</p>` +
+		`<div class="vellum-consent-title" id="vellum-consent-title">Change the file?</div>` +
+		`<div class="vellum-consent-text">Ticking a checkbox edits the Markdown file on disk.</div>` +
 		`<div class="vellum-consent-actions">` +
-		`<button type="button" data-vellum="consent-session">This session</button>` +
-		`<button type="button" data-vellum="consent-always">Always allow</button>` +
-		`<button type="button" data-vellum="consent-cancel">Cancel</button>` +
+		`<button type="button" class="vellum-tbtn" data-vellum="consent-cancel">Cancel</button>` +
+		`<button type="button" class="vellum-tbtn" data-vellum="consent-always">Always allow</button>` +
+		`<button type="button" class="vellum-tbtn is-primary" data-vellum="consent-session">Allow this session</button>` +
 		`</div></div></div>` +
 		`<div class="vellum-consent" id="vellum-gone" hidden role="dialog" aria-modal="true" aria-labelledby="vellum-gone-title">` +
 		`<div class="vellum-consent-card">` +
-		`<p id="vellum-gone-title">This file was deleted.</p>` +
+		`<div class="vellum-consent-title" id="vellum-gone-title">This file was deleted.</div>` +
+		`<div class="vellum-consent-text">The page shows the document as it last was.</div>` +
 		`<div class="vellum-consent-actions">` +
-		`<button type="button" data-vellum="gone-dismiss">Dismiss</button>` +
+		`<button type="button" class="vellum-tbtn" data-vellum="gone-dismiss">Dismiss</button>` +
 		`</div></div></div></div>` +
 		`<div class="vellum-editor" id="vellum-editor" hidden role="dialog" aria-modal="true" aria-labelledby="vellum-editor-title">` +
 		`<div class="vellum-editor-panel">` +
@@ -183,25 +236,27 @@ func chromeClose() string {
 		`<span class="vellum-editor-title" id="vellum-editor-title"></span>` +
 		`<span class="vellum-editor-state" id="vellum-editor-state" aria-live="polite"></span>` +
 		`<div class="vellum-editor-actions">` +
-		`<button type="button" data-vellum="ed-save" title="Save (⌘S / Ctrl+S)">Save</button>` +
-		`<button type="button" data-vellum="ed-close" title="Close the editor (Esc)">Done</button>` +
+		`<button type="button" class="vellum-tbtn" data-vellum="ed-close" title="Close the editor (Esc)">Done</button>` +
+		`<button type="button" class="vellum-tbtn is-primary" data-vellum="ed-save" title="Save (⌘S / Ctrl+S)">Save</button>` +
 		`</div></div>` +
 		`<div class="vellum-editor-banner" id="vellum-editor-banner" hidden role="alert"></div>` +
 		`<div class="vellum-editor-host" id="vellum-editor-host"></div>` +
 		`</div></div>` +
 		`<div class="vellum-lightbox" id="vellum-lightbox" hidden role="dialog" aria-modal="true" aria-label="Figure viewer">` +
 		`<div class="vellum-lightbox-bar">` +
-		`<div>` +
-		`<button type="button" data-vellum="lb-out" title="Zoom out">−</button> ` +
-		`<button type="button" data-vellum="lb-in" title="Zoom in">+</button> ` +
-		`<button type="button" data-vellum="lb-reset" title="Fit to window">Fit</button>` +
+		`<div class="vellum-lightbox-zoom">` +
+		iconButton("lb-out", "Zoom out (−)", "", lineIcon("", iconMinus)) +
+		`<span class="vellum-lightbox-level" id="vellum-lightbox-level"></span>` +
+		iconButton("lb-in", "Zoom in (+)", "", lineIcon("", iconPlus)) +
+		iconButton("lb-reset", "Fit to window (0)", "", lineIcon("", iconFit)) +
 		`</div>` +
-		`<span class="vellum-lightbox-hint" id="vellum-lightbox-hint">scroll to zoom · drag to pan · Esc to close</span>` +
-		`<button type="button" data-vellum="lb-close">Close</button>` +
+		iconButton("lb-close", "Close (Esc)", "", lineIcon("", iconClose)) +
 		`</div>` +
 		`<div class="vellum-lightbox-stage" id="vellum-lightbox-stage">` +
 		`<div class="vellum-lightbox-content" id="vellum-lightbox-content"></div>` +
-		`</div></div>`
+		`</div>` +
+		`<div class="vellum-lightbox-hint">Scroll to zoom · drag to pan</div>` +
+		`</div>`
 }
 
 func addBodyClass(htmlDoc, class string) string {

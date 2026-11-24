@@ -6,6 +6,7 @@ package viewer
 import (
 	"bufio"
 	"bytes"
+	_ "embed"
 	"encoding/json"
 	"html"
 	"io"
@@ -120,16 +121,22 @@ func (s *Server) recentTitle(absPath string) string {
 
 func (s *Server) serveHome(w http.ResponseWriter, r *http.Request) {
 	// The list was written by earlier runs, and folders stop being served
-	// when their grant ages out: show only what this server would serve.
+	// when their grant ages out: show only what this server would serve,
+	// and only what is still on disk (a deleted document, or a folder with
+	// no Markdown left, would be a dead row).
 	var docs []recentDoc
 	for _, doc := range s.recentDocs() {
-		if s.checkServed(doc.Path) == nil {
-			docs = append(docs, doc)
+		if s.checkServed(doc.Path) != nil {
+			continue
 		}
+		if info, err := os.Stat(doc.Path); err != nil || info.IsDir() {
+			continue
+		}
+		docs = append(docs, doc)
 	}
 	var dirs []string
 	for _, dir := range recentRoots(docs) {
-		if s.dirServed(dir) {
+		if s.dirServed(dir) && dirHasMarkdown(dir, homeTreeDepth) {
 			dirs = append(dirs, dir)
 		}
 	}
@@ -144,25 +151,39 @@ func (s *Server) serveHome(w http.ResponseWriter, r *http.Request) {
 	_, _ = io.WriteString(w, page)
 }
 
+//go:embed home.css
+var homeCSS string
+
+// homePath shows a path the way a shell would, with the home folder as ~.
+func homePath(path string) string {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return path
+	}
+	if path == home {
+		return "~"
+	}
+	if rest, ok := strings.CutPrefix(path, home+string(filepath.Separator)); ok {
+		return "~" + string(filepath.Separator) + rest
+	}
+	return path
+}
+
 // renderHome lists docs (recent, newest first) and the Markdown tree under
 // each of dirs.
 func renderHome(docs []recentDoc, dirs []string) string {
 	var b bytes.Buffer
-	b.WriteString(`<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">`)
+	b.WriteString(`<!DOCTYPE html><html lang="en" data-vellum-theme="system"><head><meta charset="utf-8">`)
+	b.WriteString(`<meta name="viewport" content="width=device-width, initial-scale=1">`)
 	b.WriteString(`<title>Vellum</title>`)
 	b.WriteString(`<link rel="icon" href="` + html.EscapeString(ChromeFaviconPath) + `" type="image/svg+xml">`)
-	b.WriteString(`<style>
-body{font:16px/1.5 ui-sans-serif,system-ui,sans-serif;margin:2rem auto;max-width:48rem;padding:0 1rem;color:#1f2328}
-a{color:#0969da;text-decoration:none}a:hover{text-decoration:underline}
-h1{font-size:1.6rem}h2{font-size:1.1rem;margin-top:2rem}
-.path{color:#656d76;font-size:.85rem;margin-left:.5rem}
-ul{padding-left:1.2rem}li{margin:.2rem 0}
-</style></head><body><h1>Vellum</h1>`)
+	b.WriteString("<style>\n" + themeCSS + "\n" + homeCSS + "</style></head><body><main>")
+	b.WriteString(`<header><img src="` + html.EscapeString(ChromeFaviconPath) + `" width="26" height="26" alt=""><h1>Vellum</h1></header>`)
 	b.WriteString(`<section id="recent"><h2>Recent</h2>`)
 	if len(docs) == 0 {
 		b.WriteString(`<p>No documents yet. Open a Markdown file with <code>vellum view</code>.</p>`)
 	} else {
-		b.WriteString(`<ul>`)
+		b.WriteString(`<ul class="docs">`)
 		for _, doc := range docs {
 			title := doc.Title
 			if title == "" {
@@ -170,11 +191,11 @@ ul{padding-left:1.2rem}li{margin:.2rem 0}
 			}
 			b.WriteString(`<li><a href="`)
 			b.WriteString(html.EscapeString(pathURL(doc.Path)))
-			b.WriteString(`">`)
+			b.WriteString(`"><span class="title">`)
 			b.WriteString(html.EscapeString(title))
-			b.WriteString(`</a><span class="path">`)
-			b.WriteString(html.EscapeString(doc.Path))
-			b.WriteString(`</span></li>`)
+			b.WriteString(`</span><span class="path">`)
+			b.WriteString(html.EscapeString(homePath(doc.Path)))
+			b.WriteString(`</span></a></li>`)
 		}
 		b.WriteString(`</ul>`)
 	}
@@ -185,12 +206,13 @@ ul{padding-left:1.2rem}li{margin:.2rem 0}
 	}
 	remaining := homeTreeFiles
 	for _, root := range roots {
-		b.WriteString(`<h3>`)
-		b.WriteString(html.EscapeString(root))
-		b.WriteString(`</h3>`)
+		b.WriteString(`<div class="folder"><h3>`)
+		b.WriteString(html.EscapeString(homePath(root)))
+		b.WriteString(`</h3><div class="tree">`)
 		writeTree(&b, root, root, 0, &remaining)
+		b.WriteString(`</div></div>`)
 	}
-	b.WriteString(`</section></body></html>`)
+	b.WriteString(`</section></main></body></html>`)
 	return b.String()
 }
 
@@ -237,8 +259,9 @@ func writeTree(b *bytes.Buffer, root, dir string, depth int, remaining *int) {
 			if !dirHasMarkdown(path, homeTreeDepth-depth-1) {
 				continue
 			}
-			b.WriteString(`<li>`)
+			b.WriteString(`<li><span class="dir">`)
 			b.WriteString(html.EscapeString(name))
+			b.WriteString(`</span>`)
 			writeTree(b, root, path, depth+1, remaining)
 			b.WriteString(`</li>`)
 			continue

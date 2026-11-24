@@ -41,7 +41,7 @@ func TestInjectChrome_ToolbarIconButtons(t *testing.T) {
 		start := strings.LastIndex(out[:i], "<button")
 		end := strings.Index(out[i:], "</button>")
 		button := out[start : i+end]
-		if !strings.Contains(button, `class="vellum-icon-btn"`) || !strings.Contains(button, `aria-label="`) {
+		if !strings.Contains(button, `class="vellum-btn"`) || !strings.Contains(button, `aria-label="`) {
 			t.Errorf("%s button is not an icon button with a label: %s", action, button)
 		}
 		if !strings.Contains(button, "<svg") && !strings.Contains(button, `src="`+ChromeFileManagerIconPath+`"`) {

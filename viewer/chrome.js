@@ -60,7 +60,7 @@
   updateTocSplitter();
 
   function toggleTocSidebar() {
-    if (!toc) return;
+    if (!toc || toc.hidden) return;
     let mobile = false;
     try {
       mobile = window.matchMedia("(max-width: 880px)").matches;
@@ -75,11 +75,21 @@
     updateTocToggleButton();
     updateTocSplitter();
   }
+
+  // On a narrow window the panel lies over the page: a click outside it,
+  // a link in it, or Escape closes it.
+  function closeTocOverlay() {
+    if (!toc || !toc.classList.contains("is-open")) return false;
+    toc.classList.remove("is-open");
+    updateTocToggleButton();
+    return true;
+  }
+
   const status = document.getElementById("vellum-status");
   const lightbox = document.getElementById("vellum-lightbox");
   const stage = document.getElementById("vellum-lightbox-stage");
   const content = document.getElementById("vellum-lightbox-content");
-  const hint = document.getElementById("vellum-lightbox-hint");
+  const zoomLevel = document.getElementById("vellum-lightbox-level");
 
   // The open editor's handle (see the Editor section); declared here
   // because applyTheme runs during start-up and recolours it.
@@ -87,7 +97,6 @@
 
   const THEME_KEY = "vellum-theme";
   const THEME_MODES = ["dark", "system", "light"];
-  const THEME_ICON = { dark: "\u263E", system: "\u25D0", light: "\u2600" };
 
   function systemPrefersDark() {
     try {
@@ -118,7 +127,6 @@
     const themeBtn = chrome.querySelector('[data-vellum="theme"]');
     if (!themeBtn) return;
     const next = nextTheme(mode);
-    themeBtn.textContent = THEME_ICON[mode] || mode;
     themeBtn.title = "Theme: " + themeLabel(mode) + " (click for " + themeLabel(next) + ")";
     themeBtn.setAttribute("aria-label", themeBtn.title);
   }
@@ -156,7 +164,7 @@
   initTheme();
 
   function tocSidebarVisible() {
-    if (!toc) return false;
+    if (!toc || toc.hidden) return false;
     if (toc.classList.contains("is-collapsed")) return false;
     try {
       if (window.matchMedia("(max-width: 880px)").matches) {
@@ -169,10 +177,10 @@
   function updateTocToggleButton() {
     if (!tocToggleBtn) return;
     const visible = tocSidebarVisible();
-    tocToggleBtn.textContent = visible ? "\u00AB" : "\u00BB";
-    const label = visible ? "Hide table of contents" : "Show table of contents";
+    const label = visible ? "Hide contents" : "Show contents";
     tocToggleBtn.title = label;
     tocToggleBtn.setAttribute("aria-label", label);
+    tocToggleBtn.setAttribute("aria-expanded", visible ? "true" : "false");
   }
 
   updateTocToggleButton();
@@ -257,6 +265,7 @@
     status.hidden = !msg;
     status.textContent = msg || "";
     status.classList.toggle("is-error", Boolean(msg) && !ok);
+    status.title = msg && !ok ? "Click to dismiss" : "";
     if (msg && ok) {
       window.setTimeout(function () {
         if (status.textContent === msg) {
@@ -264,6 +273,12 @@
         }
       }, 2500);
     }
+  }
+
+  if (status) {
+    status.addEventListener("click", function () {
+      status.hidden = true;
+    });
   }
 
   function actionURL(name) {
@@ -629,6 +644,15 @@
         toggleTocSidebar();
         return;
       }
+      if (action === "toc-close") {
+        closeTocOverlay();
+        return;
+      }
+      if (action === "top") {
+        if (scrollPane) scrollPane.scrollTop = 0;
+        focusScrollPane();
+        return;
+      }
       if (action === "toc-expand") {
         cancelTOCFill();
         setTOCCollapsed(false);
@@ -713,54 +737,28 @@
     return id;
   }
 
-  // Scroll distance over which a leading h1 lerps from its resting size
-  // to the compact bar. A fixed range keeps the font size a function of
-  // scroll position, not of the height it just computed.
-  const TITLE_PIN_RANGE = 96;
-
-  function leadingTitle() {
-    if (!article) return null;
-    const nodes = article.childNodes;
-    for (let i = 0; i < nodes.length; i++) {
-      const n = nodes[i];
-      if (n.nodeType === Node.TEXT_NODE) {
-        if ((n.textContent || "").trim() === "") continue;
-        return null;
-      }
-      if (n.nodeType !== Node.ELEMENT_NODE) continue;
-      if (n.classList.contains("vellum-contents")) continue;
-      if (n.tagName === "H1") return n;
-      return null;
-    }
-    return null;
-  }
-
-  function pinLeadingTitle() {
-    const h1 = leadingTitle();
-    if (!h1 || !scrollPane) return;
-    h1.classList.add("vellum-pin-title");
-    // Content-Y where the title's top meets the scroll pane. Measured
-    // before any shrink, so a contents block above the title does not
-    // count as travel. The lerp runs over TITLE_PIN_RANGE of scroll
-    // ending at that line, which is when the title sticks.
-    const restY =
-      h1.getBoundingClientRect().top -
-      scrollPane.getBoundingClientRect().top +
-      scrollPane.scrollTop;
+  // The bar names the file. Once the document's title (its first h1)
+  // has scrolled out of the pane, the bar shows the title instead.
+  function trackTitle() {
+    const label = chrome.querySelector(".vellum-doc");
+    const titleEl = chrome.querySelector(".vellum-doctitle");
+    if (!label || !titleEl || !article || !scrollPane) return;
+    const h1 = articleHeadings().find(function (h) {
+      return h.tagName === "H1";
+    });
+    const text = h1 ? (h1.textContent || "").trim() : "";
+    if (!text) return;
+    titleEl.textContent = text;
     let scheduled = false;
     function apply() {
-      const start = Math.max(0, restY - TITLE_PIN_RANGE);
-      const t = Math.max(0, Math.min(1, (scrollPane.scrollTop - start) / TITLE_PIN_RANGE));
-      h1.style.setProperty("--vellum-title-pin", t.toFixed(4));
-      if (article) article.style.setProperty("--vellum-pin-h", h1.offsetHeight + "px");
+      scheduled = false;
+      const gone = h1.getBoundingClientRect().bottom <= scrollPane.getBoundingClientRect().top;
+      label.classList.toggle("is-titled", gone);
     }
     function schedule() {
       if (scheduled) return;
       scheduled = true;
-      requestAnimationFrame(function () {
-        scheduled = false;
-        apply();
-      });
+      requestAnimationFrame(apply);
     }
     scrollPane.addEventListener("scroll", schedule, { passive: true });
     window.addEventListener("resize", schedule);
@@ -775,8 +773,7 @@
     function pinTableHeads() {
       pending = false;
       const paneTop = scrollPane.getBoundingClientRect().top;
-      const title = article.querySelector(".vellum-pin-title");
-      const top = title ? Math.max(paneTop, title.getBoundingClientRect().bottom) : paneTop;
+      const top = paneTop;
       article.querySelectorAll("table").forEach(function (table) {
         const head = table.tHead;
         if (!head) return;
@@ -800,6 +797,9 @@
     scheduleTableHeads();
   }
 
+  // Heading element to its link in the contents panel.
+  const tocLinks = new Map();
+
   function buildTOC() {
     if (!article || !tocNav || !toc) return;
     const headings = Array.prototype.slice.call(
@@ -809,6 +809,7 @@
     });
     if (!headings.length) {
       toc.hidden = true;
+      if (tocToggleBtn) tocToggleBtn.hidden = true;
       updateTocSplitter();
       return;
     }
@@ -834,13 +835,17 @@
       twist.type = "button";
       twist.className = "vellum-toc-twist";
       twist.setAttribute("aria-label", "Toggle section");
-      twist.textContent = "▾";
       twist.hidden = true;
       const a = document.createElement("a");
       // Fragment-only hrefs resolve against <base> (the source directory),
       // which would navigate off the Markdown page.
       a.href = location.pathname + location.search + "#" + encodeURIComponent(id);
       a.textContent = (h.textContent || "").trim() || id;
+      a.addEventListener("click", function () {
+        holdActiveHeading(h);
+        closeTocOverlay();
+      });
+      tocLinks.set(h, a);
       row.appendChild(twist);
       row.appendChild(a);
       li.appendChild(row);
@@ -883,7 +888,7 @@
     if (!kids) return;
     li.classList.toggle("is-collapsed", collapsed);
     const twist = li.querySelector(":scope > .vellum-toc-row > .vellum-toc-twist");
-    if (twist) twist.textContent = collapsed ? "▸" : "▾";
+    if (twist) twist.setAttribute("aria-expanded", collapsed ? "false" : "true");
     updateTOCActionButtons();
   }
 
@@ -977,6 +982,82 @@
   function updateTOCActionButtons() {
     if (tocExpandBtn) tocExpandBtn.disabled = tocFullyExpanded();
     if (tocCollapseBtn) tocCollapseBtn.disabled = !tocCanCollapseFurther();
+    scheduleActiveHeading();
+  }
+
+  // The contents panel marks the section being read: the last heading at
+  // or above the top of the pane (the first one before any is reached,
+  // the last one at the end of the document). When that heading's link is
+  // inside a collapsed section, the section's own link is marked.
+  const ACTIVE_HEADING_SLACK = 24;
+  // After a click in the panel the clicked heading stays marked for this
+  // long, so a short last section the pane cannot scroll to its top is
+  // still the one shown.
+  const ACTIVE_HEADING_HOLD_MS = 600;
+  let activeLink = null;
+  let activeHold = 0;
+  let activeScheduled = false;
+
+  function markActiveHeading(h) {
+    let link = h ? tocLinks.get(h) : null;
+    if (link) {
+      for (let li = link.closest(".vellum-toc-item"); li; li = li.parentElement.closest(".vellum-toc-item")) {
+        const up = li.parentElement.closest(".vellum-toc-item");
+        if (up && up.classList.contains("is-collapsed")) {
+          link = up.querySelector(":scope > .vellum-toc-row > a");
+        }
+      }
+    }
+    if (link === activeLink) return;
+    if (activeLink) {
+      activeLink.classList.remove("vellum-toc-active");
+      activeLink.removeAttribute("aria-current");
+    }
+    activeLink = link;
+    if (!link) return;
+    link.classList.add("vellum-toc-active");
+    link.setAttribute("aria-current", "location");
+    // Keep it in view without moving the page.
+    const r = link.getBoundingClientRect();
+    const t = toc.getBoundingClientRect();
+    if (!t.height) return;
+    const margin = 8;
+    if (r.top < t.top + margin) toc.scrollTop -= t.top + margin - r.top;
+    else if (r.bottom > t.bottom - margin) toc.scrollTop += r.bottom - t.bottom + margin;
+  }
+
+  function updateActiveHeading() {
+    activeScheduled = false;
+    if (!scrollPane || !toc || Date.now() < activeHold) return;
+    const headings = Array.from(tocLinks.keys());
+    if (!headings.length) return;
+    let current = headings[0];
+    if (scrollPane.scrollTop + scrollPane.clientHeight >= scrollPane.scrollHeight - 2 && scrollPane.scrollTop > 0) {
+      current = headings[headings.length - 1];
+    } else {
+      const line = scrollPane.getBoundingClientRect().top + ACTIVE_HEADING_SLACK;
+      for (let i = 0; i < headings.length; i++) {
+        if (headings[i].getBoundingClientRect().top > line) break;
+        current = headings[i];
+      }
+    }
+    markActiveHeading(current);
+  }
+
+  function scheduleActiveHeading() {
+    if (activeScheduled) return;
+    activeScheduled = true;
+    requestAnimationFrame(updateActiveHeading);
+  }
+
+  function holdActiveHeading(h) {
+    activeHold = Date.now() + ACTIVE_HEADING_HOLD_MS;
+    markActiveHeading(h);
+  }
+
+  if (scrollPane) {
+    scrollPane.addEventListener("scroll", scheduleActiveHeading, { passive: true });
+    window.addEventListener("resize", scheduleActiveHeading);
   }
 
   function setTOCCollapsed(collapsed) {
@@ -986,7 +1067,7 @@
       if (!kids) return;
       li.classList.toggle("is-collapsed", collapsed);
       const twist = li.querySelector(":scope > .vellum-toc-row > .vellum-toc-twist");
-      if (twist) twist.textContent = collapsed ? "▸" : "▾";
+      if (twist) twist.setAttribute("aria-expanded", collapsed ? "false" : "true");
     });
     updateTOCActionButtons();
   }
@@ -1261,7 +1342,7 @@
       const b = document.createElement("button");
       b.type = "button";
       b.textContent = a.label;
-      if (a.primary) b.className = "is-primary";
+      b.className = a.primary ? "vellum-tbtn is-primary" : "vellum-tbtn";
       b.addEventListener("click", a.run);
       row.appendChild(b);
     });
@@ -1294,14 +1375,14 @@
   // Anchors are [{y, line}] in scroll-content coordinates, sorted by y,
   // with line non-decreasing (a point that would go backwards is
   // dropped). Skipped: footnotes (rendered at the end, defined
-  // anywhere), the generated contents block, the pinned title and table
-  // internals (both move while sticky).
+  // anywhere), the generated contents block and table internals (a
+  // table's head moves while it is pinned).
   function sourceAnchors(totalLines) {
     const pts = [{ y: 0, line: 1 }];
     if (article && scrollPane) {
       const origin = scrollPane.getBoundingClientRect().top - scrollPane.scrollTop;
       article.querySelectorAll("[data-source-line]").forEach(function (el) {
-        if (el.closest(".footnotes, .vellum-contents, .vellum-pin-title")) return;
+        if (el.closest(".footnotes, .vellum-contents")) return;
         const table = el.closest("table");
         if (table && table !== el) return;
         const first = parseInt(el.getAttribute("data-source-line"), 10);
@@ -1336,34 +1417,21 @@
     return anchors[0][to];
   }
 
-  // Height of the pinned title over the top of the pane; content under
-  // it is not what the reader is looking at.
-  function pinnedTitleInset() {
-    if (!article || !scrollPane) return 0;
-    const title = article.querySelector(".vellum-pin-title");
-    if (!title) return 0;
-    return Math.max(0, title.getBoundingClientRect().bottom - scrollPane.getBoundingClientRect().top);
-  }
-
   // The (fractional) source line at the top of what the reader sees.
   function viewSourceLine(totalLines) {
     if (!scrollPane || scrollPane.scrollTop < 1) return 1;
-    const y = scrollPane.scrollTop + pinnedTitleInset();
-    return mapAnchors(sourceAnchors(totalLines), y, "y", "line");
+    return mapAnchors(sourceAnchors(totalLines), scrollPane.scrollTop, "y", "line");
   }
 
   // Scroll the page so source line (fractional) is at the top of what
-  // the reader sees. Two passes: the pinned title's height depends on
-  // the scroll position.
+  // the reader sees.
   function scrollViewToSourceLine(line, totalLines) {
     if (!scrollPane) return;
     if (!(line > 1)) {
       scrollPane.scrollTop = 0;
       return;
     }
-    const y = mapAnchors(sourceAnchors(totalLines), line, "line", "y");
-    scrollPane.scrollTop = y;
-    scrollPane.scrollTop = y - pinnedTitleInset();
+    scrollPane.scrollTop = mapAnchors(sourceAnchors(totalLines), line, "line", "y");
   }
 
   // Carrying a page selection into the editor. The page shows rendered
@@ -1782,7 +1850,7 @@
 
   buildTOC();
   fillTOC();
-  pinLeadingTitle();
+  trackTitle();
   restoreScroll();
   hydrateDeferred();
   focusScrollPane();
@@ -1835,10 +1903,7 @@
     lb.x = (stage.clientWidth - w * lb.scale) / 2;
     lb.y = (stage.clientHeight - h * lb.scale) / 2;
     applyTransform();
-    if (hint) {
-      hint.textContent =
-        Math.round(lb.scale * 100) + "% · scroll to zoom · drag to pan · Esc to close";
-    }
+    if (zoomLevel) zoomLevel.textContent = Math.round(lb.scale * 100) + "%";
   }
 
   function svgViewBoxSize(svg) {
@@ -1900,6 +1965,7 @@
       displayEl = document.createElement("img");
       displayEl.alt = "";
       displayEl.src = svgDataUrl(svg);
+      if (svg.closest(".mermaid-svg")) displayEl.className = "is-diagram";
       if (size) {
         lb.naturalW = size.w;
         lb.naturalH = size.h;
@@ -1955,10 +2021,7 @@
     lb.y = sy - (sy - lb.y) * ratio;
     lb.scale = next;
     applyTransform();
-    if (hint) {
-      hint.textContent =
-        Math.round(lb.scale * 100) + "% · scroll to zoom · drag to pan · Esc to close";
-    }
+    if (zoomLevel) zoomLevel.textContent = Math.round(lb.scale * 100) + "%";
   }
 
   if (article) {
@@ -2059,6 +2122,9 @@
   document.addEventListener("keydown", function (ev) {
     if (goneEl && !goneEl.hidden && ev.key === "Escape") {
       hideGone();
+      return;
+    }
+    if (ev.key === "Escape" && !ev.defaultPrevented && !editorIsOpen() && (!lightbox || lightbox.hidden) && (!consentEl || consentEl.hidden) && closeTocOverlay()) {
       return;
     }
     if (consentEl && !consentEl.hidden && ev.key === "Escape") {

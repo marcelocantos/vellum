@@ -259,4 +259,12 @@ func TestInjectChrome_EditButtonAndModal(t *testing.T) {
 	if strings.Contains(waiting, `data-vellum="edit"`) || strings.Contains(waiting, "data-editor=") {
 		t.Error("waiting page offers an editor for a file that does not exist")
 	}
+	for _, action := range []string{"pdf", "clipboard", "reveal"} {
+		if strings.Contains(waiting, `data-vellum="`+action+`"`) {
+			t.Errorf("waiting page offers %s for a file that does not exist", action)
+		}
+	}
+	if !strings.Contains(waiting, `data-vellum="theme"`) || !strings.Contains(waiting, `class="vellum-btn vellum-home"`) {
+		t.Error("waiting page lost the theme button or the home link")
+	}
 }

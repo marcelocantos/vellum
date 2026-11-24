@@ -1,7 +1,8 @@
 // Table layout journey: in Chrome and Firefox, at several window widths,
 // the viewer's page never scrolls sideways, narrow tables line up with the
-// prose, and wide tables are centred on the column inside the panel's
-// 32px gutters. Firefox counts a transformed element's untransformed box
+// prose, wide tables are centred on the column inside the panel's
+// 32px gutters, a long code line wraps inside its block, and a block
+// narrower than the column (a diagram) is centred, not pushed right. Firefox counts a transformed element's untransformed box
 // as scrollable overflow, so it is the browser that catches a table laid
 // out past the panel's right edge.
 //
@@ -33,6 +34,15 @@ const markdown = [
   ...Array.from({ length: 8 }, (_, i) => `| Constant form ${i} with several words | ${longCell} ${i} |`),
   "",
   "More prose after the tables.",
+  "",
+  "```mermaid",
+  "graph TD",
+  "  A --> B",
+  "```",
+  "",
+  "```js",
+  "const row = { " + Array.from({ length: 30 }, (_, i) => `field${i}: value${i}`).join(", ") + " };",
+  "```",
   "",
 ].join("\n");
 
@@ -73,7 +83,23 @@ const markdown = [
               const inside = box.left >= panel.left + gutter - tolerance && box.right <= panel.left + scroll.clientWidth - gutter + tolerance;
               return { narrow, placed, inside, box: [Math.round(box.left), Math.round(box.right)] };
             });
-            return { overflow: scroll.scrollWidth - scroll.clientWidth, tables };
+            // Blocks other than tables: inside the column, and a narrow one
+            // either starts at the column's left edge or is centred on it.
+            const blocks = [...document.querySelectorAll(".vellum-article > :not(table)")].map((e) => {
+              const box = e.getBoundingClientRect();
+              const inside = box.left >= prose.left - tolerance && box.right <= prose.right + tolerance;
+              const centred = Math.abs((box.left + box.right) / 2 - (prose.left + prose.right) / 2) < tolerance;
+              return { tag: e.tagName + (e.className ? "." + e.className : ""), ok: inside && (centred || Math.abs(box.left - prose.left) < tolerance), box: [Math.round(box.left), Math.round(box.right)] };
+            });
+            const diagram = document.querySelector(".vellum-article > .mermaid-svg");
+            const code = document.querySelector(".vellum-article > pre");
+            return {
+              overflow: scroll.scrollWidth - scroll.clientWidth,
+              tables,
+              blocks,
+              diagram: Boolean(diagram),
+              codeOverflow: code ? code.scrollWidth - code.clientWidth : -1,
+            };
           }, { gutter, tolerance });
           if (r.overflow > 0) failures.push(`${name} ${width}: page scrolls sideways by ${r.overflow}px`);
           if (r.tables.length !== 2) failures.push(`${name} ${width}: expected 2 tables, got ${r.tables.length}`);
@@ -82,6 +108,9 @@ const markdown = [
             if (!t.inside) failures.push(`${name} ${width}: table ${i} outside the panel gutters at ${t.box}`);
           });
           if (width >= 1400 && r.tables[1] && r.tables[1].narrow) failures.push(`${name} ${width}: wide fixture table did not grow past the column`);
+          r.blocks.filter((b) => !b.ok).forEach((b) => failures.push(`${name} ${width}: ${b.tag} misplaced at ${b.box}`));
+          if (!r.diagram) failures.push(`${name} ${width}: fixture diagram block missing`);
+          if (r.codeOverflow !== 0) failures.push(`${name} ${width}: long code line overflows its block by ${r.codeOverflow}px`);
           await page.close();
         }
       } finally {
@@ -96,7 +125,7 @@ const markdown = [
     failures.forEach((f) => console.error("FAIL: " + f));
     process.exitCode = 1;
   } else {
-    console.log(`PASS: chrome and firefox at ${widths.join(", ")}px: no sideways page scroll, tables placed`);
+    console.log(`PASS: chrome and firefox at ${widths.join(", ")}px: no sideways page scroll, tables and blocks placed, code wraps`);
   }
 })().catch((e) => {
   console.error(e);
