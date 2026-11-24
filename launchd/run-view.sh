@@ -14,6 +14,10 @@ fi
 export USER="${USER:-$(id -un)}"
 export PATH="/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:${HOME}/.cargo/bin:${HOME}/.local/bin:${HOME}/.py/bin:${HOME}/go/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 
+# The T3 Code listener defaults to the view port plus one, which bullseye
+# holds on this machine (127.0.0.1:18743).
+export VELLUM_T3_ADDR="${VELLUM_T3_ADDR:-127.0.0.1:18747}"
+
 if [ -x "$ROOT/vellum" ]; then
   exec "$ROOT/vellum" serve-view
 fi
