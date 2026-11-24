@@ -3,6 +3,13 @@
   if (!chrome) return;
 
   const source = chrome.getAttribute("data-source") || "";
+  // Where the viewer's own routes are, relative to this page. A page shown
+  // inside T3 Code is reached through T3's gateway, where an absolute
+  // /_vellum/ would address T3, so the server names a relative root.
+  const apiRoot = chrome.getAttribute("data-api") || "/_vellum/";
+  // An embedded page (data-embedded) is shown in another application's
+  // frame: it has no storage, and cannot open windows or download.
+  const embedded = chrome.hasAttribute("data-embedded");
   const article = chrome.querySelector(".vellum-article");
   const scrollPane = document.getElementById("vellum-scroll");
   const toc = document.getElementById("vellum-toc");
@@ -282,7 +289,7 @@
   }
 
   function actionURL(name) {
-    return "/_vellum/" + name + "?path=" + encodeURIComponent(source);
+    return apiRoot + name + "?path=" + encodeURIComponent(source);
   }
 
   const SCROLL_KEY = "vellum-scroll:" + source;
@@ -307,10 +314,21 @@
     if (stamp) loadStamp = stamp;
   }
 
+  // The server ends a write's answer, and a conflict's, with a line
+  // "stamp <stamp>". It is read from the body, never from a response
+  // header: a proxy between the page and the viewer may drop headers.
   function parseStampLine(text) {
-    const line = String(text || "").replace(/\s+$/, "");
+    const lines = String(text || "").replace(/\s+$/, "").split("\n");
+    const line = lines[lines.length - 1];
     if (line.indexOf("stamp ") === 0) return line.slice(6);
     return "";
+  }
+
+  // A failed answer's text for the reader, without its stamp line.
+  function errorText(text, fallback) {
+    const lines = String(text || "").replace(/\s+$/, "").split("\n");
+    if (lines[lines.length - 1].indexOf("stamp ") === 0) lines.pop();
+    return lines.join("\n").trim() || fallback;
   }
 
   function articleHeadings() {
@@ -474,16 +492,15 @@
   // is the state the reader saw before clicking.
   function postTaskToggle(index, line, wasChecked) {
     const u =
-      "/_vellum/task-toggle?path=" + encodeURIComponent(source) +
+      actionURL("task-toggle") +
       "&index=" + encodeURIComponent(String(index)) +
       "&line=" + encodeURIComponent(String(line)) +
-      "&checked=" + (wasChecked ? "1" : "0");
-    const headers = {};
-    headers["X-Vellum-Stamp"] = loadStamp || "";
-    return fetch(u, { method: "POST", headers: headers }).then(function (resp) {
+      "&checked=" + (wasChecked ? "1" : "0") +
+      "&stamp=" + encodeURIComponent(loadStamp || "");
+    return fetch(u, { method: "POST" }).then(function (resp) {
       return resp.text().then(function (text) {
         if (!resp.ok) {
-          throw new Error(text.trim() || resp.statusText);
+          throw new Error(errorText(text, resp.statusText));
         }
         return text;
       });
@@ -529,8 +546,9 @@
   }
 
   function watchURL() {
-    const proto = location.protocol === "https:" ? "wss:" : "ws:";
-    return proto + "//" + location.host + "/_vellum/watch?path=" + encodeURIComponent(source);
+    const u = new URL(actionURL("watch"), location.href);
+    u.protocol = u.protocol === "https:" ? "wss:" : "ws:";
+    return u.href;
   }
 
   function startWatch() {
@@ -1302,7 +1320,6 @@
   const editorSaveBtn = editorRoot ? editorRoot.querySelector('[data-vellum="ed-save"]') : null;
   const editorSrc = chrome.getAttribute("data-editor") || "";
   const editBtn = chrome.querySelector('[data-vellum="edit"]');
-  const STAMP_HEADER = "X-Vellum-Stamp";
   let editorModule = null;
   let edStamp = "";
   let edSaving = 0;
@@ -1314,14 +1331,17 @@
   }
 
   function editURL() {
-    return "/_vellum/edit?path=" + encodeURIComponent(source);
+    return actionURL("edit");
   }
 
+  // The source arrives after a first line "stamp <stamp>".
   function fetchSource() {
-    return fetch(editURL(), { cache: "no-store" }).then(function (resp) {
+    return fetch(editURL() + "&stampline=1", { cache: "no-store" }).then(function (resp) {
       return resp.text().then(function (text) {
         if (!resp.ok) throw new Error(text.trim() || resp.statusText);
-        return { text: text, stamp: resp.headers.get(STAMP_HEADER) || "" };
+        const nl = text.indexOf("\n");
+        if (text.indexOf("stamp ") !== 0 || nl < 0) throw new Error("the viewer sent no stamp for this file");
+        return { text: text.slice(nl + 1), stamp: text.slice(6, nl) };
       });
     });
   }
@@ -1659,19 +1679,22 @@
     const handle = ed;
     const snap = handle.snapshot();
     const headers = { "Content-Type": "text/markdown; charset=utf-8" };
-    headers[STAMP_HEADER] = edStamp;
     edSaving++;
     setEditorState("Saving…", "");
-    return fetch(editURL(), { method: "PUT", headers: headers, body: handle.getText() })
+    return fetch(editURL() + "&stamp=" + encodeURIComponent(edStamp), {
+      method: "PUT",
+      headers: headers,
+      body: handle.getText(),
+    })
       .then(function (resp) {
         return resp.text().then(function (body) {
-          const stamp = resp.headers.get(STAMP_HEADER) || "";
+          const stamp = parseStampLine(body);
           if (resp.status === 409) {
             setEditorState("Not saved", "error");
             editorConflict(stamp, "The file changed on disk since you opened it.");
             return false;
           }
-          if (!resp.ok) throw new Error(body.trim() || resp.statusText);
+          if (!resp.ok) throw new Error(errorText(body, resp.statusText));
           edStamp = stamp;
           viewStale = true;
           if (ed === handle) {

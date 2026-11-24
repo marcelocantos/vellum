@@ -28,6 +28,13 @@ const (
 	// response's current stamp, the PUT request's expected stamp, and the
 	// PUT or 409 response's stamp after the write or conflict.
 	StampHeader = "X-Vellum-Stamp"
+	// StampParam carries the same stamp in the query, for a page whose
+	// request headers do not reach the server (T3's plugin gateway
+	// forwards only Accept and Content-Type).
+	StampParam = "stamp"
+	// StampLineParam, set to "1" on a GET, puts "stamp <stamp>\n" before
+	// the source in the body, for a page that cannot read response headers.
+	StampLineParam = "stampline"
 
 	// maxEditBytes bounds a PUT body. Markdown this large is not edited
 	// in a browser; the bound keeps a runaway client from filling memory.
@@ -134,11 +141,14 @@ func (s *Server) handleEdit(w http.ResponseWriter, r *http.Request) {
 		}
 		w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
 		w.Header().Set(StampHeader, sourceStamp(info))
+		if r.URL.Query().Get(StampLineParam) == "1" {
+			_, _ = io.WriteString(w, "stamp "+sourceStamp(info)+"\n")
+		}
 		_, _ = w.Write(data)
 		return
 	}
 
-	expected := strings.TrimSpace(r.Header.Get(StampHeader))
+	expected := requestStamp(r)
 	if expected == "" {
 		http.Error(w, "missing "+StampHeader, http.StatusPreconditionRequired)
 		return
@@ -162,8 +172,7 @@ func (s *Server) handleEdit(w http.ResponseWriter, r *http.Request) {
 	// user chooses to overwrite, which they do by resending with the
 	// stamp this conflict reports.
 	if current := sourceStamp(info); current != expected {
-		w.Header().Set(StampHeader, current)
-		http.Error(w, "the file changed on disk since it was opened", http.StatusConflict)
+		stampConflict(w, current, "the file changed on disk since it was opened")
 		return
 	}
 	after, err := s.writeServed(absPath, body)
@@ -174,4 +183,21 @@ func (s *Server) handleEdit(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set(StampHeader, stamp)
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	_, _ = io.WriteString(w, "stamp "+stamp+"\n")
+}
+
+// requestStamp is the source stamp a write names: StampHeader, or
+// StampParam when the header is absent.
+func requestStamp(r *http.Request) string {
+	if v := strings.TrimSpace(r.Header.Get(StampHeader)); v != "" {
+		return v
+	}
+	return strings.TrimSpace(r.URL.Query().Get(StampParam))
+}
+
+// stampConflict answers 409 with the stamp the client should hold now, in
+// StampHeader and as the body's last line ("stamp <stamp>"), so a client
+// that cannot read response headers still learns it.
+func stampConflict(w http.ResponseWriter, stamp, msg string) {
+	w.Header().Set(StampHeader, stamp)
+	http.Error(w, msg+"\nstamp "+stamp, http.StatusConflict)
 }

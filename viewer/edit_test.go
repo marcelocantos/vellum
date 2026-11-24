@@ -268,3 +268,48 @@ func TestInjectChrome_EditButtonAndModal(t *testing.T) {
 		t.Error("waiting page lost the theme button or the home link")
 	}
 }
+
+// TestEdit_StampWithoutHeaders: a page whose headers a proxy drops (T3's
+// plugin gateway) reads and writes with the stamp in the body and query.
+func TestEdit_StampWithoutHeaders(t *testing.T) {
+	src := "# One\r\n\r\nstamp not a stamp line\r\n"
+	md, _, u := editTestDoc(t, src)
+
+	resp, body := doEdit(t, http.MethodGet, u+"&"+StampLineParam+"=1", "", "", nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status %d: %s", resp.StatusCode, body)
+	}
+	info, _ := os.Stat(md)
+	first, rest, ok := strings.Cut(body, "\n")
+	if !ok || first != "stamp "+sourceStamp(info) || rest != src {
+		t.Fatalf("body %q, want a stamp line then the file byte for byte", body)
+	}
+	stamp := strings.TrimPrefix(first, "stamp ")
+
+	if err := os.WriteFile(md, []byte("# Someone else's edit\n"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	resp, body = doEdit(t, http.MethodPut, u+"&"+StampParam+"="+url.QueryEscape(stamp), "", "# Mine\n", nil)
+	if resp.StatusCode != http.StatusConflict {
+		t.Fatalf("status %d: %s, want 409", resp.StatusCode, body)
+	}
+	info, _ = os.Stat(md)
+	lines := strings.Split(strings.TrimRight(body, "\n"), "\n")
+	current := strings.TrimPrefix(lines[len(lines)-1], "stamp ")
+	if len(lines) < 2 || current != sourceStamp(info) {
+		t.Fatalf("409 body %q, want a message and a last line naming the stamp on disk %q", body, sourceStamp(info))
+	}
+
+	resp, body = doEdit(t, http.MethodPut, u+"&"+StampParam+"="+url.QueryEscape(current), "", "# Mine\n", nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("overwrite status %d: %s", resp.StatusCode, body)
+	}
+	if got, _ := os.ReadFile(md); string(got) != "# Mine\n" {
+		t.Fatalf("file %q after overwrite", got)
+	}
+
+	resp, body = doEdit(t, http.MethodPut, u, "", "# No stamp\n", nil)
+	if resp.StatusCode != http.StatusPreconditionRequired {
+		t.Fatalf("status %d: %s, want 428 with no stamp at all", resp.StatusCode, body)
+	}
+}

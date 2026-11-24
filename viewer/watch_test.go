@@ -514,7 +514,7 @@ func TestWatch_HeartbeatPing(t *testing.T) {
 func TestInjectChrome_IncludesWatchScript(t *testing.T) {
 	in := `<!DOCTYPE html><html><head><title>T</title></head><body><h1 id="hello">Hello</h1></body></html>`
 	out := injectChrome(in, &chromePage{SourcePath: "/docs/note.md"})
-	if !strings.Contains(out, "/_vellum/watch") {
+	if !strings.Contains(out, `actionURL("watch")`) {
 		t.Fatalf("missing watch URL:\n%s", out)
 	}
 	if !strings.Contains(out, "startWatch()") {

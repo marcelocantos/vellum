@@ -64,10 +64,10 @@ func clickTask(t *testing.T, ts, md, stamp string, task servedTask) (int, string
 	}
 	u := ts + ChromeTaskTogglePath + "?path=" + url.QueryEscape(md) +
 		"&index=" + strconv.Itoa(task.index) + "&line=" + strconv.Itoa(task.line) + "&checked=" + was
-	req, _ := http.NewRequest(http.MethodPost, u, nil)
 	if stamp != "" {
-		req.Header.Set(StampHeader, stamp)
+		u += "&" + StampParam + "=" + url.QueryEscape(stamp)
 	}
+	req, _ := http.NewRequest(http.MethodPost, u, nil)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
@@ -322,7 +322,7 @@ func TestChromeJS_TaskToggleIsCheckboxOnly(t *testing.T) {
 
 // chrome.js names the task the way the server checks it.
 func TestChromeJS_TaskToggleNamesTheTask(t *testing.T) {
-	for _, want := range []string{`"&line="`, `"&checked="`, `"X-Vellum-Stamp"`, `getAttribute("data-stamp")`, `getAttribute("data-task-line")`, "toggleChain"} {
+	for _, want := range []string{`"&line="`, `"&checked="`, `"&stamp="`, `getAttribute("data-stamp")`, `getAttribute("data-task-line")`, "toggleChain"} {
 		if !strings.Contains(chromeJS, want) {
 			t.Errorf("chrome.js lacks %s", want)
 		}

@@ -78,7 +78,7 @@ func (s *Server) handleTaskToggle(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "missing or invalid index, line or checked (reload the page)", http.StatusBadRequest)
 		return
 	}
-	expected := strings.TrimSpace(r.Header.Get(StampHeader))
+	expected := requestStamp(r)
 	if expected == "" {
 		http.Error(w, "missing "+StampHeader+" (reload the page)", http.StatusPreconditionRequired)
 		return
@@ -97,14 +97,12 @@ func (s *Server) handleTaskToggle(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	if current := sourceStamp(info); current != expected {
-		w.Header().Set(StampHeader, current)
-		http.Error(w, "the file changed on disk since this page was rendered; reload to see the document as it is now", http.StatusConflict)
+		stampConflict(w, current, "the file changed on disk since this page was rendered; reload to see the document as it is now")
 		return
 	}
 	out, err := toggleTask(src, index, line, was == "1")
 	if err != nil {
-		w.Header().Set(StampHeader, expected)
-		http.Error(w, err.Error(), http.StatusConflict)
+		stampConflict(w, expected, err.Error())
 		return
 	}
 	again, err := s.statServed(absPath)
@@ -112,8 +110,7 @@ func (s *Server) handleTaskToggle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if current := sourceStamp(again); current != expected {
-		w.Header().Set(StampHeader, current)
-		http.Error(w, "the file changed on disk since this page was rendered; reload to see the document as it is now", http.StatusConflict)
+		stampConflict(w, current, "the file changed on disk since this page was rendered; reload to see the document as it is now")
 		return
 	}
 	after, err := s.writeServed(absPath, out)
