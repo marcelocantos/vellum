@@ -20,6 +20,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/coder/websocket"
 
@@ -49,6 +50,15 @@ import (
 //     therefore addressed by one base64url segment, never by its path.
 //   - It forwards only Accept and Content-Type and returns only
 //     Content-Type, so stamps travel in the query and the body (edit.go).
+//     The one other response header it reads is T3-Content-Security-Policy
+//     (builds from 2026-11-24): a policy enforced beside its own. Every
+//     response carries one, but nothing here relies on it, because an
+//     older gateway ignores it.
+//
+// A click at the machine the viewer runs on opens the document in the
+// browser, as vellum view does; a click anywhere else gets the card. T3
+// asks with an `activate` request that says where the reader is, and shows
+// the card when the answer declines.
 //
 // The protocol is T3 Code's panel-plugin protocol version 1
 // (docs/operations/panel-plugins.md in the T3 Code plugin build).
@@ -76,6 +86,17 @@ const (
 	t3LinkID = "markdown"
 	// t3LinkGlob is matched by T3 against a file link's absolute path.
 	t3LinkGlob = "/**/*.{md,markdown}"
+	// t3LinkClick hands a click to the plugin; a decline shows the card.
+	t3LinkClick = "activate"
+	// t3PolicyHeader carries a Content-Security-Policy for T3's gateway to
+	// enforce beside its own. In it 'self' is the gateway's origin.
+	t3PolicyHeader = "T3-Content-Security-Policy"
+	// t3InertPolicy is that policy for everything but a document page: if
+	// the frame is navigated to the response, nothing in it runs or loads.
+	t3InertPolicy = "default-src 'none'; style-src 'unsafe-inline'; img-src data:; sandbox"
+	// t3OpenBudget is how long an open at the machine may take before the
+	// answer goes out as handled: T3 waits two seconds for it.
+	t3OpenBudget = time.Second
 	// t3CardHeight is the card's starting height in px (T3 allows 80 to
 	// 800). The page asks for the whole window once it is shown.
 	t3CardHeight = 640
@@ -182,6 +203,7 @@ func (s *Server) T3Handler() http.Handler {
 		}
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set(cspHeader, lockdownCSP)
+		w.Header().Set(t3PolicyHeader, t3InertPolicy)
 		mux.ServeHTTP(w, r)
 	})
 }
@@ -199,6 +221,9 @@ type t3Link struct {
 	ID    string `json:"id"`
 	Glob  string `json:"glob"`
 	Click string `json:"click"`
+	// Hover false: the card is a whole document, so it is shown on a
+	// click (or a declined activation), never for pointing at the link.
+	Hover bool `json:"hover"`
 }
 
 func (s *Server) handleT3Plugin(w http.ResponseWriter, r *http.Request) {
@@ -217,7 +242,7 @@ func (s *Server) handleT3Plugin(w http.ResponseWriter, r *http.Request) {
 		ID:       T3PluginID,
 		Name:     T3PluginName,
 		Scopes:   []string{"links"},
-		Links:    []t3Link{{ID: t3LinkID, Glob: t3LinkGlob, Click: "card"}},
+		Links:    []t3Link{{ID: t3LinkID, Glob: t3LinkGlob, Click: t3LinkClick}},
 	})
 }
 
@@ -230,6 +255,15 @@ type t3Frame struct {
 	Scope          string `json:"scope"`
 	LinkID         string `json:"linkId"`
 	URL            string `json:"url"`
+	// Client is set on an activate request: Local says the reader sits
+	// at the machine this viewer runs on.
+	Client struct {
+		Local bool `json:"local"`
+	} `json:"client"`
+}
+
+type t3Activation struct {
+	Handled bool `json:"handled"`
 }
 
 type t3WebCard struct {
@@ -238,11 +272,12 @@ type t3WebCard struct {
 }
 
 type t3Result struct {
-	Type      string     `json:"type"`
-	RequestID string     `json:"requestId"`
-	OK        bool       `json:"ok"`
-	Error     string     `json:"error,omitempty"`
-	Web       *t3WebCard `json:"web,omitempty"`
+	Type      string        `json:"type"`
+	RequestID string        `json:"requestId"`
+	OK        bool          `json:"ok"`
+	Error     string        `json:"error,omitempty"`
+	Web       *t3WebCard    `json:"web,omitempty"`
+	Activate  *t3Activation `json:"activate,omitempty"`
 }
 
 type t3Panels struct {
@@ -251,9 +286,9 @@ type t3Panels struct {
 	Panels         []string `json:"panels"`
 }
 
-// serveT3Socket is T3's protocol connection. The plugin serves link cards
-// only, so the one request that matters is a `surface` for a link: the
-// user pointed at or clicked a Markdown file link in a chat.
+// serveT3Socket is T3's protocol connection. The plugin claims Markdown
+// file links only, so two requests matter: `activate` (the user clicked
+// one) and `surface` for a link (T3 wants the card).
 func (s *Server) serveT3Socket(w http.ResponseWriter, r *http.Request) {
 	conn, err := websocket.Accept(w, r, nil)
 	if err != nil {
@@ -278,6 +313,8 @@ func (s *Server) serveT3Socket(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case frame.Type == "surface" && frame.RequestID != "":
 			reply = s.t3LinkCard(&frame)
+		case frame.Type == "activate" && frame.RequestID != "":
+			reply = s.t3Activate(ctx, &frame)
 		case frame.Type == "subscribe" && frame.SubscriptionID != "":
 			// No panels: an empty snapshot keeps T3 from waiting for one.
 			reply = t3Panels{Type: "panels", SubscriptionID: frame.SubscriptionID, Panels: []string{}}
@@ -296,19 +333,62 @@ func (s *Server) serveT3Socket(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// t3LinkCard answers a link's surface request with the document's page.
-// This is the one place the T3 listener grants a folder: the request is
-// T3 relaying the user's own pointer on a link, the same act as opening
-// the document with vellum view.
-func (s *Server) t3LinkCard(frame *t3Frame) t3Result {
-	res := t3Result{Type: "result", RequestID: frame.RequestID}
+// t3LinkPath is the Markdown file a link request names, or the reason it
+// names none.
+func t3LinkPath(frame *t3Frame) (abs, refusal string) {
 	if frame.Scope != "link" || frame.LinkID != t3LinkID {
-		res.Error = "Vellum shows Markdown file links only."
+		return "", "Vellum shows Markdown file links only."
+	}
+	abs = filepath.Clean(frame.URL)
+	if !filepath.IsAbs(frame.URL) || !isMarkdownPath(abs) || filepath.Dir(abs) == abs {
+		return "", "Not a Markdown file path."
+	}
+	return abs, ""
+}
+
+// t3Activate answers a click on a link. At the machine the viewer runs on
+// the document opens in the browser, on the view listener, where that
+// navigation is what serves its folder. Anywhere else the answer declines
+// and T3 shows the card. An open that fails declines too, so the reader
+// still gets the document.
+func (s *Server) t3Activate(ctx context.Context, frame *t3Frame) t3Result {
+	res := t3Result{Type: "result", RequestID: frame.RequestID}
+	abs, refusal := t3LinkPath(frame)
+	if refusal != "" {
+		res.Error = refusal
 		return res
 	}
-	abs := filepath.Clean(frame.URL)
-	if !filepath.IsAbs(frame.URL) || !isMarkdownPath(abs) || filepath.Dir(abs) == abs {
-		res.Error = "Not a Markdown file path."
+	res.OK = true
+	res.Activate = &t3Activation{}
+	if !frame.Client.Local {
+		return res
+	}
+	open := s.OpenURL
+	if open == nil {
+		open = openPath
+	}
+	opened := make(chan error, 1)
+	go func() { opened <- open(ViewURL(s.Origin(), abs)) }()
+	select {
+	case err := <-opened:
+		res.Activate.Handled = err == nil
+	case <-time.After(t3OpenBudget):
+		// Still starting the browser: T3 must not open the file as well.
+		res.Activate.Handled = true
+	case <-ctx.Done():
+	}
+	return res
+}
+
+// t3LinkCard answers a link's surface request with the document's page.
+// This is the one place the T3 listener grants a folder: the request is
+// T3 relaying the user's own click on a link, the same act as opening the
+// document with vellum view.
+func (s *Server) t3LinkCard(frame *t3Frame) t3Result {
+	res := t3Result{Type: "result", RequestID: frame.RequestID}
+	abs, refusal := t3LinkPath(frame)
+	if refusal != "" {
+		res.Error = refusal
 		return res
 	}
 	if err := s.grant(abs); err != nil {

@@ -2,7 +2,7 @@
 // followed, reloaded, ticked and edited inside a sandboxed frame that
 // reaches a real serve-view only through a gateway applying the rules of
 // T3 Code's plugin gateway (apps/server/src/plugins/PluginGatewayHttp.ts
-// in the T3 Code plugin build, at 64d6716):
+// in the T3 Code plugin build, at 36fe4c0):
 //
 //   - a capability prefix, /api/plugin-panels/<token>/, over the plugin's
 //     whole origin;
@@ -11,6 +11,10 @@
 //   - only Accept and Content-Type reach the plugin, only Content-Type
 //     comes back, with the gateway's own Content-Security-Policy and CORS
 //     headers (allowed request headers: content-type, accept);
+//   - a policy the plugin sends in T3-Content-Security-Policy is enforced
+//     beside the gateway's, without its report directives; over 4 KiB the
+//     request fails. An older gateway (64d6716) ignores that header, and
+//     the page is also loaded through one of those;
 //   - requests are limited to 1 MiB and responses to 8 MiB; an upstream
 //     redirect is a 502;
 //   - a WebSocket is relayed with no Origin.
@@ -34,11 +38,15 @@ const pw = require(path.join(__dirname, "..", "editor", "node_modules", "playwri
 const viewPort = 19855;
 const t3Port = 19856;
 const gatewayPort = 19857;
+const legacyGatewayPort = 19858;
 const upstream = "http://127.0.0.1:" + t3Port;
 const gateway = "http://127.0.0.1:" + gatewayPort;
+const legacyGateway = "http://127.0.0.1:" + legacyGatewayPort;
 const PREFIX = "/api/plugin-panels/";
 const token = "0f8fad5b-d9cb-469f-a165-70867728950e";
 const root = gateway + PREFIX + token + "/";
+const legacyRoot = legacyGateway + PREFIX + token + "/";
+const PLUGIN_POLICY_LIMIT = 4096;
 const REQUEST_LIMIT = 1024 * 1024;
 const RESPONSE_LIMIT = 8 * 1024 * 1024;
 const SURFACE_ID = "link:markdown";
@@ -59,9 +67,30 @@ function pluginRelativePath(p) {
   }
 }
 
+// pluginContentSecurityPolicy, as in PluginGatewayHttp.ts: undefined for
+// none, null for one too long to carry.
+function pluginPolicy(value) {
+  if (value === undefined) return undefined;
+  if (value.length > PLUGIN_POLICY_LIMIT) return null;
+  const policies = value
+    .split(",")
+    .map((policy) =>
+      policy
+        .split(";")
+        .map((d) => d.trim())
+        .filter((d) => d !== "" && !/^report-(uri|to)(\s|$)/i.test(d))
+        .join("; ")
+    )
+    .filter((policy) => policy !== "");
+  return policies.length === 0 ? undefined : policies.join(", ");
+}
+
 const gatewayLog = [];
-function gatewayHeaders() {
+// legacy is the gateway before 36fe4c0: no data: fonts, and a plugin's
+// policy header is ignored.
+function gatewayHeaders(root, legacy) {
   const wsRoot = root.replace(/^http/, "ws");
+  const fonts = legacy ? root : "data: " + root;
   return {
     "cache-control": "no-store",
     "referrer-policy": "no-referrer",
@@ -69,7 +98,7 @@ function gatewayHeaders() {
     "access-control-allow-origin": "null",
     "access-control-allow-methods": "GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS",
     "access-control-allow-headers": "content-type, accept",
-    "content-security-policy": `sandbox allow-scripts allow-forms; default-src 'none'; script-src 'unsafe-inline' 'wasm-unsafe-eval' ${root}; style-src 'unsafe-inline' ${root}; img-src data: blob: ${root}; font-src ${root}; connect-src ${root} ${wsRoot}; base-uri ${root}; form-action ${root}; frame-src 'none'; worker-src 'none'; object-src 'none'`,
+    "content-security-policy": `sandbox allow-scripts allow-forms; default-src 'none'; script-src 'unsafe-inline' 'wasm-unsafe-eval' ${root}; style-src 'unsafe-inline' ${root}; img-src data: blob: ${root}; font-src ${fonts}; connect-src ${root} ${wsRoot}; base-uri ${root}; form-action ${root}; frame-src 'none'; worker-src 'none'; object-src 'none'`,
   };
 }
 
@@ -98,7 +127,9 @@ window.addEventListener("message", (ev) => {
 </script>`;
 }
 
-function startGateway() {
+function startGateway(port, legacy) {
+  const origin = "http://127.0.0.1:" + port;
+  const root = origin + PREFIX + token + "/";
   const server = http.createServer((req, res) => {
     const rawPath = req.url.split("?", 1)[0];
     const search = req.url.slice(rawPath.length);
@@ -109,7 +140,7 @@ function startGateway() {
     }
     if (rawPath === "/host") {
       res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-      res.end(hostPage(new URL(req.url, gateway).searchParams.get("card")));
+      res.end(hostPage(new URL(req.url, origin).searchParams.get("card")));
       return;
     }
     const entry = { method: req.method, path: rawPath, status: 0 };
@@ -120,7 +151,7 @@ function startGateway() {
       res.end(body);
     };
     if (!pluginRelativePath(rawPath) || !rawPath.startsWith(PREFIX + token + "/")) return finish(400, {});
-    const headers = gatewayHeaders();
+    const headers = gatewayHeaders(root, legacy);
     if (req.method === "OPTIONS") return finish(204, headers);
     const chunks = [];
     let size = 0;
@@ -146,7 +177,11 @@ function startGateway() {
         });
         ur.on("end", () => {
           if (n > RESPONSE_LIMIT) return finish(502, headers, "Plugin gateway unavailable");
-          finish(ur.statusCode, { ...headers, "content-type": ur.headers["content-type"] || "application/octet-stream" }, Buffer.concat(out));
+          const policy = legacy ? undefined : pluginPolicy(ur.headers["t3-content-security-policy"]);
+          if (policy === null) return finish(502, headers, "Plugin Content-Security-Policy is too long");
+          const out2 = { ...headers, "content-type": ur.headers["content-type"] || "application/octet-stream" };
+          if (policy !== undefined) out2["content-security-policy"] = headers["content-security-policy"] + ", " + policy;
+          finish(ur.statusCode, out2, Buffer.concat(out));
         });
       });
       up.on("error", () => finish(502, headers, "Plugin gateway unavailable"));
@@ -173,7 +208,7 @@ function startGateway() {
     up.on("error", () => socket.destroy());
     socket.on("error", () => up.destroy());
   });
-  return new Promise((resolve) => server.listen(gatewayPort, "127.0.0.1", () => resolve(server)));
+  return new Promise((resolve) => server.listen(port, "127.0.0.1", () => resolve(server)));
 }
 
 // One request over the plugin socket, as T3's server sends it.
@@ -260,13 +295,15 @@ const png = Buffer.concat([
     ["serve-view", "--addr", "127.0.0.1:" + viewPort, "--t3-addr", "127.0.0.1:" + t3Port],
     { stdio: "inherit", env }
   );
-  const gw = await startGateway();
+  const gw = await startGateway(gatewayPort, false);
+  const legacyGw = await startGateway(legacyGatewayPort, true);
   const manifest = path.join(home, "data", "t3code", "plugins", `github.com+marcelocantos+vellum+${t3Port}.json`);
   try {
     for (let attempt = 0; ; attempt++) {
       try {
         const probe = await (await fetch(upstream + "/t3", { headers: { accept: "application/json" } })).json();
         check(probe.id === "github.com/marcelocantos/vellum" && probe.scopes.join() === "links", "probe: " + JSON.stringify(probe));
+        check(probe.links[0].click === "activate" && probe.links[0].hover === false, "probe link: " + JSON.stringify(probe.links));
         break;
       } catch (e) {
         if (attempt >= 50) throw e;
@@ -282,6 +319,12 @@ const png = Buffer.concat([
     // Nothing is served before T3 relays the user's link.
     const docToken = Buffer.from(doc).toString("base64url");
     check((await fetch(root + "d/" + docToken)).status === 403, "the document is served before any link request");
+    // A click from another machine is declined, which is T3's cue to ask
+    // for the card. (A click at this machine opens a browser here, so the
+    // journey does not send one; the Go tests cover it.)
+    const click = await pluginRequest({ type: "activate", requestId: "r0", scope: "link", linkId: "markdown", url: doc, client: { local: false } });
+    check(click.ok === true && click.activate && click.activate.handled === false, "activate from elsewhere: " + JSON.stringify(click));
+    check((await fetch(root + "d/" + docToken)).status === 403, "an activate request made the T3 listener serve the document");
     const answer = await pluginRequest({ type: "surface", requestId: "r1", scope: "link", linkId: "markdown", url: doc });
     check(answer.ok === true && answer.web && pluginRelativePath(answer.web.path), "link request: " + JSON.stringify(answer));
     const cardPath = answer.web.path;
@@ -424,12 +467,33 @@ const png = Buffer.concat([
         await page.waitForTimeout(600);
         check(!svgRan, `${name}: an SVG file's script ran in the card`);
 
-        // Two refusals are expected: the inline handler injected above,
-        // and the font Mermaid embeds in every diagram as a data: URL for
-        // its hand-drawn look, which the gateway's font-src does not
-        // admit. Diagrams drawn in the default look do not use it.
-        const needed = blocked.filter((m) => !/inline|event handler|script-src-attr|data:font/i.test(m));
+        // The one refusal expected is the inline handler injected above.
+        const needed = blocked.filter((m) => !/inline|event handler|script-src-attr/i.test(m));
         check(needed.length === 0, `${name}: a policy blocked something the page needs: ${needed.join(" | ")}`);
+
+        // Through a gateway that ignores the plugin's policy header, the
+        // page still shows and still refuses script it did not write: the
+        // rule is also in the page.
+        const old = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+        await old.goto(legacyGateway + "/host?card=" + encodeURIComponent(cardPath));
+        let lf = null;
+        for (let i = 0; i < 100 && !lf; i++) {
+          const c = old.frames().find((x) => x.url().startsWith(legacyRoot));
+          if (c && (await c.evaluate(() => Boolean(document.querySelector(".vellum-toc-nav a"))).catch(() => false))) lf = c;
+          else await old.waitForTimeout(100);
+        }
+        check(Boolean(lf), `${name}: the page does not load through a gateway without the policy header`);
+        if (lf) {
+          const ran = await lf.evaluate(async () => {
+            const div = document.createElement("div");
+            div.innerHTML = '<img src="data:image/png;base64,AA" onerror="window.injected = 1">';
+            document.body.appendChild(div);
+            await new Promise((r) => setTimeout(r, 300));
+            return window.injected;
+          });
+          check(ran === undefined, `${name}: without the gateway's help, markup without the nonce ran script`);
+        }
+        await old.close();
       } finally {
         await browser.close();
       }
@@ -454,6 +518,7 @@ const png = Buffer.concat([
     server.kill("SIGTERM");
     await new Promise((r) => server.once("exit", r));
     gw.close();
+    legacyGw.close();
   }
   check(!fs.existsSync(manifest), "the discovery file outlived the viewer");
   if (failures.length) {

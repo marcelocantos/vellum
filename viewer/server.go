@@ -55,6 +55,9 @@ type Server struct {
 	T3Addr string
 	// Log, when non-nil, receives one-line notes about the T3 listener.
 	Log func(msg string)
+	// OpenURL, when non-nil, replaces the OS open for a link T3 says was
+	// clicked at this machine (tests).
+	OpenURL func(url string) error
 	// CacheDir overrides the default view cache root (tests).
 	CacheDir string
 	Style    *convert.Style
@@ -507,6 +510,9 @@ func (s *Server) serveMarkdown(w http.ResponseWriter, r *http.Request, absPath s
 	_ = s.noteRecent(absPath)
 
 	w.Header().Set(cspHeader, documentCSP(r, nonce))
+	if embedded {
+		w.Header().Set(t3PolicyHeader, embeddedScriptPolicy(nonce))
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
 	w.Header().Set("Pragma", "no-cache")
@@ -523,6 +529,9 @@ func (s *Server) serveMissingMarkdown(w http.ResponseWriter, r *http.Request, ab
 	nonce := newNonce()
 	page := injectChrome(doc, &chromePage{SourcePath: absPath, Nonce: nonce, Waiting: true, Embedded: embedded})
 	w.Header().Set(cspHeader, documentCSP(r, nonce))
+	if embedded {
+		w.Header().Set(t3PolicyHeader, embeddedScriptPolicy(nonce))
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(http.StatusNotFound)

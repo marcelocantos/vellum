@@ -265,12 +265,19 @@ With no `-o`, each input file is converted to a sibling `.pdf` with the same bas
 ### Inside T3 Code
 
 In the plugin build of [T3 Code](https://github.com/marcelocantos/t3code),
-a Markdown file link clicked in a chat opens the document as a card, on
-any T3 client. The file is read, edited and saved on the machine that
-hosts the thread, so it works from a phone or another machine.
+vellum takes over Markdown file links in a chat:
+
+- Clicked at the machine that hosts the thread, the link opens the
+  document in your browser, as `vellum view` does.
+- Clicked anywhere else (a phone, another machine), it opens the document
+  as a card inside T3. The file is read, edited and saved on the machine
+  that hosts the thread.
 
 `vellum serve-view` advertises itself to T3 while it runs. Enable
-**Vellum** once in T3 Code under **Settings → Plugins**.
+**Vellum** once in T3 Code under **Settings → Plugins**. The card on a
+click from elsewhere, and no card when you only point at a link, need a
+T3 build with document cards (after 0.7.0); an older build opens the file
+its own way instead.
 
 The card shows the same page as the browser, without the actions that
 would act on the host instead of your device (copy, PDF, show in Finder).

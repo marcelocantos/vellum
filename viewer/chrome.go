@@ -86,7 +86,7 @@ func injectChrome(htmlDoc string, page *chromePage) string {
 	if page.Embedded {
 		// Before anything else in the head, so it governs every script.
 		if loc := headOpenRe.FindStringIndex(htmlDoc); loc != nil {
-			htmlDoc = htmlDoc[:loc[1]] + embeddedScriptPolicy(page.Nonce) + htmlDoc[loc[1]:]
+			htmlDoc = htmlDoc[:loc[1]] + embeddedScriptPolicyMeta(page.Nonce) + htmlDoc[loc[1]:]
 		}
 	}
 	if loc := headCloseRe.FindStringIndex(htmlDoc); loc != nil {
@@ -119,14 +119,23 @@ func chromeFaviconLink(page *chromePage) string {
 	return `<link rel="icon" href="` + page.apiRoot() + strings.TrimPrefix(ChromeFaviconPath, ChromePrefix) + `" type="image/svg+xml">` + "\n"
 }
 
-// embeddedScriptPolicy restates the viewer's script rule inside the page.
-// T3's gateway drops the viewer's Content-Security-Policy header and sends
-// its own, which allows any inline script; a <meta> policy is enforced in
-// addition to it. Only scripts carrying this response's nonce run, and
-// 'strict-dynamic' lets them import the editor bundle, whose gateway URL
-// the server cannot name.
+// embeddedScriptPolicy is the viewer's script rule for a page shown inside
+// T3 Code. T3's gateway drops the viewer's Content-Security-Policy header
+// and sends its own, which allows any inline script. Only scripts carrying
+// this response's nonce run, and 'strict-dynamic' lets them import the
+// editor bundle, whose gateway URL the server cannot name.
 func embeddedScriptPolicy(nonce string) string {
-	return `<meta http-equiv="Content-Security-Policy" content="script-src 'nonce-` + html.EscapeString(nonce) + `' 'strict-dynamic'; base-uri 'none'">` + "\n"
+	return "script-src 'nonce-" + nonce + "' 'strict-dynamic'; base-uri 'none'"
+}
+
+// embeddedScriptPolicyMeta states that rule inside the page, where the
+// browser enforces it in addition to the gateway's header. A gateway that
+// honours T3-Content-Security-Policy gets it there as well; an older one
+// has only this element.
+func embeddedScriptPolicyMeta(nonce string) string {
+	// The policy has no character an attribute value must escape: the
+	// nonce is base64 and the rest is fixed.
+	return `<meta http-equiv="Content-Security-Policy" content="` + embeddedScriptPolicy(nonce) + `">` + "\n"
 }
 
 func chromeThemeInitScript(nonce string) string {

@@ -436,9 +436,10 @@ already work with files and `convert`.
   build of T3 Code (the view port plus one on macOS, off elsewhere;
   `--t3-addr` / `VELLUM_T3_ADDR`, `off` to disable) and advertises it in
   `~/.local/share/t3code/plugins/` while it runs. Once the user enables
-  **Vellum** in T3's Settings → Plugins, a Markdown file link in a chat
-  opens as a card showing the document, with edit and save, on any T3
-  client. That listener has `/t3` (T3's probe and protocol socket),
+  **Vellum** in T3's Settings → Plugins, a Markdown file link clicked at
+  this machine opens in the browser (the view listener), and one clicked
+  on any other T3 client opens as a card showing the document, with edit
+  and save. That listener has `/t3` (T3's probe and protocol socket),
   `/d/<token>` (a document, token = base64url of its path), `/f/<token>`
   (a raster image) and the watch, task-toggle, edit, fragment and editor
   routes; nothing else. A request to it never grants a folder: only T3's

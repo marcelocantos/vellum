@@ -6,6 +6,7 @@ package viewer
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"image/color"
 	"io"
 	"net"
@@ -154,8 +155,12 @@ func TestT3_ProbeDeclaresMarkdownLinks(t *testing.T) {
 	if len(probe.Scopes) != 1 || probe.Scopes[0] != "links" {
 		t.Fatalf("scopes %v, want links only", probe.Scopes)
 	}
-	if len(probe.Links) != 1 || probe.Links[0].Glob != "/**/*.{md,markdown}" || probe.Links[0].Click != "card" {
+	if len(probe.Links) != 1 || probe.Links[0].Glob != "/**/*.{md,markdown}" || probe.Links[0].Click != "activate" {
 		t.Fatalf("links %+v", probe.Links)
+	}
+	// hover must be on the wire as false: absent means "show on hover".
+	if !strings.Contains(body, `"hover":false`) {
+		t.Fatalf("probe does not turn the hover card off: %s", body)
 	}
 }
 
@@ -218,6 +223,10 @@ func TestT3_LinkRequestOpensTheDocument(t *testing.T) {
 	if meta == nil {
 		t.Fatalf("no script policy first in the head")
 	}
+	// A gateway that enforces a plugin's policy gets the same rule.
+	if got, want := resp.Header.Get(t3PolicyHeader), "script-src 'nonce-"+meta[1]+"' 'strict-dynamic'; base-uri 'none'"; got != want {
+		t.Errorf("%s = %q, want %q", t3PolicyHeader, got, want)
+	}
 	scripts := regexp.MustCompile(`<script[^>]*>`).FindAllString(page, -1)
 	if len(scripts) == 0 {
 		t.Fatal("no scripts in the page")
@@ -228,8 +237,13 @@ func TestT3_LinkRequestOpensTheDocument(t *testing.T) {
 		}
 	}
 
-	if resp, body := f.get(t, t3FilePrefix+t3Token(f.png)); resp.StatusCode != http.StatusOK || resp.Header.Get("Content-Type") != "image/png" || len(body) == 0 {
+	resp, body := f.get(t, t3FilePrefix+t3Token(f.png))
+	if resp.StatusCode != http.StatusOK || resp.Header.Get("Content-Type") != "image/png" || len(body) == 0 {
 		t.Errorf("image: status %d, type %q, %d bytes", resp.StatusCode, resp.Header.Get("Content-Type"), len(body))
+	}
+	// Anything that is not a document page is inert if navigated to.
+	if got := resp.Header.Get(t3PolicyHeader); !strings.Contains(got, "default-src 'none'") || !strings.Contains(got, "sandbox") {
+		t.Errorf("image %s = %q, want an inert policy", t3PolicyHeader, got)
 	}
 	if resp, _ := f.get(t, "/d/"+t3Token(f.other)); resp.StatusCode != http.StatusOK {
 		t.Errorf("linked document: status %d", resp.StatusCode)
@@ -342,12 +356,68 @@ func TestT3_BrowserPagesFromOtherSitesAreRefused(t *testing.T) {
 	}
 }
 
+func activateRequest(id, path string, local bool) string {
+	b, _ := json.Marshal(map[string]any{
+		"type": "activate", "requestId": id, "scope": "link", "linkId": t3LinkID, "url": path,
+		"client": map[string]bool{"local": local},
+	})
+	return string(b)
+}
+
+// TestT3_ActivateOpensHereAndDeclinesElsewhere: a click at this machine
+// opens the document in the browser; a click anywhere else is declined, so
+// T3 shows the card. Neither grants a folder on the T3 listener.
+func TestT3_ActivateOpensHereAndDeclinesElsewhere(t *testing.T) {
+	f := newT3Fixture(t)
+	f.s.Addr = "127.0.0.1:18999"
+	var opened []string
+	fail := false
+	f.s.OpenURL = func(u string) error {
+		opened = append(opened, u)
+		if fail {
+			return errors.New("no browser")
+		}
+		return nil
+	}
+	handled := func(a map[string]any) any {
+		act, _ := a["activate"].(map[string]any)
+		if a["type"] != "result" || a["ok"] != true || act == nil {
+			t.Fatalf("answer %v", a)
+		}
+		return act["handled"]
+	}
+
+	a := f.ask(t, activateRequest("r1", f.doc, false))[0]
+	if handled(a) != false || len(opened) != 0 {
+		t.Fatalf("a click elsewhere: %v, opened %v; want a decline and nothing opened here", a, opened)
+	}
+	a = f.ask(t, activateRequest("r2", f.doc, true))[0]
+	want := "http://127.0.0.1:18999" + pathURL(f.doc)
+	if handled(a) != true || len(opened) != 1 || opened[0] != want {
+		t.Fatalf("a click here: %v, opened %v; want handled and %s", a, opened, want)
+	}
+	// An open that fails is a decline: the reader still gets the card.
+	fail = true
+	a = f.ask(t, activateRequest("r3", f.doc, true))[0]
+	if handled(a) != false {
+		t.Fatalf("a failed open: %v, want a decline", a)
+	}
+	// Not a Markdown path: an error, which T3 treats as an unclaimed link.
+	a = f.ask(t, activateRequest("r4", filepath.Join(f.dir, "table.csv"), true))[0]
+	if a["ok"] != false || a["activate"] != nil || len(opened) != 2 {
+		t.Fatalf("a click on a non-Markdown path: %v, opened %v", a, opened)
+	}
+	if err := f.s.checkServed(f.doc); err == nil {
+		t.Fatal("an activate request granted the folder on the T3 listener")
+	}
+}
+
 func TestT3_OtherRequestsAreAnsweredNotGranted(t *testing.T) {
 	f := newT3Fixture(t)
 	outside := filepath.Join(f.dir, "notes.txt")
 	answers := f.ask(t,
 		`{"type":"subscribe","protocol":1,"subscriptionId":"s1","threadId":"t","cwd":"/w","filters":[]}`,
-		`{"type":"activate","requestId":"r2","scope":"link","linkId":"markdown","url":"`+filepath.ToSlash(f.doc)+`","client":{"local":true}}`,
+		`{"type":"resolve","requestId":"r2","scope":"link","linkId":"markdown","url":"`+filepath.ToSlash(f.doc)+`"}`,
 		linkRequest("r3", outside),
 		linkRequest("r4", "relative.md"),
 		`{"type":"surface","requestId":"r5","scope":"thread","threadId":"t","cwd":"/w","panelId":"p","rowId":"r","surfaceId":"s"}`,
