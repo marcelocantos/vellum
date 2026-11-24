@@ -25,7 +25,7 @@ verify-release:
 	./scripts/verify-release.sh $(VERSION)
 
 # Requires Playwright and Chrome; exercises the live viewer on an isolated port.
-.PHONY: test-table-headers test-table-layout test-chrome test-editor test-t3
+.PHONY: test-table-headers test-table-layout test-chrome test-editor test-t3 test-svg-fit
 
 # The journeys below run a serve-view of their own. It must not advertise
 # itself to a T3 Code running on this machine.
@@ -41,6 +41,13 @@ test-table-headers:
 test-table-layout:
 	go build -o /tmp/vellum-table-layout-journey ./cmd/vellum
 	$(NO_T3) VELLUM_BINARY=/tmp/vellum-table-layout-journey node scripts/table-layout-journey.cjs
+
+# Requires `npm ci` in editor/, Chrome, Playwright's Firefox, and mmdc. SVG
+# images and diagrams are drawn as wide as the room allows and no larger
+# than their text warrants; a cached diagram's placeholder holds its box.
+test-svg-fit:
+	go build -o /tmp/vellum-svg-fit-journey ./cmd/vellum
+	$(NO_T3) VELLUM_BINARY=/tmp/vellum-svg-fit-journey node scripts/svg-fit-journey.cjs
 
 # Requires `npm ci` in editor/, Chrome, Playwright's Firefox, and mmdc. The
 # viewer's chrome in a real browser: the bar's name and title, the contents

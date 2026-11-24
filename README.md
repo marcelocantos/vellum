@@ -185,7 +185,10 @@ a theme control (dark / system / light, persisted in the browser) with
 syntax highlighting and Mermaid diagrams recoloured for the dark theme;
 prose set in a 760px column, with tables that use the full panel width,
 columns sized to their content (wide tables scroll within the panel) and
-headings that stay visible until the table scrolls away; and a full-viewport
+headings that stay visible until the table scrolls away; SVG (Mermaid
+diagrams, and an SVG image that stands alone in a paragraph) drawn as wide
+as the panel allows and no larger than its text warrants (see
+[SVG sizing in the viewer](#svg-sizing-in-the-viewer)); and a full-viewport
 zoom/pan viewer for images and SVG (including Mermaid), and GFM
 task-list checkboxes that edit the source file after consent
 (once per session or permanently) when you click or Space the box, not
@@ -502,6 +505,34 @@ without a configuration session.
 vellum writes Markdown, HTML, PDF, RTF, PowerPoint, and rich clipboard text.
 The pandoc export path could add writers for docx, odt, epub, latex, typst,
 rst, org, asciidoc, and ipynb.
+
+## SVG sizing in the viewer
+
+A wide diagram squeezed into the 760px text column loses its labels, and a
+small one stretched across the window balloons. The viewer sizes each SVG
+from its own text:
+
+- It is drawn at its natural width, or wider until its small print reaches
+  12px or its typical text reaches 16px (the size of the prose), whichever
+  comes first. A drawing whose text is already that large, or that has no
+  text, is never drawn larger than natural.
+- It is never wider than the panel less its gutters. One wider than the
+  text column is centred on the column, as a wide table is.
+- "Small print" is the size that all but a tenth of the drawing's
+  characters are at least as large as, so a stray watermark does not decide
+  the size; "typical" is the median character.
+
+This applies to Mermaid diagrams and to an SVG image that is the only thing
+in its paragraph (`![…](drawing.svg)` on a line of its own). Left as they
+were: an image inside a sentence, an image given a `width` or `height`, a
+diagram with a `vellum:scale` hint, an SVG with no `viewBox`, images from
+the web, and print and PDF output. `test/svg-fit/svg-fit.md` shows each
+case.
+
+The text sizes are read on the server, without a browser, from
+`font-size` attributes, inline styles and simple `<style>` rules, with
+transforms and the `viewBox` scale applied. A size it cannot read (one
+set by a pseudo-class rule or `calc()`) is skipped.
 
 ## Markdown feature support
 

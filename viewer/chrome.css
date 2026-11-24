@@ -468,7 +468,8 @@ html[data-vellum-theme="system"] .vellum-theme-btn .vellum-icon-system {
   .vellum-article {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif,
       "Apple Color Emoji", "Segoe UI Emoji";
-    font-size: 16px;
+    --vellum-text-size: 16px;
+    font-size: var(--vellum-text-size);
     line-height: 1.6;
     color: var(--v-fg);
     overflow-wrap: break-word;
@@ -670,6 +671,51 @@ html[data-vellum-theme="system"] .vellum-theme-btn .vellum-icon-system {
     max-width: calc(100cqw - 2 * var(--vellum-gutter));
     transform: translateX(round(max(0px, 50% - var(--vellum-measure) / 2), 1px));
   }
+
+  /* An SVG the server measured (fit.go) carries its natural width and the
+     width up to which it may grow, the latter in ems of the article's
+     text: the point where the drawing's own text reaches reading size. It
+     is drawn at the larger of the two, so a drawing with small labels
+     grows and one with large labels stays natural, and never wider than
+     the room it has. An unmeasured one keeps github.css's fit rule.
+
+     A diagram with a vellum:scale hint (a style on its wrapper) keeps the
+     width its author asked for. Mermaid writes its natural width as an
+     inline max-width, hence !important. */
+  .vellum-article .mermaid-svg:not([style]) > [style*="--vellum-svg-natural"],
+  .vellum-article p[data-vellum-figure] > img {
+    --vellum-svg-room: 100%;
+    flex: none;
+    width: min(
+      var(--vellum-svg-room),
+      max(var(--vellum-svg-natural), calc(var(--vellum-svg-ems) * var(--vellum-text-size)))
+    );
+    max-width: none !important;
+    height: auto;
+  }
+
+  /* At the top level the room is the panel less the article's gutters,
+     as for a table: up to the measure the drawing sits in the column, and
+     past that it grows outward on both sides, centred on it. A flex row
+     centres an item wider than itself, so nothing sticks out past the
+     panel's right edge the way a transformed box would. */
+  .vellum-article > .mermaid-svg:not([style]),
+  .vellum-article > p[data-vellum-figure] {
+    display: flex;
+    justify-content: center;
+  }
+
+  .vellum-article > .mermaid-svg:not([style]) > [style*="--vellum-svg-natural"],
+  .vellum-article > p[data-vellum-figure] > img {
+    --vellum-svg-room: calc(100cqw - 2 * var(--vellum-gutter));
+  }
+
+  /* An image that fits the column stays at its left edge, as before. An
+     auto margin takes up spare room only, so a wider one is still
+     centred. */
+  .vellum-article > p[data-vellum-figure] > img {
+    margin-right: auto;
+  }
 }
 
 @media screen and (max-width: 600px) {
@@ -698,6 +744,12 @@ html[data-vellum-theme="system"] .vellum-theme-btn .vellum-icon-system {
   background: var(--v-bg-hover);
   cursor: progress;
   overflow: hidden;
+}
+
+/* A placeholder that knows its diagram's shape holds exactly that box,
+   however flat: the minimum height is for the one that does not. */
+.vellum-article .vellum-deferred-mermaid[style*="aspect-ratio"]:not(.is-failed) {
+  min-height: 0;
 }
 
 .vellum-article .vellum-deferred-mermaid > pre {

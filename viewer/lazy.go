@@ -69,10 +69,11 @@ func lazyLoadImages(html string) string {
 }
 
 // reserveDiagramBoxes gives each Mermaid placeholder whose SVG is already
-// in the fragment cache the diagram's aspect ratio and max-width, so a
-// revisit does not shift the text below it when the SVG arrives. A
-// placeholder with no cached render keeps the generic loading box.
-func reserveDiagramBoxes(page, cacheRoot string) string {
+// in the fragment cache the diagram's aspect ratio, max-width and sizing
+// properties (fit.go), so a revisit does not shift the text below it when
+// the SVG arrives. A placeholder with no cached render keeps the generic
+// loading box.
+func (s *Server) reserveDiagramBoxes(page, cacheRoot string) string {
 	return mermaidPlaceholderRe.ReplaceAllStringFunc(page, func(m string) string {
 		id := mermaidPlaceholderRe.FindStringSubmatch(m)[1]
 		f, err := os.Open(fragmentCachePath(cacheRoot, id))
@@ -92,6 +93,9 @@ func reserveDiagramBoxes(page, cacheRoot string) string {
 		}
 		if mw := maxWidthRe.FindStringSubmatch(root); len(mw) == 2 {
 			style = append(style, "max-width: "+mw[1])
+		}
+		if fit, ok := s.cachedDiagramFit(cacheRoot, id); ok {
+			style = append(style, fitStyle(fit))
 		}
 		if len(style) == 0 {
 			return m
@@ -362,5 +366,5 @@ func (s *Server) handleFragment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// A diagram may carry its own same-page links (Mermaid `click … "#id"`).
-	_, _ = io.WriteString(w, rewriteFragmentHrefs(html, pathURL(absPath)))
+	_, _ = io.WriteString(w, rewriteFragmentHrefs(s.fitDiagram(id, html), pathURL(absPath)))
 }

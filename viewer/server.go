@@ -82,6 +82,9 @@ type Server struct {
 	// (cache misses only). Tests assert the fragment cache is hit.
 	FragmentRenderCount atomic.Int64
 	flights             flightGroup
+	// fits remembers SVG measurements (fit.go), keyed by fragment id or
+	// file path.
+	fits sync.Map
 
 	// MCP, when non-nil, is mounted at MCPPath so the brew-service
 	// process hosts streamable HTTP MCP on the same listener as the view.
@@ -484,7 +487,8 @@ func (s *Server) serveMarkdown(w http.ResponseWriter, r *http.Request, absPath s
 		servedStatus(w, r, err)
 		return
 	}
-	page := string(body)
+	// Before any pass that rewrites image URLs: it reads them as written.
+	page := s.fitFigures(string(body), absPath)
 	if embedded {
 		page = embedLocalRefs(page, absPath)
 	} else {
@@ -501,7 +505,7 @@ func (s *Server) serveMarkdown(w http.ResponseWriter, r *http.Request, absPath s
 	// Mermaid diagrams and math are placeholders that chrome.js fills from
 	// ChromeFragmentPath on demand, and images load lazily.
 	if cacheRoot, err := s.cacheRoot(); err == nil {
-		page = reserveDiagramBoxes(page, cacheRoot)
+		page = s.reserveDiagramBoxes(page, cacheRoot)
 	}
 	page = lazyLoadImages(page)
 	nonce := newNonce()

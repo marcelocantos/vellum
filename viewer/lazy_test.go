@@ -28,6 +28,16 @@ const lazyDoc = "# Hello\n\nbefore $x^2$ and\n\n$$\na = b\n$$\n\n```mermaid\ngra
 // mmdc-shaped SVG: nested <svg> icon plus a <foreignObject><div> label.
 const sampleMermaidSVG = `<svg id="my-svg" width="100%" xmlns="http://www.w3.org/2000/svg" class="flowchart" style="max-width: 360px; background-color: white;" viewBox="4 4 360 418" role="graphics-document document"><g><foreignObject width="80" height="24"><div xmlns="http://www.w3.org/1999/xhtml"><span>Start</span></div></foreignObject><svg width="10" height="10"><circle r="4"/></svg></g></svg>`
 
+// sampleMermaidFit is the sizing the viewer writes on sampleMermaidSVG's
+// root: 360px natural, and its one label at the default 16px, so growth
+// would stop at 360 * 0.75/16 = 16.875em (under its natural 22.5em).
+const sampleMermaidFit = `--vellum-svg-natural: 360.00px; --vellum-svg-ems: 16.88`
+
+// servedMermaidSVG is sampleMermaidSVG as the fragment route serves it.
+func servedMermaidSVG() string {
+	return strings.Replace(safehtml.Rendered(sampleMermaidSVG), `style="`, `style="`+sampleMermaidFit+`; `, 1)
+}
+
 // stubFragments stands in for mmdc and node: every Mermaid diagram becomes
 // sampleMermaidSVG, every math expression a KaTeX-shaped span. Sources
 // containing "boom" fail.
@@ -188,7 +198,7 @@ func TestServer_ShellFirstThenFragmentsOnDemand(t *testing.T) {
 			t.Fatalf("missing %q in:\n%s", want, page)
 		}
 	}
-	if strings.Contains(page, "aspect-ratio") {
+	if strings.Contains(page, `style="aspect-ratio`) {
 		t.Fatalf("no render is cached yet, so no box can be reserved:\n%s", page)
 	}
 
@@ -208,7 +218,7 @@ func TestServer_ShellFirstThenFragmentsOnDemand(t *testing.T) {
 
 	// Mermaid: one render per id, then cache hits; immutable response.
 	status, hdr, body := getText(t, fragmentURL(ts.URL, md, diagram.ID))
-	if status != http.StatusOK || body != safehtml.Rendered(sampleMermaidSVG) {
+	if status != http.StatusOK || body != servedMermaidSVG() {
 		t.Fatalf("fragment %d: %s", status, body)
 	}
 	if cc := hdr.Get("Cache-Control"); !strings.Contains(cc, "immutable") {
@@ -217,7 +227,7 @@ func TestServer_ShellFirstThenFragmentsOnDemand(t *testing.T) {
 	if renders.Load() != 1 {
 		t.Fatalf("renders=%d after one diagram", renders.Load())
 	}
-	if _, _, again := getText(t, fragmentURL(ts.URL, md, diagram.ID)); again != safehtml.Rendered(sampleMermaidSVG) || renders.Load() != 1 {
+	if _, _, again := getText(t, fragmentURL(ts.URL, md, diagram.ID)); again != servedMermaidSVG() || renders.Load() != 1 {
 		t.Fatalf("second fetch must come from the fragment cache (renders=%d)", renders.Load())
 	}
 	if _, err := os.Stat(fragmentCachePath(s.CacheDir, diagram.ID)); err != nil {
@@ -240,7 +250,7 @@ func TestServer_ShellFirstThenFragmentsOnDemand(t *testing.T) {
 
 	// A revisit reserves the diagram's box from the cached SVG.
 	_, _, page = getText(t, ViewURL(ts.URL, md))
-	if !strings.Contains(page, `data-vellum-fragment="`+diagram.ID+`" role="img" aria-label="Diagram, loading" style="aspect-ratio: 360 / 418; max-width: 360px">`) {
+	if !strings.Contains(page, `data-vellum-fragment="`+diagram.ID+`" role="img" aria-label="Diagram, loading" style="aspect-ratio: 360 / 418; max-width: 360px; `+sampleMermaidFit+`">`) {
 		t.Fatalf("revisit should reserve the diagram box:\n%s", page)
 	}
 	if got := s.ConvertCount.Load(); got != 1 {
@@ -334,7 +344,7 @@ func TestServer_ClipboardResolvesEveryFragment(t *testing.T) {
 		t.Fatalf("renders=%d", renders.Load())
 	}
 	diagram := convert.ExtractFragments([]byte(lazyDoc), nil)[2]
-	if _, _, body := getText(t, fragmentURL(ts.URL, md, diagram.ID)); body != safehtml.Rendered(sampleMermaidSVG) || renders.Load() != 3 {
+	if _, _, body := getText(t, fragmentURL(ts.URL, md, diagram.ID)); body != servedMermaidSVG() || renders.Load() != 3 {
 		t.Fatalf("fragment after clipboard: %q renders=%d", body, renders.Load())
 	}
 	// The shell cache is untouched by the full render.
