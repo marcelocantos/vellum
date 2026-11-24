@@ -29,7 +29,13 @@ import (
 // os.Root, which refuses to leave the root even if the path changes on
 // disk after the check.
 
-var errOutsideRoots = errors.New("outside the folders this viewer serves; open a document from that folder with vellum view first")
+// errOutsideRoots is shown to the reader as the body of a 403, so it says
+// what makes a folder served. A reload repeats the request as it was first
+// made, so reloading a page reached by a link is still a page's request.
+var errOutsideRoots = errors.New("outside the folders this viewer serves. " +
+	"A folder is served once a Markdown document in it is opened from outside any page: " +
+	"enter the document's URL in the address bar, run `open <url>`, or run `vellum view <file>`. " +
+	"Following a link does not count, nor does reloading a page that was reached by a link")
 
 const (
 	// rootsFileName persists granted roots in the cache directory, so a

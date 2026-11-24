@@ -235,13 +235,16 @@ still renders. `vellum convert` and MCP outputs keep a document's HTML
 as written.
 
 The viewer serves only the folders you open documents from. Opening a
-document from outside the browser page (`vellum view`, double-clicking
-it in Finder, typing or bookmarking its URL) serves the git work tree it
-is in, or else its folder; a document directly in your home folder (or
+Markdown document from outside the browser page (`vellum view`,
+double-clicking it in Finder, `open` on its URL, typing or bookmarking
+that URL) serves the git work tree it is in, or else its folder. Opening
+any other kind of file does not; a document directly in your home folder (or
 a filesystem root) serves only itself. Links, images and requests a page
 makes reach only what is already served: anything else, including a
 symlink that points out of its folder, is refused with 403, and a page
-cannot open a new folder. The homepage lists only served documents.
+cannot open a new folder. Reloading a tab that was reached by a link
+counts as that link again, so if it is refused, enter its URL in the
+address bar instead. The homepage lists only served documents.
 Served folders are remembered (the newest 64) so open tabs survive a
 restart of the server. The same process hosts
 streamable HTTP MCP at `/mcp`. The server binds loopback only (override

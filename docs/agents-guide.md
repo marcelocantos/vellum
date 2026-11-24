@@ -457,6 +457,21 @@ already work with files and `convert`.
   page) to a route that changes nothing; subresource loads, fetches,
   frames and every action route (`/mcp`, clipboard, reveal, task-toggle,
   edit) get 403 (🎯T57).
+  **Served folders.** The server serves only folders a Markdown document
+  was opened from. To show a document, open its URL and nothing more:
+  `open "http://127.0.0.1:18742/abs/path/doc.md"` (percent-encode spaces).
+  No `vellum view` call is needed first. A `GET` of a `.md`/`.markdown`
+  URL that no page made (a browser opened by `open`, a typed URL, a
+  bookmark, `curl`) serves the git work tree the document is in, or else
+  its folder, from then on. Only a Markdown URL does this: opening an
+  image, SVG, HTML or PDF URL from a folder not yet served gets 403, as
+  does anything a page links to or loads from such a folder, so open a
+  Markdown document from that folder first. A reload repeats the request
+  as it was first made, so reloading a tab that was reached by a link
+  (from another document or another site) is refused too while its
+  folder is not served; a tab opened before v0.43.0, which introduced
+  the rule, can be in that state. Open the URL afresh. Each server keeps
+  its own list (the newest 64, kept across restarts).
 - `vellum view <file.md>` / `vellum --open <file.md>` — open the file
   as an `http://127.0.0.1:18742/…` URL on the view server (**not**
   `file://`). HTML default (browser, fast); pass `--pdf` for
