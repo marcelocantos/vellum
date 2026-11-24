@@ -314,8 +314,9 @@ func cacheName(absPath string, ext string) string {
 // engine fetches nothing (🎯T66, 🎯T68), so a v5 PDF may hold pixels of an
 // image file from anywhere on disk; v7: each SVG diagram has its own id
 // (convert's mermaidSVGID), and a v6 shell names fragments that were
-// rendered with the shared one).
-const stampFormat = "v7"
+// rendered with the shared one; v8: a document's inline SVG is kept, and
+// a v7 page has it removed).
+const stampFormat = "v8"
 
 func stampPath(cachePath string) string {
 	return cachePath + ".stamp"

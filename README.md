@@ -223,10 +223,15 @@ carries. Its HTML is cut down to an allow-list, much like what GitHub
 shows for a README: text formatting, headings, lists, tables, images,
 links, `<details>`, `<kbd>`, `<sup>`/`<sub>` and the like. Script,
 event handlers, `<style>` and `style=` (except table alignment),
-`<iframe>`, `<object>`, `<embed>`, forms, `<svg>`/`<math>`, `<video>`/
+`<iframe>`, `<object>`, `<embed>`, forms, `<math>`, `<video>`/
 `<audio>`, `<meta>` and `<base>` are removed; links keep only `http`,
 `https`, `mailto`, `tel`, `file` and relative URLs, images only
-`http`, `https`, relative and `data:image/…`. A Content-Security-Policy
+`http`, `https`, relative and `data:image/…`. An `<svg>` written in
+the document stays an inline drawing, with its text, links, styles,
+gradients, animation and `foreignObject` labels; only its script, event
+handlers, `javascript:` links, animation that rewrites a link, and form
+controls are removed. Its `<style>` applies to the page, as on any web
+page. A Content-Security-Policy
 lets only the viewer's own scripts run, so a gap in that list is still
 not enough to run anything. An HTML or SVG file a document links to
 opens sandboxed: it shows, but its script does not run. Mermaid and

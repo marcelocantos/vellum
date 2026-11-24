@@ -36,6 +36,9 @@ var documentPayloads = []struct{ name, md string }{
 	{"raw data image svg", "<img src=\"data:image/svg+xml,<svg onload='window.__pwned=1'>\">\n"},
 	{"svg with script", "<svg><script>window.__pwned=1</script></svg>\n"},
 	{"svg onload", "<svg onload=\"window.__pwned=1\"></svg>\n"},
+	{"svg link javascript", "<svg><a href=\"javascript:window.__pwned=1\"><text>x</text></a></svg>\n"},
+	{"svg set href", "<svg><a href=\"#x\"><set attributeName=\"href\" to=\"javascript:window.__pwned=1\"/><text>x</text></a></svg>\n"},
+	{"svg foreignObject script", "<svg><foreignObject><div><script>window.__pwned=1</script><img src=x onerror=\"window.__pwned=1\"></div></foreignObject></svg>\n"},
 	{"iframe", "<iframe src=\"javascript:window.top.__pwned=1\"></iframe>\n"},
 	{"iframe srcdoc", "<iframe srcdoc=\"<script>parent.__pwned=1</script>\"></iframe>\n"},
 	{"object", "<object data=\"javascript:window.__pwned=1\"></object>\n"},
@@ -101,9 +104,19 @@ func scriptCheck(t *testing.T, page, nonce string) []string {
 				if attr(n, "nonce") != nonce || nonce == "" {
 					found = append(found, "script without this response's nonce")
 				}
-			case "iframe", "object", "embed", "frame", "svg", "form", "style", "meta":
+			case "iframe", "object", "embed", "frame", "form", "meta":
 				if inArticle {
 					found = append(found, "<"+tag+"> in the article")
+				}
+			case "set", "animate", "animatemotion", "animatetransform", "animatecolor":
+				if name := strings.ToLower(strings.TrimSpace(attr(n, "attributeName"))); name == "href" || strings.HasSuffix(name, ":href") {
+					found = append(found, "<"+tag+"> rewrites a link")
+				}
+			case "style":
+				// A drawing's own <style> is part of the drawing (🎯T83);
+				// an HTML one is not allowed.
+				if inArticle && n.Namespace == "" {
+					found = append(found, "<style> in the article")
 				}
 			case "base":
 				if !strings.HasPrefix(attr(n, "href"), "http://127.0.0.1") {

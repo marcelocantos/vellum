@@ -148,6 +148,18 @@ function featureDoc() {
     "",
     "[outside doc](../outside.md)",
     "",
+    "## Drawing",
+    "",
+    '<svg id="drawing" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 200 60" width="400" onload="window.__pwned=\'svg-onload\'">' +
+      "<style>.box { fill: rgb(10, 20, 30) }</style>" +
+      '<defs><linearGradient id="grad"><stop offset="0" stop-color="#fff"/></linearGradient></defs>' +
+      '<rect class="box" id="drawn-box" width="80" height="30"/>' +
+      '<a xlink:href="https://example.com/svc"><text id="drawn-text" x="10" y="45">Service label</text></a>' +
+      '<a id="hijack" href="#x"><set attributeName="href" to="javascript:window.__pwned=\'svg-set\'"/><text x="100" y="45">x</text></a>' +
+      '<foreignObject x="100" y="0" width="100" height="30"><div xmlns="http://www.w3.org/1999/xhtml" id="drawn-label">wrapped label<img src="x" onerror="window.__pwned=\'svg-fo\'"></div></foreignObject>' +
+      "<script>window.__pwned='svg-script'</script>" +
+      "</svg>",
+    "",
   ].join("\n");
 }
 
@@ -383,6 +395,41 @@ const PNG = Buffer.from(
     check(beaconHits.length === 0, "beacon hit: " + beaconHits.join(", "));
     check(errors.length === 0, "page errors: " + errors.join(" | "));
 
+    // 6b. A drawing written inline stays real SVG: its shapes, styles,
+    // text and labels draw, and nothing in it runs (🎯T83).
+    await page.goto(origin + features);
+    await page.waitForSelector(".vellum-article h1");
+    const drawing = await page.evaluate(() => {
+      const svg = document.querySelector(".vellum-article svg#drawing");
+      if (!svg) return null;
+      const box = document.getElementById("drawn-box");
+      const text = document.getElementById("drawn-text");
+      const label = document.getElementById("drawn-label");
+      const r = svg.getBoundingClientRect();
+      return {
+        ns: svg.namespaceURI,
+        width: Math.round(r.width),
+        boxFill: box && getComputedStyle(box).fill,
+        textWidth: text ? Math.round(text.getBBox().width) : 0,
+        textLink: text && text.parentNode.getAttribute("xlink:href"),
+        labelHeight: label ? Math.round(label.getBoundingClientRect().height) : 0,
+        // What a click follows: the animated value, after any <set>.
+        hijack: document.getElementById("hijack") && document.getElementById("hijack").href.animVal,
+      };
+    });
+    check(drawing !== null, "the inline SVG is missing from the page");
+    if (drawing) {
+      check(drawing.ns === "http://www.w3.org/2000/svg", "the inline drawing is not SVG: " + drawing.ns);
+      check(drawing.width === 400, "the inline SVG is " + drawing.width + "px wide, want 400");
+      check(drawing.boxFill === "rgb(10, 20, 30)", "the drawing's own <style> did not apply: " + drawing.boxFill);
+      check(drawing.textWidth > 20, "the drawing's text did not lay out: " + drawing.textWidth);
+      check(drawing.textLink === "https://example.com/svc", "the drawing's link was lost: " + drawing.textLink);
+      check(drawing.labelHeight > 0, "the foreignObject label did not lay out");
+      check(!/^\s*javascript:/i.test(drawing.hijack || ""), "an animation turned the link into script: " + drawing.hijack);
+    }
+    await page.waitForTimeout(500);
+    check((await page.evaluate(() => window.__pwned || null)) === null, "a payload in the inline SVG ran: " + (await page.evaluate(() => window.__pwned || null)));
+
     // 7. The owner's opt-out. A second server whose config.yaml lists "/"
     // under viewer.folders serves a page's own requests with no open
     // first: the same image and link that section 4 saw refused.
@@ -435,7 +482,7 @@ const PNG = Buffer.from(
     process.exitCode = 1;
     return;
   }
-  console.log("PASS: payloads inert, CSP refuses injected script, viewer features work, only opened folders served, linked HTML sandboxed, task toggles exact and refused when stale, viewer.folders serves a listed folder with no open");
+  console.log("PASS: payloads inert, CSP refuses injected script, viewer features work, only opened folders served, linked HTML sandboxed, task toggles exact and refused when stale, viewer.folders serves a listed folder with no open, inline SVG drawn as SVG with nothing in it run");
 })().catch((e) => {
   console.error(e);
   process.exitCode = 1;

@@ -13,6 +13,10 @@
 // stay). The list follows what GitHub shows for a README: formatting,
 // tables, lists, images, links, details/summary.
 //
+// A document's own <svg> is the exception to the list: a drawing has to
+// stay a drawing, with its text, links, styles and labels. It is kept as
+// SVG and loses only what can run (see cleanSVGNode).
+//
 // Rendered is for markup that vellum's own renderers produce from
 // document text (KaTeX HTML, Mermaid SVG). Those renderers escape their
 // input, so it only strips what must never run: script elements, event
@@ -35,7 +39,7 @@ var dropWithContent = map[atom.Atom]bool{
 	atom.Iframe: true, atom.Frame: true, atom.Frameset: true,
 	atom.Object: true, atom.Embed: true, atom.Applet: true, atom.Param: true,
 	atom.Noscript: true, atom.Noembed: true, atom.Noframes: true,
-	atom.Svg: true, atom.Math: true,
+	atom.Math: true,
 	atom.Head: true, atom.Title: true, atom.Meta: true, atom.Link: true, atom.Base: true,
 	atom.Textarea: true, atom.Select: true, atom.Option: true, atom.Optgroup: true,
 	atom.Datalist: true, atom.Xmp: true, atom.Plaintext: true,
@@ -153,8 +157,11 @@ func cleanDocumentNode(n *html.Node) []*html.Node {
 	default:
 		return nil
 	}
-	// Foreign content (SVG, MathML) parses by different rules, which is
-	// where sanitiser and browser most often disagree. None is allowed.
+	if n.Namespace == svgNamespace && n.Data == svgRoot {
+		return stableSVG(n)
+	}
+	// Other foreign content (MathML, or an SVG element with no <svg>
+	// around it) is not allowed.
 	if n.Namespace != "" || dropWithContent[n.DataAtom] {
 		return nil
 	}
@@ -300,6 +307,142 @@ func cleanClass(class string) string {
 		kept = append(kept, c)
 	}
 	return strings.Join(kept, " ")
+}
+
+const (
+	// svgNamespace is how the parser marks an element in the SVG namespace.
+	svgNamespace = "svg"
+	svgRoot      = "svg"
+)
+
+// svgDrop are elements removed from a document's SVG with their content,
+// in either namespace: they run script, load another document, or take
+// input. Animation stays (see animatesLink).
+var svgDrop = map[string]bool{
+	"script": true, "iframe": true, "frame": true, "frameset": true,
+	"object": true, "embed": true, "applet": true, "base": true,
+	"meta": true, "link": true, "form": true, "portal": true,
+	"handler": true, "listener": true, "discard": true,
+	"input": true, "button": true, "select": true, "textarea": true,
+	"math": true, "template": true, "noscript": true,
+}
+
+// svgAnimation are the elements that change an attribute over time.
+var svgAnimation = map[string]bool{
+	"animate": true, "set": true, "animatemotion": true,
+	"animatetransform": true, "animatecolor": true,
+}
+
+// svgDropAttrs are attributes with no use in a drawing that change where
+// a link opens or what a script finds by name.
+var svgDropAttrs = map[string]bool{
+	"target": true, "name": true, "srcdoc": true, "http-equiv": true, "formtarget": true,
+}
+
+// animatesLink reports whether n, an animation element, rewrites a link's
+// destination after the URL check has looked at it.
+func animatesLink(n *html.Node) bool {
+	for _, a := range n.Attr {
+		if strings.EqualFold(a.Key, "attributeName") {
+			name := strings.ToLower(strings.TrimSpace(a.Val))
+			return name == "href" || strings.HasSuffix(name, ":href")
+		}
+	}
+	return false
+}
+
+// stableSVG cleans a document's <svg> and returns what replaces it. The
+// cleaned markup is parsed and cleaned a second time: if that changes it,
+// a browser may read it differently from how it was checked, and the
+// drawing is dropped whole.
+func stableSVG(n *html.Node) []*html.Node {
+	first := renderNodes(cleanSVGNode(n))
+	nodes, err := html.ParseFragment(strings.NewReader(first), bodyContext)
+	if err != nil {
+		return nil
+	}
+	var again []*html.Node
+	for _, m := range nodes {
+		if m.Type != html.ElementNode || m.Namespace != svgNamespace || m.Data != svgRoot {
+			return nil
+		}
+		again = append(again, cleanSVGNode(m)...)
+	}
+	if renderNodes(again) != first {
+		return nil
+	}
+	return again
+}
+
+func renderNodes(nodes []*html.Node) string {
+	var b bytes.Buffer
+	for _, n := range nodes {
+		_ = html.Render(&b, n)
+	}
+	return b.String()
+}
+
+// cleanSVGNode is cleanDocumentNode for a node of a document's <svg>,
+// the root included. SVG elements stay unless they are in svgDrop. HTML
+// inside a foreignObject keeps the elements a document may use anywhere
+// (the rest is dropped or unwrapped as usual) and, unlike elsewhere,
+// their style attributes: a label is laid out with them. Comments go:
+// nothing in the page reads them here.
+func cleanSVGNode(n *html.Node) []*html.Node {
+	if n.Parent != nil {
+		n.Parent.RemoveChild(n)
+	}
+	switch n.Type {
+	case html.TextNode:
+		return []*html.Node{n}
+	case html.ElementNode:
+	default:
+		return nil
+	}
+	name := strings.ToLower(n.Data)
+	switch n.Namespace {
+	case svgNamespace:
+		if svgDrop[name] || (svgAnimation[name] && animatesLink(n)) {
+			return nil
+		}
+	case "":
+		if svgDrop[name] || dropWithContent[n.DataAtom] {
+			return nil
+		}
+	default:
+		return nil
+	}
+	var kids []*html.Node
+	for c := n.FirstChild; c != nil; {
+		next := c.NextSibling
+		kids = append(kids, cleanSVGNode(c)...)
+		c = next
+	}
+	if n.Namespace == "" && !allowedElements[n.DataAtom] {
+		return kids
+	}
+	out := n.Attr[:0]
+	for _, a := range n.Attr {
+		key := strings.ToLower(a.Key)
+		if strings.HasPrefix(key, "on") || svgDropAttrs[key] {
+			continue
+		}
+		if renderedURLAttrs[key] && !safeURL(a.Val, linkSchemes, true) {
+			continue
+		}
+		if key == "class" {
+			a.Val = cleanClass(a.Val)
+			if a.Val == "" {
+				continue
+			}
+		}
+		out = append(out, a)
+	}
+	n.Attr = out
+	for _, c := range kids {
+		n.AppendChild(c)
+	}
+	return []*html.Node{n}
 }
 
 // renderedDrop are elements stripped from renderer output wherever they
