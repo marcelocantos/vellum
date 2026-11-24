@@ -10,6 +10,56 @@
   // An embedded page (data-embedded) is shown in another application's
   // frame: it has no storage, and cannot open windows or download.
   const embedded = chrome.hasAttribute("data-embedded");
+
+  // Storage that outlives a reload. A sandboxed frame has no localStorage
+  // or sessionStorage (reading either throws), so there the values are
+  // kept as JSON in window.name, which a frame keeps across its own
+  // navigations and reloads.
+  const NAME_STORE_KEY = "vellum-store";
+  function nameStore() {
+    function read() {
+      try {
+        const all = JSON.parse(window.name || "{}");
+        const mine = all && all[NAME_STORE_KEY];
+        return mine && typeof mine === "object" ? mine : {};
+      } catch (e) {
+        return {};
+      }
+    }
+    function write(values) {
+      const all = {};
+      all[NAME_STORE_KEY] = values;
+      window.name = JSON.stringify(all);
+    }
+    return {
+      getItem: function (key) {
+        const values = read();
+        return Object.prototype.hasOwnProperty.call(values, key) ? values[key] : null;
+      },
+      setItem: function (key, value) {
+        const values = read();
+        values[key] = String(value);
+        write(values);
+      },
+      removeItem: function (key) {
+        const values = read();
+        delete values[key];
+        write(values);
+      },
+    };
+  }
+  function browserStore(name) {
+    try {
+      const store = window[name];
+      store.getItem(NAME_STORE_KEY);
+      return store;
+    } catch (e) {
+      return null;
+    }
+  }
+  const fallbackStore = nameStore();
+  const localStore = browserStore("localStorage") || fallbackStore;
+  const sessionStore = browserStore("sessionStorage") || fallbackStore;
   const article = chrome.querySelector(".vellum-article");
   const scrollPane = document.getElementById("vellum-scroll");
   const toc = document.getElementById("vellum-toc");
@@ -35,13 +85,13 @@
 
   function saveTocWidth(px) {
     try {
-      localStorage.setItem(TOC_WIDTH_KEY, String(clampTocWidth(px)));
+      localStore.setItem(TOC_WIDTH_KEY, String(clampTocWidth(px)));
     } catch (e) {}
   }
 
   function loadTocWidth() {
     try {
-      const v = parseInt(localStorage.getItem(TOC_WIDTH_KEY), 10);
+      const v = parseInt(localStore.getItem(TOC_WIDTH_KEY), 10);
       if (v >= TOC_WIDTH_MIN && v <= TOC_WIDTH_MAX) return v;
     } catch (e) {}
     return TOC_WIDTH_DEFAULT;
@@ -142,7 +192,7 @@
     if (THEME_MODES.indexOf(mode) < 0) mode = "system";
     document.documentElement.dataset.vellumTheme = mode;
     try {
-      localStorage.setItem(THEME_KEY, mode);
+      localStore.setItem(THEME_KEY, mode);
     } catch (e) {}
     updateThemeButton(mode);
     if (ed) ed.setDark(effectiveDark());
@@ -156,7 +206,7 @@
   function initTheme() {
     let mode = "system";
     try {
-      const saved = localStorage.getItem(THEME_KEY);
+      const saved = localStore.getItem(THEME_KEY);
       if (THEME_MODES.indexOf(saved) >= 0) mode = saved;
     } catch (e) {}
     applyTheme(mode);
@@ -374,7 +424,7 @@
       const focus = captureFocus();
       if (focus) pos.focus = focus;
       if (pos.focus || pos.id || typeof pos.y === "number") {
-        sessionStorage.setItem(SCROLL_KEY, JSON.stringify(pos));
+        sessionStore.setItem(SCROLL_KEY, JSON.stringify(pos));
       }
     } catch (e) {}
   }
@@ -396,7 +446,7 @@
     if (!scrollPane) return;
     let raw;
     try {
-      raw = sessionStorage.getItem(SCROLL_KEY);
+      raw = sessionStore.getItem(SCROLL_KEY);
     } catch (e) {
       return;
     }
@@ -408,7 +458,7 @@
       return;
     }
     try {
-      sessionStorage.removeItem(SCROLL_KEY);
+      sessionStore.removeItem(SCROLL_KEY);
     } catch (e) {}
     function apply() {
       if (typeof pos.sourceLine === "number") {
@@ -446,16 +496,16 @@
 
   function taskConsent() {
     try {
-      if (localStorage.getItem(TASK_CONSENT_PERM) === "1") return "always";
-      if (sessionStorage.getItem(TASK_CONSENT_SESS) === "1") return "session";
+      if (localStore.getItem(TASK_CONSENT_PERM) === "1") return "always";
+      if (sessionStore.getItem(TASK_CONSENT_SESS) === "1") return "session";
     } catch (e) {}
     return "";
   }
 
   function rememberConsent(kind) {
     try {
-      if (kind === "always") localStorage.setItem(TASK_CONSENT_PERM, "1");
-      else sessionStorage.setItem(TASK_CONSENT_SESS, "1");
+      if (kind === "always") localStore.setItem(TASK_CONSENT_PERM, "1");
+      else sessionStore.setItem(TASK_CONSENT_SESS, "1");
     } catch (e) {}
   }
 
@@ -482,6 +532,20 @@
         }
       })
       .join("/");
+  }
+
+  // The page for the document at urlPath (a path as the server writes it
+  // in a URL). An embedded page names a document by one base64url segment
+  // of that path, because its own URL is not the document's path.
+  function documentURL(urlPath) {
+    const docs = chrome.getAttribute("data-docs");
+    if (!docs) return urlPath;
+    const bytes = new TextEncoder().encode(unescapePathURL(urlPath));
+    let bin = "";
+    bytes.forEach(function (b) {
+      bin += String.fromCharCode(b);
+    });
+    return docs + btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
   }
 
   function showConsent() {
@@ -591,10 +655,10 @@
           const urlPath = text.slice(7);
           persistScroll();
           try {
-            const raw = sessionStorage.getItem(SCROLL_KEY);
-            if (raw) sessionStorage.setItem("vellum-scroll:" + unescapePathURL(urlPath), raw);
+            const raw = sessionStore.getItem(SCROLL_KEY);
+            if (raw) sessionStore.setItem("vellum-scroll:" + unescapePathURL(urlPath), raw);
           } catch (e) {}
-          location.replace(urlPath);
+          location.replace(documentURL(urlPath));
           return;
         }
         if (text.indexOf("stamp ") !== 0) return;
@@ -1815,7 +1879,7 @@
       persistScroll();
       if (at) {
         try {
-          sessionStorage.setItem(SCROLL_KEY, JSON.stringify({ sourceLine: at.line, sourceLines: at.lines }));
+          sessionStore.setItem(SCROLL_KEY, JSON.stringify({ sourceLine: at.line, sourceLines: at.lines }));
         } catch (e) {}
       }
       location.reload();
@@ -2140,6 +2204,53 @@
     goneEl.addEventListener("click", function (ev) {
       if (ev.target === goneEl) hideGone();
     });
+  }
+
+  // Inside T3 Code the page is a card in a sandboxed frame.
+  if (embedded) {
+    // The frame cannot open a window, and following a link to another
+    // site would replace the document with a page that has no way back.
+    // Links between documents and within this one work as usual.
+    if (article) {
+      article.addEventListener("click", function (ev) {
+        const a = ev.target && ev.target.closest ? ev.target.closest("a") : null;
+        if (!a || !article.contains(a)) return;
+        if (a.hasAttribute("data-vellum-local")) {
+          ev.preventDefault();
+          setStatus("Only Markdown files open here.", false);
+          return;
+        }
+        const href = a.getAttribute("href") || "";
+        if (/^[a-z][a-z0-9+.-]*:/i.test(href)) {
+          ev.preventDefault();
+          setStatus("This link leads outside the document: " + href, false);
+        }
+      });
+    }
+
+    // T3's bridge: the card starts at the height the server declared.
+    // Ask for the whole window where the host can give it (a dialog on
+    // desktop and web), else for the tallest card it allows.
+    const BRIDGE_CARD_HEIGHT = 900;
+    window.addEventListener("message", function (ev) {
+      const msg = ev.data;
+      const port = ev.ports && ev.ports[0];
+      if (!msg || msg.type !== "t3.bridge.init" || !port || !msg.surfaceId) return;
+      const features = Array.isArray(msg.features) ? msg.features : [];
+      // Both: a host that cannot maximize this kind of card still
+      // resizes it, and a maximized card ignores its size.
+      if (features.indexOf("surface.resize") >= 0) {
+        port.postMessage({ type: "surface.update", surfaceId: msg.surfaceId, size: { height: BRIDGE_CARD_HEIGHT } });
+      }
+      if (features.indexOf("surface.maximize") >= 0) {
+        port.postMessage({ type: "surface.update", surfaceId: msg.surfaceId, maximized: true });
+      }
+    });
+    // The host sends its init on load; a page that started listening
+    // late asks for it again.
+    try {
+      window.parent.postMessage({ type: "t3.bridge.hello" }, "*");
+    } catch (e) {}
   }
 
   document.addEventListener("keydown", function (ev) {

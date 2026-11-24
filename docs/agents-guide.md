@@ -428,6 +428,21 @@ already work with files and `convert`.
   names the stamp on disk (409 with the current stamp otherwise, 428
   without one). Both refuse requests whose Host is not loopback or whose
   Origin / Sec-Fetch-Site is foreign.
+  A client whose headers do not survive a proxy names the stamp as
+  `&stamp=…` instead, asks for it with `GET …/edit?…&stampline=1` (the
+  body then starts with a line `stamp <stamp>`), and reads it from the
+  last line of a write's answer or of a 409 (`stamp <stamp>`).
+  **T3 Code.** `serve-view` also runs a loopback listener for the plugin
+  build of T3 Code (the view port plus one on macOS, off elsewhere;
+  `--t3-addr` / `VELLUM_T3_ADDR`, `off` to disable) and advertises it in
+  `~/.local/share/t3code/plugins/` while it runs. Once the user enables
+  **Vellum** in T3's Settings → Plugins, a Markdown file link in a chat
+  opens as a card showing the document, with edit and save, on any T3
+  client. That listener has `/t3` (T3's probe and protocol socket),
+  `/d/<token>` (a document, token = base64url of its path), `/f/<token>`
+  (a raster image) and the watch, task-toggle, edit, fragment and editor
+  routes; nothing else. A request to it never grants a folder: only T3's
+  link request does.
   Every route except `/healthz` refuses a Host that is not loopback or
   `localhost`, and a foreign Origin. A cross-site request is served only
   when it is a top-level `GET` navigation (a link followed from another

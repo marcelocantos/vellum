@@ -24,6 +24,8 @@
 		<string>@HOME@/.config</string>
 		<key>PUPPETEER_CACHE_DIR</key>
 		<string>@HOME@/.cache/puppeteer</string>
+		<key>VELLUM_T3_ADDR</key>
+		<string>off</string>
 		<key>VELLUM_IMPORT_CACHE</key>
 		<string>@HOME@/.local/state/vellum-release/import-cache</string>
 		<key>PATH</key>

@@ -32,6 +32,11 @@ const (
 	HealthPath = "/healthz"
 	// MCPPath is the streamable HTTP MCP endpoint (not a filesystem path).
 	MCPPath = "/mcp"
+
+	// readHeaderTimeout bounds how long a client may take to send its
+	// request headers; shutdownTimeout bounds a graceful stop.
+	readHeaderTimeout = 10 * time.Second
+	shutdownTimeout   = 5 * time.Second
 )
 
 var errIsDirectory = errors.New("is a directory")
@@ -44,6 +49,12 @@ type Server struct {
 	// Addr is the listen address (host:port). Empty means DefaultViewAddr.
 	// Host must be loopback; Serve rejects non-loopback binds.
 	Addr string
+	// T3Addr, when set, is a second loopback listener for T3 Code, which
+	// shows documents inside its own window (see t3.go). ListenAndServe
+	// runs it beside the view listener and advertises it to T3.
+	T3Addr string
+	// Log, when non-nil, receives one-line notes about the T3 listener.
+	Log func(msg string)
 	// CacheDir overrides the default view cache root (tests).
 	CacheDir string
 	Style    *convert.Style
@@ -156,6 +167,10 @@ func (s *Server) convertOptions() *convert.Options {
 		KaTeXCSSHref: ChromeKaTeXPrefix + embed.KaTeXCSSName,
 	}
 }
+
+// ViewAddr is the address the view listener binds: Addr, else
+// VELLUM_VIEW_ADDR, else DefaultViewAddr.
+func (s *Server) ViewAddr() string { return s.addr() }
 
 func (s *Server) addr() string {
 	if s != nil && s.Addr != "" {
@@ -310,16 +325,30 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 
 	srv := &http.Server{
 		Handler:           s.Handler(),
-		ReadHeaderTimeout: 10 * time.Second,
+		ReadHeaderTimeout: readHeaderTimeout,
 	}
 	errCh := make(chan error, 1)
 	go func() {
 		errCh <- srv.Serve(ln)
 	}()
+	t3Done := make(chan struct{})
+	t3Ctx, stopT3 := context.WithCancel(ctx)
+	go func() {
+		defer close(t3Done)
+		if s.T3Addr != "" {
+			s.serveT3(t3Ctx)
+		}
+	}()
+	// The discovery file is removed before this returns, so a stopped
+	// viewer is never left advertised.
+	defer func() {
+		stopT3()
+		<-t3Done
+	}()
 
 	select {
 	case <-ctx.Done():
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 		defer cancel()
 		_ = srv.Shutdown(shutdownCtx)
 		err := <-errCh
@@ -411,7 +440,7 @@ func (s *Server) handlePath(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet && openedByUser(r) {
 			_ = s.grant(fsPath)
 		}
-		s.serveMarkdown(w, r, fsPath)
+		s.serveMarkdown(w, r, fsPath, false)
 		return
 	}
 	s.serveFile(w, r, fsPath)
@@ -439,24 +468,32 @@ func urlPathToFS(p string) (string, error) {
 	return cleaned, nil
 }
 
-func (s *Server) serveMarkdown(w http.ResponseWriter, r *http.Request, absPath string) {
+// serveMarkdown writes the page for absPath. embedded is the page shown
+// inside T3 Code (t3.go): every URL in it is relative and it offers no
+// action that would act on this machine instead of the reader's.
+func (s *Server) serveMarkdown(w http.ResponseWriter, r *http.Request, absPath string, embedded bool) {
 	body, stamp, err := s.cachedHTML(r.Context(), absPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			s.serveMissingMarkdown(w, r, absPath)
+			s.serveMissingMarkdown(w, r, absPath, embedded)
 			return
 		}
 		servedStatus(w, r, err)
 		return
 	}
-	origin := requestOrigin(r)
-	page := rewriteMarkdownHrefs(string(body), absPath, origin)
-	// The <base> below points at the source directory (for relative images
-	// and links), which would also capture fragment-only hrefs: [x](#id)
-	// would navigate to the directory. Pin them to this document's URL.
-	page = rewriteFragmentHrefs(page, documentURLPath(r))
-	// Ensure <base> matches this request's origin (cache may predate a port change).
-	page = ensureBaseHref(page, origin+pathURL(filepath.Dir(absPath))+"/")
+	page := string(body)
+	if embedded {
+		page = embedLocalRefs(page, absPath)
+	} else {
+		origin := requestOrigin(r)
+		page = rewriteMarkdownHrefs(page, absPath, origin)
+		// The <base> below points at the source directory (for relative images
+		// and links), which would also capture fragment-only hrefs: [x](#id)
+		// would navigate to the directory. Pin them to this document's URL.
+		page = rewriteFragmentHrefs(page, documentURLPath(r))
+		// Ensure <base> matches this request's origin (cache may predate a port change).
+		page = ensureBaseHref(page, origin+pathURL(filepath.Dir(absPath))+"/")
+	}
 	// First paint waits on text only: the cached page is a shell whose
 	// Mermaid diagrams and math are placeholders that chrome.js fills from
 	// ChromeFragmentPath on demand, and images load lazily.
@@ -465,7 +502,7 @@ func (s *Server) serveMarkdown(w http.ResponseWriter, r *http.Request, absPath s
 	}
 	page = lazyLoadImages(page)
 	nonce := newNonce()
-	page = injectChrome(page, &chromePage{SourcePath: absPath, Nonce: nonce, Stamp: stamp})
+	page = injectChrome(page, &chromePage{SourcePath: absPath, Nonce: nonce, Stamp: stamp, Embedded: embedded})
 	// A cache-dir failure must not hide a document that is already rendered.
 	_ = s.noteRecent(absPath)
 
@@ -480,11 +517,11 @@ func (s *Server) serveMarkdown(w http.ResponseWriter, r *http.Request, absPath s
 	_, _ = io.WriteString(w, page)
 }
 
-func (s *Server) serveMissingMarkdown(w http.ResponseWriter, r *http.Request, absPath string) {
+func (s *Server) serveMissingMarkdown(w http.ResponseWriter, r *http.Request, absPath string, embedded bool) {
 	name := html.EscapeString(filepath.Base(absPath))
 	doc := `<!DOCTYPE html><html><head><title>` + name + `</title></head><body><p>` + name + ` is not here yet. This page will show the document when the file appears.</p></body></html>`
 	nonce := newNonce()
-	page := injectChrome(doc, &chromePage{SourcePath: absPath, Nonce: nonce, Waiting: true})
+	page := injectChrome(doc, &chromePage{SourcePath: absPath, Nonce: nonce, Waiting: true, Embedded: embedded})
 	w.Header().Set(cspHeader, documentCSP(r, nonce))
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")

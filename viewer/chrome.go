@@ -41,6 +41,7 @@ var chromeJS string
 var faviconSVG string
 
 var (
+	headOpenRe  = regexp.MustCompile(`(?i)<head[^>]*>`)
 	headCloseRe = regexp.MustCompile(`(?i)</head>`)
 	bodyOpenRe  = regexp.MustCompile(`(?i)<body([^>]*)>`)
 	bodyCloseRe = regexp.MustCompile(`(?i)</body>`)
@@ -60,6 +61,18 @@ type chromePage struct {
 	// Stamp is the source stamp the page was rendered from. A task toggle
 	// sends it back; the server refuses the toggle if the file moved on.
 	Stamp string
+	// Embedded marks a page shown inside T3 Code (t3.go). Its URLs are
+	// relative to the T3 listener's root, and it has no homepage link and
+	// no action that works on the machine the viewer runs on.
+	Embedded bool
+}
+
+// apiRoot is where the viewer's own routes are, as this page writes them.
+func (p *chromePage) apiRoot() string {
+	if p.Embedded {
+		return t3Root + strings.TrimPrefix(ChromePrefix, "/")
+	}
+	return ChromePrefix
 }
 
 // injectChrome wraps convert HTML with view-server chrome (toolbar, TOC
@@ -70,8 +83,14 @@ func injectChrome(htmlDoc string, page *chromePage) string {
 		return htmlDoc
 	}
 	htmlDoc = addBodyClass(htmlDoc, "vellum-view")
+	if page.Embedded {
+		// Before anything else in the head, so it governs every script.
+		if loc := headOpenRe.FindStringIndex(htmlDoc); loc != nil {
+			htmlDoc = htmlDoc[:loc[1]] + embeddedScriptPolicy(page.Nonce) + htmlDoc[loc[1]:]
+		}
+	}
 	if loc := headCloseRe.FindStringIndex(htmlDoc); loc != nil {
-		htmlDoc = htmlDoc[:loc[0]] + chromeFaviconLink() + chromeThemeInitScript(page.Nonce) + htmlDoc[loc[0]:]
+		htmlDoc = htmlDoc[:loc[0]] + chromeFaviconLink(page) + chromeThemeInitScript(page.Nonce) + htmlDoc[loc[0]:]
 	}
 	open := bodyOpenRe.FindStringIndex(htmlDoc)
 	close := bodyCloseRe.FindStringIndex(htmlDoc)
@@ -96,8 +115,18 @@ func chromeStyleTag() string {
 	return "<style>\n" + themeCSS + "\n" + chromeCSS + "\n@media screen {\n" + chromaDarkThemeCSS + "}\n</style>\n"
 }
 
-func chromeFaviconLink() string {
-	return `<link rel="icon" href="` + ChromeFaviconPath + `" type="image/svg+xml">` + "\n"
+func chromeFaviconLink(page *chromePage) string {
+	return `<link rel="icon" href="` + page.apiRoot() + strings.TrimPrefix(ChromeFaviconPath, ChromePrefix) + `" type="image/svg+xml">` + "\n"
+}
+
+// embeddedScriptPolicy restates the viewer's script rule inside the page.
+// T3's gateway drops the viewer's Content-Security-Policy header and sends
+// its own, which allows any inline script; a <meta> policy is enforced in
+// addition to it. Only scripts carrying this response's nonce run, and
+// 'strict-dynamic' lets them import the editor bundle, whose gateway URL
+// the server cannot name.
+func embeddedScriptPolicy(nonce string) string {
+	return `<meta http-equiv="Content-Security-Policy" content="script-src 'nonce-` + html.EscapeString(nonce) + `' 'strict-dynamic'; base-uri 'none'">` + "\n"
 }
 
 func chromeThemeInitScript(nonce string) string {
@@ -164,6 +193,9 @@ func chromeOpen(page *chromePage) string {
 	if page.Stamp != "" {
 		attrs += ` data-stamp="` + html.EscapeString(page.Stamp) + `"`
 	}
+	if page.Embedded {
+		attrs += ` data-embedded data-api="` + page.apiRoot() + `" data-docs="` + t3Root + strings.TrimPrefix(t3DocPrefix, "/") + `"`
+	}
 	fm := hint.FileManager()
 	actions := ""
 	if page.Waiting {
@@ -171,17 +203,28 @@ func chromeOpen(page *chromePage) string {
 		// reveal.
 		attrs += ` data-waiting="1"`
 	} else {
-		attrs += ` data-editor="` + html.EscapeString(editorEntryURL()) + `"`
-		actions = iconButton("edit", "Edit the Markdown source (E)", `aria-haspopup="dialog" aria-controls="vellum-editor"`, lineIcon("", iconPencil)) +
-			iconButton("clipboard", "Copy the rendered document to the clipboard", "", lineIcon("", iconCopy)) +
-			iconButton("pdf", "Download as PDF", "", pdfIconSVG()) +
-			iconButton("reveal", "Show in "+fm, `data-file-manager="`+fm+`"`,
-				`<img class="vellum-icon vellum-fm-icon" src="`+ChromeFileManagerIconPath+`" width="16" height="16" alt="">`) +
-			`<span class="vellum-sep" aria-hidden="true"></span>`
+		editor := page.apiRoot() + strings.TrimPrefix(editorEntryURL(), ChromePrefix)
+		attrs += ` data-editor="` + html.EscapeString(editor) + `"`
+		actions = iconButton("edit", "Edit the Markdown source (E)", `aria-haspopup="dialog" aria-controls="vellum-editor"`, lineIcon("", iconPencil))
+		if !page.Embedded {
+			// Copy, PDF and reveal act where the viewer runs. An embedded
+			// page may be read on another machine, and its frame can
+			// neither download nor reach that machine's clipboard.
+			actions += iconButton("clipboard", "Copy the rendered document to the clipboard", "", lineIcon("", iconCopy)) +
+				iconButton("pdf", "Download as PDF", "", pdfIconSVG()) +
+				iconButton("reveal", "Show in "+fm, `data-file-manager="`+fm+`"`,
+					`<img class="vellum-icon vellum-fm-icon" src="`+ChromeFileManagerIconPath+`" width="16" height="16" alt="">`)
+		}
+		actions += `<span class="vellum-sep" aria-hidden="true"></span>`
+	}
+	home := `<a class="vellum-btn vellum-home" href="/" title="Recent documents" aria-label="Recent documents">` + markSVG() + `</a>`
+	if page.Embedded {
+		// The T3 listener has no homepage.
+		home = ""
 	}
 	return `<div class="vellum-chrome" ` + attrs + `>` +
 		`<header class="vellum-toolbar">` +
-		`<a class="vellum-btn vellum-home" href="/" title="Recent documents" aria-label="Recent documents">` + markSVG() + `</a>` +
+		home +
 		iconButton("toc-toggle", "Hide contents", `aria-controls="vellum-toc"`, lineIcon("", iconSidebar)) +
 		`<button type="button" class="vellum-doc" data-vellum="top" title="` + path + `">` +
 		`<span class="vellum-docname">` + name + `</span>` +

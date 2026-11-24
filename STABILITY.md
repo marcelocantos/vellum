@@ -131,7 +131,9 @@ Package paths are under `github.com/marcelocantos/vellum/…`.
 - `func View(ctx context.Context, inputPath string, opts *ViewOptions) (string, error)` — **needs review** (HTML opens `http://127.0.0.1:18742/…` view-server URL; PDF still opens a cache file)
 - `type ViewOptions struct { Format Format; Style *convert.Style; Backend string; Open func(string) error; CacheDir string; MaxBytes int64; MaxAge time.Duration; Now func() time.Time; ViewBaseURL string; SkipEnsureServer bool }` — **needs review**
 - `type Server struct { Addr string; CacheDir string; Style *convert.Style; Backend string; Roots []string; … }` — **needs review** (added in v0.14.0; `Roots` lists folders served from the start — every other folder is served only after the user opens a document in it from outside a page (`Sec-Fetch-Site: none` or no fetch metadata), which grants its git work tree, or else its folder, or only the file itself for a document directly in the home folder or a filesystem root; grants persist in `roots.json` in the cache directory, newest 64. Every path-taking route resolves symlinks and `..`, refuses (403) a path outside the served roots, and opens through `os.Root`)
-- `func (*Server) ListenAndServe(ctx context.Context) error` — **needs review** (loopback-only bind)
+- `func (*Server) ListenAndServe(ctx context.Context) error` — **needs review** (loopback-only bind; with `Server.T3Addr` set it also runs the T3 Code listener and writes its discovery file, removed when ctx ends)
+- `Server.T3Addr`, `Server.Log`, `func (*Server) T3Handler() http.Handler`, `func (*Server) ViewAddr() string`, `func DefaultT3Addr(viewAddr string) string`, `const T3PluginID, T3PluginName, T3PluginPath` — **fluid** (🎯T78: the listener T3 Code's plugin gateway reaches. Routes: `/t3` (probe, and the panel-plugin protocol v1 socket, where a `surface` request for a Markdown file link grants the document's folder and answers with a web card path), `/d/<token>` (the document page in embedded form; token = base64url of the path), `/f/<token>` (raster images only), and the watch, task-toggle, edit, editor, fragment, favicon and KaTeX routes. No request to it grants a folder. The embedded page uses relative URLs only and carries its script policy in a `<meta>` element)
+- `const StampParam, StampLineParam` — **needs review** (the stamp as `?stamp=` on a write and `?stampline=1` on `GET /_vellum/edit`, for a client whose headers a proxy drops; every 409 ends with a `stamp <stamp>` line)
 - `func (*Server) Handler() http.Handler` — **needs review** (Markdown GET injects chrome; `/_vellum/pdf` GET, `/_vellum/clipboard` POST, `/_vellum/reveal` POST, `/_vellum/watch` GET/WebSocket, `/_vellum/task-toggle` POST, `/_vellum/edit` GET/PUT, `/_vellum/editor/` GET, `/_vellum/file-manager-icon` GET)
 - `const TaskIndexAttr, TaskLineAttr`, `type Task`, `func Tasks(src []byte) ([]Task, error)` (package `convert`) — **needs review** (`SourceLines` renders put `data-task-index` / `data-task-line` on each GFM task list item and leave its checkbox enabled; `Tasks` lists the same checkboxes, in the same order, with the byte offset of each marker, after the same math and Mermaid extraction, so markers in code, diagrams and math are not tasks)
 - `const SourceLineAttr, SourceEndAttr` (package `convert`) — **needs review** (`data-source-line` / `data-source-end`: a block's first and last source lines, 1-based)
@@ -188,7 +190,7 @@ Binary: `vellum`.
 | `vellum import … -o <path>` | Write the Markdown to a file instead of stdout. | needs review |
 | `vellum import … --from <fmt>` | Override pandoc format autodetection. | needs review |
 | `vellum view <file>` | Open via localhost view server (HTML → `http://127.0.0.1:18742/…`) or PDF cache file. Added in v0.6.0; server behaviour in v0.14.0. | needs review |
-| `vellum serve-view` | Run the localhost daemon: Markdown view + streamable HTTP MCP at `/mcp` (loopback only). Added in v0.14.0; MCP mount in 🎯T31. | needs review |
+| `vellum serve-view` | Run the localhost daemon: Markdown view + streamable HTTP MCP at `/mcp` (loopback only). Added in v0.14.0; MCP mount in 🎯T31. `--t3-addr host:port\|off` places or disables the T3 Code listener (🎯T78, fluid). Stops cleanly on SIGINT/SIGTERM. | needs review |
 | `vellum install-viewer` | Install Vellum Viewer.app as default .md handler (macOS). Added in v0.6.0. | needs review |
 | `vellum uninstall-viewer` | Remove Vellum Viewer.app. Added in v0.6.0. | needs review |
 | `vellum install-service` | Windows: register and start the per-user logon Scheduled Task for `serve-view` (`--addr`, `--no-start`). Added in v0.28.0. | needs review |
@@ -283,6 +285,9 @@ not listed here is either GFM (via goldmark's GFM extension) or not supported.
 - `VELLUM_VIEW_ADDR=<host:port>` — loopback listen address for `vellum serve-view`
   (default `127.0.0.1:18742`). Also the MCP HTTP origin (`/mcp` on the same
   listener). **needs review** (added in v0.14.0; MCP mount 🎯T31).
+- `VELLUM_T3_ADDR=<host:port>|off` — loopback listen address of the T3 Code
+  listener (`serve-view --t3-addr`). Default: the view port plus one on
+  macOS, off elsewhere. **fluid** (🎯T78).
 - `VELLUM_DEBUG_HTML=<path>` — if set, vellum writes the assembled HTML to
   this path before invoking the PDF backend (WeasyPrint default, or Prince).
   Intended for development only. Math documents link vellum's own KaTeX

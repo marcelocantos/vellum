@@ -8,7 +8,10 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
+	"runtime"
 	"strings"
+	"syscall"
 
 	"github.com/marcelocantos/vellum/config"
 	"github.com/marcelocantos/vellum/convert"
@@ -332,20 +335,27 @@ func runServeView(args []string) error {
 	var (
 		showHelp bool
 		addr     string
+		t3Addr   = strings.TrimSpace(os.Getenv(t3AddrEnv))
 	)
 	for i := 0; i < len(args); i++ {
 		a := args[i]
 		switch {
 		case a == "--help" || a == "-help":
 			showHelp = true
-		case a == "--addr":
+		case a == "--addr" || a == "--t3-addr":
 			if i+1 >= len(args) {
 				return fmt.Errorf("%s requires an argument", a)
 			}
 			i++
-			addr = args[i]
+			if a == "--addr" {
+				addr = args[i]
+			} else {
+				t3Addr = args[i]
+			}
 		case strings.HasPrefix(a, "--addr="):
 			addr = a[len("--addr="):]
+		case strings.HasPrefix(a, "--t3-addr="):
+			t3Addr = a[len("--t3-addr="):]
 		case strings.HasPrefix(a, "-"):
 			return fmt.Errorf("unknown flag for serve-view: %s", a)
 		default:
@@ -365,10 +375,41 @@ func runServeView(args []string) error {
 		Style:   cfg.Style,
 		Backend: cfg.Backend,
 		MCP:     vellummcp.HTTPHandler(version, cfg.Style, cfg.Backend, cfg.Template),
+		Log:     func(msg string) { fmt.Fprintln(os.Stderr, "vellum: "+msg) },
+	}
+	switch t3Addr {
+	case t3AddrOff:
+	case "":
+		// T3 Code's plugin discovery has only been exercised on macOS;
+		// elsewhere the listener starts when an address is given.
+		if runtime.GOOS == "darwin" {
+			srv.T3Addr = viewer.DefaultT3Addr(srv.ViewAddr())
+		}
+	default:
+		srv.T3Addr = t3Addr
 	}
 	fmt.Fprintf(os.Stderr, "vellum server listening on %s (view + MCP %s%s)\n", srv.Origin(), srv.Origin(), viewer.MCPPath)
-	return srv.ListenAndServe(context.Background())
+	// A stop signal ends the server cleanly, so the file that advertises
+	// the T3 Code plugin is removed with it.
+	ctx, stop := signal.NotifyContext(context.Background(), stopSignals...)
+	defer stop()
+	err = srv.ListenAndServe(ctx)
+	if ctx.Err() != nil {
+		return nil
+	}
+	return err
 }
+
+// stopSignals end serve-view. SIGTERM is what launchd and a service
+// manager send; it is never delivered on Windows, where Ctrl+C is.
+var stopSignals = []os.Signal{os.Interrupt, syscall.SIGTERM}
+
+const (
+	// t3AddrEnv names the T3 Code listener's address (see --t3-addr).
+	t3AddrEnv = "VELLUM_T3_ADDR"
+	// t3AddrOff as that address turns the T3 Code plugin off.
+	t3AddrOff = "off"
+)
 
 func printViewUsage() {
 	fmt.Print(osText(`Usage: vellum view [options] <file.md>
@@ -405,11 +446,18 @@ are evicted until under cap.
 }
 
 func printServeViewUsage() {
-	fmt.Print(osText(`Usage: vellum serve-view [--addr host:port]
+	fmt.Print(osText(`Usage: vellum serve-view [--addr host:port] [--t3-addr host:port|off]
 
 Run the localhost daemon (foreground): Markdown view server plus
 streamable HTTP MCP at /mcp. Binds loopback only — default
 127.0.0.1:18742 (override with --addr or VELLUM_VIEW_ADDR).
+
+A second loopback listener serves T3 Code, which shows a Markdown file
+link clicked in a chat as a card with the document in it. It defaults to
+the view port plus one on macOS and is off elsewhere (--t3-addr or
+VELLUM_T3_ADDR sets it; "off" disables it). While the daemon runs it is
+advertised to T3 in ~/.local/share/t3code/plugins. Enable it once in
+T3 Code under Settings → Plugins.
 
 Each GET of a .md/.markdown path converts that one file to HTML (no
 link-graph crawl). Relative .md links are rewritten to same-origin

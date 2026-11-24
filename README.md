@@ -262,6 +262,33 @@ registers it with Launch Services, and (with [`duti`](https://github.com/moreten
 
 With no `-o`, each input file is converted to a sibling `.pdf` with the same base name.
 
+### Inside T3 Code
+
+In the plugin build of [T3 Code](https://github.com/marcelocantos/t3code),
+a Markdown file link clicked in a chat opens the document as a card, on
+any T3 client. The file is read, edited and saved on the machine that
+hosts the thread, so it works from a phone or another machine.
+
+`vellum serve-view` advertises itself to T3 while it runs. Enable
+**Vellum** once in T3 Code under **Settings → Plugins**.
+
+The card shows the same page as the browser, without the actions that
+would act on the host instead of your device (copy, PDF, show in Finder).
+Inside the card:
+
+- Links to other Markdown files open in the card. Links to other sites
+  and other files do not open.
+- Images are shown when they are PNG, JPEG, GIF, WebP, AVIF, BMP or ICO
+  files in a served folder. SVG files and images from the web are not.
+- A save larger than 1 MiB is refused by T3's gateway.
+
+T3 reaches the viewer on a second loopback listener, which defaults to the
+view port plus one on macOS and is off elsewhere. `--t3-addr host:port` or
+`VELLUM_T3_ADDR` sets it; `off` disables it. That listener serves only
+what a card needs: no `/mcp`, no clipboard, no homepage. A request to it
+never makes the viewer serve a new folder; only T3 relaying your click on
+(or pointer over) a link does.
+
 ## MCP server
 
 The brew-service daemon hosts streamable HTTP MCP at
