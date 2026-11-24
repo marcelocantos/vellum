@@ -14,6 +14,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 
@@ -32,6 +33,47 @@ type Config struct {
 	Template string `yaml:"template,omitempty"`
 	// Style holds default style overrides applied to every conversion.
 	Style *convert.Style `yaml:"style,omitempty"`
+	// Viewer configures the view server (vellum serve-view).
+	Viewer *Viewer `yaml:"viewer,omitempty"`
+}
+
+// Viewer is the view server's part of the configuration.
+type Viewer struct {
+	// Folders are served from the start, with everything beneath them, so
+	// no document in them needs opening first. Each is an absolute path;
+	// a leading "~" is the home folder. "/" serves everything. Without
+	// this the server serves only folders a document was opened from.
+	Folders []string `yaml:"folders,omitempty"`
+}
+
+// homePrefix is how a configured path names the home folder.
+const homePrefix = "~"
+
+// ViewerFolders returns Viewer.Folders as absolute, cleaned paths. A
+// folder that is not absolute once "~" is expanded is an error. Whether
+// a folder exists is left to the server: a config file shared between
+// machines may name folders only one of them has.
+func (c *Config) ViewerFolders() ([]string, error) {
+	if c.Viewer == nil {
+		return nil, nil
+	}
+	var out []string
+	for _, f := range c.Viewer.Folders {
+		p := strings.TrimSpace(f)
+		rest, tilde := strings.CutPrefix(p, homePrefix)
+		if tilde && (rest == "" || rest[0] == '/' || rest[0] == filepath.Separator) {
+			home, err := os.UserHomeDir()
+			if err != nil {
+				return nil, fmt.Errorf("viewer.folders: %q: %w", f, err)
+			}
+			p = filepath.Join(home, rest)
+		}
+		if !filepath.IsAbs(p) {
+			return nil, fmt.Errorf("viewer.folders: %q is not an absolute path", f)
+		}
+		out = append(out, filepath.Clean(p))
+	}
+	return out, nil
 }
 
 // Path returns the resolved config file path. Honors XDG_CONFIG_HOME and

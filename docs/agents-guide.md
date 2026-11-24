@@ -472,6 +472,12 @@ already work with files and `convert`.
   folder is not served; a tab opened before v0.43.0, which introduced
   the rule, can be in that state. Open the URL afresh. Each server keeps
   its own list (the newest 64, kept across restarts).
+  The user can opt out: `viewer.folders` in `config.yaml` lists folders
+  served from the start with everything beneath them (`~` is the home
+  folder, `/` is everything; a folder missing on this machine is
+  skipped; a path that is not absolute stops `serve-view`). It is read
+  when `serve-view` starts. Do not add it for the user unasked: it lets
+  any viewed document link to and load files from those folders.
 - `vellum view <file.md>` / `vellum --open <file.md>` — open the file
   as an `http://127.0.0.1:18742/…` URL on the view server (**not**
   `file://`). HTML default (browser, fast); pass `--pdf` for

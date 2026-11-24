@@ -245,6 +245,25 @@ symlink that points out of its folder, is refused with 403, and a page
 cannot open a new folder. Reloading a tab that was reached by a link
 counts as that link again, so if it is refused, enter its URL in the
 address bar instead. The homepage lists only served documents.
+
+To skip that, list folders the viewer always serves in `config.yaml`
+(see [Style customisation](#style-customisation) for where it lives):
+
+```yaml
+viewer:
+  folders:
+    - ~/work        # this folder and everything beneath it
+    # - /           # everything: turns the rule off
+```
+
+Nothing in a listed folder needs opening first: links between
+repositories, images, reloads and non-Markdown files all work. A folder
+that does not exist on this machine is skipped, so one file can serve
+several machines. Restart the viewer after editing it
+(`brew services restart vellum`). The cost: any document you view can
+link to, and show images from, any file in a listed folder. Documents
+still cannot run script.
+
 Served folders are remembered (the newest 64) so open tabs survive a
 restart of the server. The same process hosts
 streamable HTTP MCP at `/mcp`. The server binds loopback only (override
@@ -403,6 +422,10 @@ Example `config.yaml`:
 backend: weasyprint     # or "prince"; default is weasyprint
 template: brand         # pptx reference deck: a path, a name under
                         # ~/.config/vellum/templates/, or "default"
+
+viewer:
+  folders:              # folders the viewer always serves (optional);
+    - ~/work            # see "macOS Markdown viewer" above
 
 style:
   font_size: 14px

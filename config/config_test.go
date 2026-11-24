@@ -88,3 +88,66 @@ func TestPath_XDG(t *testing.T) {
 		t.Errorf("Path: want %q, got %q", want, p)
 	}
 }
+
+func TestViewerFolders(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	abs := filepath.Join(home, "elsewhere")
+	cases := []struct {
+		name    string
+		folders []string
+		want    []string
+		wantErr bool
+	}{
+		{name: "none"},
+		{name: "absolute", folders: []string{abs}, want: []string{abs}},
+		{name: "cleaned", folders: []string{abs + string(filepath.Separator) + "." + string(filepath.Separator)}, want: []string{abs}},
+		{name: "home", folders: []string{"~"}, want: []string{home}},
+		{name: "under home", folders: []string{"~/work", " ~/notes "}, want: []string{filepath.Join(home, "work"), filepath.Join(home, "notes")}},
+		{name: "relative", folders: []string{"work"}, wantErr: true},
+		{name: "a name that starts with a tilde", folders: []string{"~work"}, wantErr: true},
+		{name: "empty", folders: []string{""}, wantErr: true},
+	}
+	for _, c := range cases {
+		cfg := &Config{}
+		if c.folders != nil {
+			cfg.Viewer = &Viewer{Folders: c.folders}
+		}
+		got, err := cfg.ViewerFolders()
+		if (err != nil) != c.wantErr {
+			t.Errorf("%s: error %v, want error %v", c.name, err, c.wantErr)
+			continue
+		}
+		if len(got) != len(c.want) {
+			t.Errorf("%s: got %v, want %v", c.name, got, c.want)
+			continue
+		}
+		for i := range got {
+			if got[i] != c.want[i] {
+				t.Errorf("%s: got %v, want %v", c.name, got, c.want)
+			}
+		}
+	}
+}
+
+func TestLoad_ViewerFolders(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	if err := os.MkdirAll(filepath.Join(dir, "vellum"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	root := filepath.VolumeName(dir) + string(filepath.Separator)
+	doc := "viewer:\n  folders:\n    - '" + root + "'\n"
+	if err := os.WriteFile(filepath.Join(dir, "vellum", "config.yaml"), []byte(doc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := cfg.ViewerFolders()
+	if err != nil || len(got) != 1 || got[0] != root {
+		t.Fatalf("got %v, %v; want [%s]", got, err, root)
+	}
+}

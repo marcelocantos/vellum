@@ -370,12 +370,24 @@ func runServeView(args []string) error {
 	if err != nil {
 		return err
 	}
+	folders, err := cfg.ViewerFolders()
+	if err != nil {
+		return err
+	}
 	srv := &viewer.Server{
 		Addr:    addr,
 		Style:   cfg.Style,
 		Backend: cfg.Backend,
 		MCP:     vellummcp.HTTPHandler(version, cfg.Style, cfg.Backend, cfg.Template),
 		Log:     func(msg string) { fmt.Fprintln(os.Stderr, "vellum: "+msg) },
+		Roots:   folders,
+	}
+	for _, f := range folders {
+		if info, err := os.Stat(f); err != nil || !info.IsDir() {
+			srv.Log("viewer.folders: " + f + " is not a folder here; skipped")
+			continue
+		}
+		srv.Log("always serving " + f + " (viewer.folders)")
 	}
 	switch t3Addr {
 	case t3AddrOff:
@@ -458,6 +470,14 @@ the view port plus one on macOS and is off elsewhere (--t3-addr or
 VELLUM_T3_ADDR sets it; "off" disables it). While the daemon runs it is
 advertised to T3 in ~/.local/share/t3code/plugins. Enable it once in
 T3 Code under Settings → Plugins.
+
+The server serves only folders a Markdown document was opened from
+(vellum view, a typed URL, open <url>). To serve folders from the
+start, list them in config.yaml:
+
+  viewer:
+    folders:
+      - ~/work    # "/" serves everything
 
 Each GET of a .md/.markdown path converts that one file to HTML (no
 link-graph crawl). Relative .md links are rewritten to same-origin

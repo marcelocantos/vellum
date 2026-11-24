@@ -96,7 +96,8 @@ Package paths are under `github.com/marcelocantos/vellum/…`.
 
 **`config`** — on-disk configuration (added in v0.4.0).
 
-- `type Config struct { Backend string; Style *convert.Style; Template string }` — **needs review** (`Template` added in v0.25.0)
+- `type Config struct { Backend string; Style *convert.Style; Template string; Viewer *Viewer }` — **needs review** (`Template` added in v0.25.0; `Viewer` unreleased, after v0.44.0)
+- `type Viewer struct { Folders []string }`, `func (*Config) ViewerFolders() ([]string, error)` — **fluid** (🎯T81, unreleased, after v0.44.0: `viewer.folders` in `config.yaml` lists folders `serve-view` always serves, with everything beneath them; `~` expands to the home folder, `/` serves everything; a path that is not absolute is an error, a folder that does not exist is skipped by the server)
 - `func Path() (string, error)` — **needs review** (XDG-aware path resolution)
 - `func Load() (*Config, error)` — **needs review** (missing file returns empty Config, not error)
 

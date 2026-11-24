@@ -276,6 +276,29 @@ func TestServed_GrantsComeOnlyFromTheUser(t *testing.T) {
 	}
 }
 
+// A root of "/" is the owner's opt-out (viewer.folders in config.yaml):
+// a page's own requests reach every file with no open first, a symlink
+// out of its folder included.
+func TestServed_FilesystemRootServesEverything(t *testing.T) {
+	f := newRootsFixture(t)
+	s := &Server{CacheDir: filepath.Join(t.TempDir(), "cache"), Roots: []string{string(filepath.Separator)}}
+	ts := startTestServer(t, s)
+	for _, p := range []string{
+		f.secretMD,
+		f.secret,
+		f.note,
+		filepath.Join(f.docs, "pic.png"),
+		filepath.Join(f.docs, "alias.txt"),
+	} {
+		if code, body := pageRequest(t, http.MethodGet, ts.URL+pathURL(p)); code != http.StatusOK {
+			t.Errorf("page request for %s: %d %s", p, code, body)
+		}
+	}
+	if code, _ := pageRequest(t, http.MethodGet, ts.URL+pathURL(filepath.Join(f.root, "absent.md"))); code == http.StatusForbidden {
+		t.Errorf("a missing document is refused as outside the served folders")
+	}
+}
+
 // Grants persist in the cache directory, so an open tab survives a
 // restart of the server.
 func TestServed_GrantSurvivesRestart(t *testing.T) {

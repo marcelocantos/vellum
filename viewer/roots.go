@@ -35,7 +35,8 @@ import (
 var errOutsideRoots = errors.New("outside the folders this viewer serves. " +
 	"A folder is served once a Markdown document in it is opened from outside any page: " +
 	"enter the document's URL in the address bar, run `open <url>`, or run `vellum view <file>`. " +
-	"Following a link does not count, nor does reloading a page that was reached by a link")
+	"Following a link does not count, nor does reloading a page that was reached by a link. " +
+	"To serve folders always, list them under viewer.folders in vellum's config.yaml")
 
 const (
 	// rootsFileName persists granted roots in the cache directory, so a

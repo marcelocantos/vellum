@@ -197,6 +197,7 @@ const PNG = Buffer.from(
     }),
   });
   const browser = await chromium.launch({ headless: true, channel: "chrome" });
+  let server2 = null;
   try {
     await waitFor(async () => {
       try {
@@ -381,9 +382,51 @@ const PNG = Buffer.from(
     check(dialogs.length === 0, "dialogs opened: " + dialogs.join(", "));
     check(beaconHits.length === 0, "beacon hit: " + beaconHits.join(", "));
     check(errors.length === 0, "page errors: " + errors.join(" | "));
+
+    // 7. The owner's opt-out. A second server whose config.yaml lists "/"
+    // under viewer.folders serves a page's own requests with no open
+    // first: the same image and link that section 4 saw refused.
+    const home2 = path.join(root, "home2");
+    fs.mkdirSync(path.join(home2, ".config", "vellum"), { recursive: true });
+    fs.writeFileSync(path.join(home2, ".config", "vellum", "config.yaml"), "viewer:\n  folders:\n    - /\n");
+    const port2 = await freePort();
+    const origin2 = "http://127.0.0.1:" + port2;
+    server2 = spawn(process.env.VELLUM_BINARY || "./vellum", ["serve-view", "--addr", "127.0.0.1:" + port2], {
+      stdio: "inherit",
+      env: Object.assign({}, process.env, {
+        HOME: home2,
+        XDG_CONFIG_HOME: path.join(home2, ".config"),
+        VELLUM_VIEW_ADDR: "",
+        PUPPETEER_CACHE_DIR: process.env.PUPPETEER_CACHE_DIR || path.join(os.homedir(), ".cache", "puppeteer"),
+      }),
+    });
+    await waitFor(async () => {
+      try {
+        return (await fetch(origin2 + "/healthz")).ok;
+      } catch (e) {
+        return false;
+      }
+    }, "second server health");
+    const open = await context.newPage();
+    open.setDefaultTimeout(15000);
+    await open.goto(origin2 + features);
+    await open.waitForSelector(".vellum-article h1");
+    await open.waitForFunction(() => {
+      const img = document.querySelector('.vellum-article img[alt="outside pic"]');
+      return img && img.complete;
+    });
+    const servedPic = await open.evaluate(() => document.querySelector('.vellum-article img[alt="outside pic"]').naturalWidth);
+    check(servedPic > 0, "with viewer.folders, an image in a listed folder did not load");
+    const [servedResp] = await Promise.all([open.waitForNavigation(), open.click('a[href$="outside.md"]')]);
+    check(servedResp && servedResp.status() === 200, "with viewer.folders, a link into a listed folder: " + (servedResp && servedResp.status()));
+    check((await open.content()).includes("SECRET-OUTSIDE"), "with viewer.folders, the linked document is not shown");
+    const reloaded = await open.reload();
+    check(reloaded && reloaded.status() === 200, "with viewer.folders, reloading a tab reached by a link: " + (reloaded && reloaded.status()));
+    await open.close();
   } finally {
     await browser.close();
     server.kill();
+    if (server2) server2.kill();
     beacon.close();
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -392,7 +435,7 @@ const PNG = Buffer.from(
     process.exitCode = 1;
     return;
   }
-  console.log("PASS: payloads inert, CSP refuses injected script, viewer features work, only opened folders served, linked HTML sandboxed, task toggles exact and refused when stale");
+  console.log("PASS: payloads inert, CSP refuses injected script, viewer features work, only opened folders served, linked HTML sandboxed, task toggles exact and refused when stale, viewer.folders serves a listed folder with no open");
 })().catch((e) => {
   console.error(e);
   process.exitCode = 1;
