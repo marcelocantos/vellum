@@ -441,7 +441,9 @@ already work with files and `convert`.
   on any other T3 client opens as a card showing the document, with edit
   and save. That listener has `/t3` (T3's probe and protocol socket),
   `/d/<token>` (a document, token = base64url of its path), `/f/<token>`
-  (a raster image) and the watch, task-toggle, edit, fragment and editor
+  (a raster image, or an SVG file when the request carries
+  `X-T3-Gateway-Features: plugin-policy`) and the watch, task-toggle,
+  edit, fragment and editor
   routes; nothing else. A request to it never grants a folder: only T3's
   link request does.
   Every route except `/healthz` refuses a Host that is not loopback or

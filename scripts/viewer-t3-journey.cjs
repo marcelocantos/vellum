@@ -13,8 +13,10 @@
 //     headers (allowed request headers: content-type, accept);
 //   - a policy the plugin sends in T3-Content-Security-Policy is enforced
 //     beside the gateway's, without its report directives; over 4 KiB the
-//     request fails. An older gateway (64d6716) ignores that header, and
-//     the page is also loaded through one of those;
+//     request fails. The gateway says so to the plugin on every request
+//     (x-t3-gateway-features: plugin-policy, from da5bd48). An older
+//     gateway (64d6716) does neither, and the page is also loaded through
+//     one of those;
 //   - requests are limited to 1 MiB and responses to 8 MiB; an upstream
 //     redirect is a 502;
 //   - a WebSocket is relayed with no Origin.
@@ -164,6 +166,7 @@ function startGateway(port, legacy) {
     req.on("end", () => {
       if (tooBig) return finish(502, headers, "Plugin gateway unavailable");
       const forward = { accept: req.headers.accept || "*/*", "content-type": req.headers["content-type"] || "application/octet-stream" };
+      if (!legacy) forward["x-t3-gateway-features"] = "plugin-policy";
       const up = http.request(upstream + rawPath.slice((PREFIX + token).length) + search, { method: req.method, headers: forward }, (ur) => {
         if (ur.statusCode >= 300 && ur.statusCode < 400) {
           ur.resume();
@@ -200,6 +203,7 @@ function startGateway(port, legacy) {
       up.write(
         `GET ${rawPath.slice((PREFIX + token).length)}${search} HTTP/1.1\r\n` +
           `Host: 127.0.0.1:${t3Port}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n` +
+          (legacy ? "" : "x-t3-gateway-features: plugin-policy\r\n") +
           `Sec-WebSocket-Key: ${req.headers["sec-websocket-key"]}\r\nSec-WebSocket-Version: 13\r\n\r\n`
       );
       up.pipe(socket);
@@ -236,6 +240,8 @@ const markdown = [
   "- [ ] second task",
   "",
   "![blue](pic.png)",
+  "",
+  "![drawing](evil.svg)",
   "",
   "<script>window.pwned = 1</script><img src=\"x\" onerror=\"window.pwned = 2\">",
   "",
@@ -283,7 +289,10 @@ const png = Buffer.concat([
   fs.writeFileSync(other, "# Other note\n\n## Part\n\nThe other body.\n");
   fs.writeFileSync(path.join(dir, "table.csv"), "a,b\n");
   fs.writeFileSync(path.join(dir, "pic.png"), png);
-  fs.writeFileSync(path.join(dir, "evil.svg"), '<svg xmlns="http://www.w3.org/2000/svg"><script>parent.postMessage("svg-ran","*")</script></svg>');
+  fs.writeFileSync(
+    path.join(dir, "evil.svg"),
+    '<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"><rect width="4" height="4" fill="red"/><script>parent.postMessage("svg-ran","*")</script></svg>'
+  );
 
   // The viewer advertises itself in a folder of this run's, never in the
   // one a real T3 Code reads.
@@ -379,6 +388,12 @@ const png = Buffer.concat([
           const img = document.querySelector(".vellum-article img[alt=blue]");
           return img && img.complete && img.naturalWidth === 2;
         }).catch(() => failures.push(`${name}: the image did not load`));
+        // An SVG file shows as an image behind a gateway that enforces the
+        // plugin's policy.
+        await waitFrame(() => {
+          const img = document.querySelector(".vellum-article img[alt=drawing]");
+          return img && img.complete && img.naturalWidth === 4;
+        }).catch(() => failures.push(`${name}: the SVG image did not load`));
         await waitFrame(() => Boolean(document.querySelector(".vellum-article .katex"))).catch(() => failures.push(`${name}: math was not rendered`));
         await f.locator(".vellum-deferred-mermaid, .mermaid-svg").first().scrollIntoViewIfNeeded();
         await waitFrame(() => Boolean(document.querySelector(".vellum-article svg[id^=mmd-]"))).catch(() => failures.push(`${name}: the diagram was not rendered`));
@@ -462,14 +477,18 @@ const png = Buffer.concat([
         f = await waitFrame(() => document.querySelector(".vellum-article h1") && document.querySelector(".vellum-article h1").textContent === "Other note");
         check(f.url().startsWith(root + "d/") && f.url().endsWith("#part"), `${name}: the linked document's URL is ${f.url()}`);
 
-        // The frame navigated to a file a browser would run gets nothing.
+        // The frame navigated to the SVG file gets the file, and under
+        // the plugin's policy nothing in it runs.
         const svgToken = Buffer.from(path.join(dir, "evil.svg")).toString("base64url");
         let svgRan = false;
         await page.exposeFunction("noteSvg", () => (svgRan = true));
         await page.evaluate(() => window.addEventListener("message", (ev) => ev.data === "svg-ran" && window.noteSvg()));
+        check((await fetch(root + "f/" + svgToken)).status === 200, `${name}: the SVG file is not served through the gateway`);
         await page.evaluate((src) => (document.getElementById("card").src = src), root + "f/" + svgToken);
         await page.waitForTimeout(600);
         check(!svgRan, `${name}: an SVG file's script ran in the card`);
+        // A gateway that enforces no plugin policy is refused the file.
+        check((await fetch(legacyRoot + "f/" + svgToken)).status === 415, `${name}: the SVG file is served through a gateway that would let it run`);
 
         // The one refusal expected is the inline handler injected above.
         const needed = blocked.filter((m) => !/inline|event handler|script-src-attr/i.test(m));

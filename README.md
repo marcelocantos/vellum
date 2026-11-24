@@ -286,7 +286,9 @@ Inside the card:
 - Links to other Markdown files open in the card. Links to other sites
   and other files do not open.
 - Images are shown when they are PNG, JPEG, GIF, WebP, AVIF, BMP or ICO
-  files in a served folder. SVG files and images from the web are not.
+  files in a served folder. SVG files are shown too in a T3 build with
+  document cards, where the gateway keeps a file's script from running.
+  Images from the web are not shown.
 - A save larger than 1 MiB is refused by T3's gateway.
 
 T3 reaches the viewer on a second loopback listener, which defaults to the

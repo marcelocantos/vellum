@@ -304,18 +304,48 @@ func TestT3_ListenerHasOnlyEmbeddedRoutes(t *testing.T) {
 	}
 }
 
-// TestT3_FilesAreRasterImagesOnly: the gateway's policy lets a document a
-// browser runs (SVG, HTML) script the frame, with the page's own access.
-func TestT3_FilesAreRasterImagesOnly(t *testing.T) {
+// TestT3_FilesABrowserWouldRunAreHeldBack: the gateway's own policy lets
+// a document a browser runs (SVG, HTML) script the frame, with the page's
+// access. SVG is served only behind a gateway that says it enforces the
+// plugin's policy, and then with one that makes it inert; HTML never.
+func TestT3_FilesABrowserWouldRunAreHeldBack(t *testing.T) {
 	f := newT3Fixture(t)
 	f.ask(t, linkRequest("r1", f.doc))
-	for _, name := range []string{"drawing.svg", "page.html", "table.csv", "other.md"} {
-		resp, body := f.get(t, t3FilePrefix+t3Token(filepath.Join(f.dir, name)))
-		if resp.StatusCode != http.StatusUnsupportedMediaType {
-			t.Errorf("%s: status %d, want 415", name, resp.StatusCode)
+	getWith := func(name, features string) (*http.Response, string) {
+		req, _ := http.NewRequest(http.MethodGet, f.ts.URL+t3FilePrefix+t3Token(filepath.Join(f.dir, name)), nil)
+		if features != "" {
+			req.Header.Set(t3FeaturesHeader, features)
 		}
-		if strings.Contains(body, "<script") {
-			t.Errorf("%s: the file's bytes were served", name)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		body, _ := io.ReadAll(resp.Body)
+		return resp, string(body)
+	}
+	for _, features := range []string{"", "other", "plugin-policy-2", "plugin-policy"} {
+		for _, name := range []string{"drawing.svg", "page.html", "table.csv", "other.md"} {
+			resp, body := getWith(name, features)
+			if name == "drawing.svg" && features == "plugin-policy" {
+				continue
+			}
+			if resp.StatusCode != http.StatusUnsupportedMediaType {
+				t.Errorf("%s with features %q: status %d, want 415", name, features, resp.StatusCode)
+			}
+			if strings.Contains(body, "<script") {
+				t.Errorf("%s with features %q: the file's bytes were served", name, features)
+			}
+		}
+	}
+	for _, features := range []string{"plugin-policy", "something, plugin-policy ,else"} {
+		resp, body := getWith("drawing.svg", features)
+		if resp.StatusCode != http.StatusOK || resp.Header.Get("Content-Type") != "image/svg+xml" || !strings.Contains(body, "<svg") {
+			t.Fatalf("drawing.svg with features %q: status %d, type %q", features, resp.StatusCode, resp.Header.Get("Content-Type"))
+		}
+		policy := resp.Header.Get(t3PolicyHeader)
+		if !strings.Contains(policy, "default-src 'none'") || !strings.Contains(policy, "sandbox") || strings.Contains(policy, "script-src") {
+			t.Fatalf("drawing.svg policy %q: want one under which nothing in the file runs", policy)
 		}
 	}
 }

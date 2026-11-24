@@ -52,8 +52,9 @@ import (
 //     Content-Type, so stamps travel in the query and the body (edit.go).
 //     The one other response header it reads is T3-Content-Security-Policy
 //     (builds from 2026-11-24): a policy enforced beside its own. Every
-//     response carries one, but nothing here relies on it, because an
-//     older gateway ignores it.
+//     response carries one. An older gateway ignores it, so the only
+//     thing that relies on it, serving SVG, waits for the gateway to say
+//     it enforces the policy (X-T3-Gateway-Features: plugin-policy).
 //
 // A click at the machine the viewer runs on opens the document in the
 // browser, as vellum view does; a click anywhere else gets the card. T3
@@ -94,6 +95,15 @@ const (
 	// t3InertPolicy is that policy for everything but a document page: if
 	// the frame is navigated to the response, nothing in it runs or loads.
 	t3InertPolicy = "default-src 'none'; style-src 'unsafe-inline'; img-src data:; sandbox"
+	// t3FeaturesHeader is a comma list the gateway sends with every
+	// request it relays; t3FeaturePolicy in it means the gateway enforces
+	// t3PolicyHeader.
+	t3FeaturesHeader = "X-T3-Gateway-Features"
+	t3FeaturePolicy  = "plugin-policy"
+	// t3SVGExt and t3SVGType: the one file /f/ serves that a browser would
+	// run if the frame were navigated to it, hence the gateway check.
+	t3SVGExt  = ".svg"
+	t3SVGType = "image/svg+xml"
 	// t3OpenBudget is how long an open at the machine may take before the
 	// answer goes out as handled: T3 waits two seconds for it.
 	t3OpenBudget = time.Second
@@ -108,9 +118,10 @@ const (
 	t3FrameLimit = 1 << 20
 )
 
-// t3ImageTypes are the files /f/ serves, by extension. Raster images
-// only: the gateway's policy lets an SVG or HTML file run script if the
-// frame is navigated to it.
+// t3ImageTypes are the files /f/ always serves, by extension: raster
+// images. The gateway's own policy lets an SVG or HTML file run script if
+// the frame is navigated to it, so HTML is never served and SVG only
+// behind a gateway that enforces t3InertPolicy (see gatewayEnforcesPolicy).
 var t3ImageTypes = map[string]string{
 	".png":  "image/png",
 	".jpg":  "image/jpeg",
@@ -423,9 +434,13 @@ func (s *Server) handleT3File(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	ctype, ok := t3ImageTypes[strings.ToLower(filepath.Ext(abs))]
+	ext := strings.ToLower(filepath.Ext(abs))
+	ctype, ok := t3ImageTypes[ext]
+	if !ok && ext == t3SVGExt && gatewayEnforcesPolicy(r) {
+		ctype, ok = t3SVGType, true
+	}
 	if !ok {
-		http.Error(w, "only raster images are shown inside T3 Code", http.StatusUnsupportedMediaType)
+		http.Error(w, "this kind of file is not shown inside T3 Code", http.StatusUnsupportedMediaType)
 		return
 	}
 	f, err := s.openServed(abs)
@@ -441,6 +456,21 @@ func (s *Server) handleT3File(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", ctype)
 	w.Header().Set("Cache-Control", "no-store")
 	http.ServeContent(w, r, "", info.ModTime(), f)
+}
+
+// gatewayEnforcesPolicy reports whether the request came through a T3
+// gateway that enforces t3PolicyHeader. Only the gateway can say so: it
+// forwards none of the client's own headers, and a browser page cannot
+// add one to a navigation or an image load.
+func gatewayEnforcesPolicy(r *http.Request) bool {
+	for _, value := range r.Header.Values(t3FeaturesHeader) {
+		for _, feature := range strings.Split(value, ",") {
+			if strings.TrimSpace(feature) == t3FeaturePolicy {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 var (
