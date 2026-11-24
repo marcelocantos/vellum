@@ -79,7 +79,12 @@ Minor releases only (no patch on top of the latest). On Colossus:
 1. Bump `const version` in `cmd/vellum/main.go`, the STABILITY snapshot
    line, and add `.release-notes-v<ver>.md`; `cv gate`; push master.
 2. `cv release-dist`, then `scripts/release-publish.sh --skip-brew`
-   (GitHub release, tap via tapper, `bucket/vellum.json`). Commit the
+   (GitHub release, tap via tapper, `bucket/vellum.json`).
+   `release-dist` signs the macOS binary with Canticode's Developer ID
+   from the login keychain (`scripts/release-signing.sh`: hardened
+   runtime, secure timestamp, identifier `com.marcelocantos.vellum`) and
+   refuses to package without it. Not notarized: Homebrew does not
+   quarantine what it installs. Commit the
    scoop manifest after `cv gate`; push. (`cv release` does the same
    but runs `brew upgrade` itself — dry-run first when other formulae
    may upgrade.)
@@ -91,7 +96,8 @@ Minor releases only (no patch on top of the latest). On Colossus:
    cache via a private HOME; template
    `launchd/com.marcelocantos.vellum-view-release.plist`, installed by
    `launchd/install.sh vellum-view-release`).
-   It checks the installed version; restarts the release service and
+   It checks the installed version and that the installed binary carries
+   that signature; restarts the release service and
    requires the same pid after 60s plus the right MCP serverInfo
    (`scripts/post-release-check.sh`); converts the fixtures in
    `test/verify-release/` md→PDF/HTML/PPTX and DOCX→md with content

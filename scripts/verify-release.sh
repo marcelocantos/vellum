@@ -4,7 +4,7 @@
 # is a broken release.
 #
 # Uses only the Homebrew install: /opt/homebrew/bin/vellum (its
-# vellum-bin for the fail-fast check, see below) and the LaunchAgent
+# vellum-bin for the signature and the fail-fast check, see below) and the LaunchAgent
 # com.marcelocantos.vellum-view-release (127.0.0.1:18744). Never ./vellum.
 #
 # usage: scripts/verify-release.sh [expected-version]
@@ -15,6 +15,7 @@ set -uo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/.." && pwd)"
+source "$HERE/release-signing.sh"
 VELLUM=/opt/homebrew/bin/vellum
 # The brew wrapper prepends /opt/homebrew/bin to PATH, which would put
 # weasyprint back; the fail-fast check runs the installed binary directly.
@@ -55,6 +56,22 @@ echo "verify-release: expecting vellum ${EXPECTED:-<none>} (workdir $W)"
 got="$("$VELLUM" --version 2>&1)"
 if [[ "$got" == "$EXPECTED" ]]; then ok "version: $VELLUM --version = $got"
 else bad "version" "$VELLUM --version = '$got', want '$EXPECTED'"; fi
+
+# --- 1b. the installed binary's signature -------------------------------
+# Developer ID, hardened runtime, the release's own identifier. An ad-hoc
+# signature (the linker's, or one Homebrew put back after touching the
+# binary) has no team, and macOS would then treat each upgrade as a new
+# program for its privacy grants.
+sig="$(codesign --display --verbose=2 "$VELLUM_BIN" 2>&1)"
+if ! codesign --verify --strict "$VELLUM_BIN" >"$W/codesign.log" 2>&1; then
+	bad "signature" "$VELLUM_BIN does not verify: $(tr '\n' ' ' <"$W/codesign.log")"
+elif grep -qx "TeamIdentifier=$SIGN_TEAM" <<<"$sig" &&
+	grep -qx "Identifier=$SIGN_IDENTIFIER" <<<"$sig" &&
+	grep -q '^CodeDirectory .*flags=.*runtime' <<<"$sig"; then
+	ok "signature: $SIGN_IDENTIFIER, team $SIGN_TEAM, hardened runtime"
+else
+	bad "signature" "$VELLUM_BIN is not signed by team $SIGN_TEAM as $SIGN_IDENTIFIER with the hardened runtime: $(grep -E '^(Identifier|TeamIdentifier|Signature|CodeDirectory)' <<<"$sig" | tr '\n' ' ')"
+fi
 
 # --- 2. release service: restart, 60s liveness, MCP serverInfo ---------
 if out="$(VELLUM_RELEASE_ADDR="$ADDR" "$HERE/post-release-check.sh" "$EXPECTED" 2>&1)"; then

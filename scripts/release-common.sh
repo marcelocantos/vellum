@@ -5,6 +5,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
+source "$ROOT/scripts/release-signing.sh"
+
 release_version() {
 	sed -n 's/^const version = "\([0-9][0-9.]*\)"/\1/p' cmd/vellum/main.go
 }
