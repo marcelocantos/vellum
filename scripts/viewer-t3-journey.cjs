@@ -451,9 +451,13 @@ const png = Buffer.concat([
         check(saved.includes("More.") && !saved.includes("someone else"), `${name}: overwrite after a conflict did not save the editor's text`);
         await f.locator('[data-vellum="ed-close"]').click();
 
+        // Closing the editor reloads the page to show what was saved.
+        // Wait for that page, not the one about to be replaced.
+        f = await waitFrame(() => /More\./.test(document.querySelector(".vellum-article").textContent) && Boolean(document.querySelector(".vellum-toc-nav a")));
+        await page.waitForTimeout(500);
+
         // A link to another document opens it in the card.
-        f = await waitFrame(() => Boolean(document.querySelector('.vellum-article a[href*="/d/"], .vellum-article a[href^="../d/"]')));
-        await f.evaluate(() => (document.getElementById("vellum-scroll").scrollTop = 0));
+        f = await waitFrame(() => Boolean(document.querySelector('.vellum-article a[href^="../d/"]')));
         await f.locator('.vellum-article a:has-text("the other note")').click();
         f = await waitFrame(() => document.querySelector(".vellum-article h1") && document.querySelector(".vellum-article h1").textContent === "Other note");
         check(f.url().startsWith(root + "d/") && f.url().endsWith("#part"), `${name}: the linked document's URL is ${f.url()}`);
