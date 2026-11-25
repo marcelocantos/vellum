@@ -686,7 +686,9 @@ html[data-vellum-theme="system"] .vellum-theme-btn .vellum-icon-system {
 
      A diagram with a vellum:scale hint (a style on its wrapper) keeps the
      width its author asked for. Mermaid writes its natural width as an
-     inline max-width, hence !important. */
+     inline max-width, and a page may keep a drawing to its container with
+     an inline "max-width: 100%" or "width: auto" (figures.go treats those
+     as no sizing), hence !important. */
   .vellum-article .mermaid-svg:not([style]) > [style*="--vellum-svg-natural"],
   .vellum-article [data-vellum-figure] [style*="--vellum-svg-natural"] {
     --vellum-svg-room: 100%;
@@ -694,7 +696,7 @@ html[data-vellum-theme="system"] .vellum-theme-btn .vellum-icon-system {
     width: min(
       var(--vellum-svg-room),
       max(var(--vellum-svg-natural), calc(var(--vellum-svg-ems) * var(--vellum-text-size)))
-    );
+    ) !important;
     max-width: none !important;
     height: auto;
   }

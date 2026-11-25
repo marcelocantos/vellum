@@ -418,7 +418,9 @@ already work with files and `convert`.
   than it. A remote one is measured after the page loads. An SVG in a
   sentence, one with a `width` or `height` (a style width for `<svg>`),
   a diagram with a `vellum:scale` hint and an SVG with no `viewBox` keep
-  their size. The raw source is reached through
+  their size. `max-width: 100%` or more, `max-width: none` and `auto`
+  widths and heights in a style do not count as sizing, so
+  `max-width: 100%; height: auto` still grows. The raw source is reached through
   the editor (pencil); there is no separate source view.
   Task-list boxes toggle the source on the box itself (click or
   Space), not the label text. The toggle POST returns a source stamp

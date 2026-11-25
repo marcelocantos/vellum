@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"golang.org/x/net/html"
@@ -364,24 +365,46 @@ func isVoid(tag string) bool {
 }
 
 // authorSized reports whether a style gives the element a size.
+//
+// A declaration that only keeps the drawing inside its container does not
+// count: max-width of 100% or more (or none), and width or height auto.
+// "max-width: 100%; height: auto" is the usual responsive-image idiom, and
+// a page exported with it still wants the drawing grown to reading size.
+// Anything marked !important counts, since the viewer cannot override it.
 func authorSized(style string) bool {
-	for _, p := range []string{"width", "max-width", "height"} {
-		if declaration(style, p) != "" {
-			return true
+	for _, d := range strings.Split(style, ";") {
+		k, v, ok := strings.Cut(d, ":")
+		if !ok {
+			continue
+		}
+		k = strings.ToLower(strings.TrimSpace(k))
+		v = strings.ToLower(strings.TrimSpace(v))
+		switch k {
+		case "width", "height":
+			if v != "auto" {
+				return true
+			}
+		case "max-width":
+			if !containerBound(v) {
+				return true
+			}
 		}
 	}
 	return false
 }
 
-// declaration is the value of property in an inline style.
-func declaration(style, property string) string {
-	for _, d := range strings.Split(style, ";") {
-		k, v, ok := strings.Cut(d, ":")
-		if ok && strings.EqualFold(strings.TrimSpace(k), property) {
-			return strings.TrimSpace(v)
-		}
+// containerBound reports whether a max-width value at most holds a drawing
+// to its container: none, or a percentage of 100 or more.
+func containerBound(v string) bool {
+	if v == "none" {
+		return true
 	}
-	return ""
+	pct, ok := strings.CutSuffix(v, "%")
+	if !ok {
+		return false
+	}
+	n, err := strconv.ParseFloat(strings.TrimSpace(pct), 64)
+	return err == nil && n >= 100
 }
 
 // inlineFigure measures a document's own <svg> element.

@@ -74,6 +74,7 @@ const extraImages = {
   data: { grow: true },
   remote: { grow: true },
   private: { natural: true },
+  contained: { grow: true },
 };
 
 const chain = Array.from({ length: 14 }, (_, i) => `S${i}[Stage ${i} of ${run}]`).join(" --> ");
@@ -133,6 +134,15 @@ const markdown = [
   ...fence(diagrams.gantt),
   "<!-- vellum:scale 0.5 -->",
   ...fence(["flowchart LR", `  H0[Hinted ${run}] --> H1[A second stage] --> H2[A third stage] --> H3[A fourth stage] --> H4[A fifth stage]`]),
+  // Below the diagrams that load on their own, so they do not push them
+  // out of reach. A page may hold a drawing to its container with the
+  // responsive-image idiom or auto sizes; that does not stop it growing.
+  '<p><img src="small.svg" alt="contained" style="max-width: 100%; height: auto"></p>',
+  "",
+  inlineSmall.replace("<svg ", '<svg id="fit-contained" style="max-width: 100%; height: auto" '),
+  "",
+  inlineSmall.replace("<svg ", '<svg id="fit-auto" style="width: auto; height: auto" '),
+  "",
   ...Array.from({ length: 80 }, (_, i) => [`Filler paragraph ${i}. `.repeat(12), ""]).flat(),
   ...fence(diagrams.wideflow),
 ].join("\n");
@@ -312,7 +322,7 @@ function measurePage({ gutter }) {
               if (!near(got.width, Math.min(images.small.natural, got.container.width))) fail(`image ${alt} is ${got.width.toFixed(1)}px wide, want its natural ${images.small.natural}`);
             } else placed(`image ${alt}`, got, want.centred);
           }
-          for (const id of ["block", "para"]) {
+          for (const id of ["block", "para", "contained", "auto"]) {
             if (!r.drawings[id]) fail(`drawing ${id} missing`);
             else placed(`drawing ${id}`, r.drawings[id], false);
           }

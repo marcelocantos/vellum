@@ -97,6 +97,18 @@ func TestFitFigures(t *testing.T) {
 		{"an inline drawing in a sentence", `<p>An icon ` + fitSampleSVG + ` in text.</p>`, ""},
 		{"an inline drawing beside another", `<p>` + fitSampleSVG + fitSampleSVG + `</p>`, ""},
 		{"an inline drawing sized by a style", `<p><svg style="width: 10em" viewBox="0 0 300 100"><text font-size="10">x</text></svg></p>`, ""},
+		// The responsive-image idiom only keeps a drawing inside its
+		// container, so it is grown as if it had no style.
+		{"an inline drawing held to its container", `<p><svg viewBox="0 0 300 100" width="300" style="max-width: 100%; height: auto"><text font-size="10">some label text</text></svg></p>`,
+			`<p data-vellum-figure=""><svg viewBox="0 0 300 100" width="300" style="` + fitSampleStyle + `; max-width: 100%; height: auto"><text font-size="10">some label text</text></svg></p>`},
+		{"an image held to its container", `<p><img src="small.svg" style="max-width: 100%; height: auto"></p>`,
+			`<p data-vellum-figure=""><img src="small.svg" style="` + fitSampleStyle + `; max-width: 100%; height: auto"></p>`},
+		{"auto width and height", `<p><img src="small.svg" style="width: auto; height: auto; max-width: none"></p>`,
+			`<p data-vellum-figure=""><img src="small.svg" style="` + fitSampleStyle + `; width: auto; height: auto; max-width: none"></p>`},
+		{"a max-width under 100%", `<p><img src="small.svg" style="max-width: 80%"></p>`, ""},
+		{"a max-width in pixels", `<p><img src="small.svg" style="max-width: 400px"></p>`, ""},
+		{"an important max-width", `<p><img src="small.svg" style="max-width: 100% !important"></p>`, ""},
+		{"a height", `<p><img src="small.svg" style="height: 50px"></p>`, ""},
 		{"an inline drawing at a percentage", `<p><svg width="100%" viewBox="0 0 300 100"><text font-size="10">x</text></svg></p>`, ""},
 		{"an inline drawing with no viewBox", `<p><svg width="300" height="100"><text font-size="10">x</text></svg></p>`, ""},
 		{"a diagram the viewer drew", `<div class="mermaid-svg">` + fitSampleSVG + `</div>`, ""},

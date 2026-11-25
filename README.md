@@ -571,7 +571,11 @@ nothing beside it in its block:
 Left as they were: an image or drawing inside a sentence, an image given a
 `width` or `height`, a drawing given a width in its `style` or as a
 percentage, a diagram with a `vellum:scale` hint, an SVG with no
-`viewBox`, and print and PDF output. `test/svg-fit/svg-fit.md` shows each
+`viewBox`, and print and PDF output. A style that only keeps the drawing
+inside its container does not count as sizing it: `max-width: 100%` (or
+more, or `none`) and `width` or `height` of `auto`, as in the common
+`max-width: 100%; height: auto`. Such a drawing grows like one with no
+style. `test/svg-fit/svg-fit.md` shows each
 case.
 
 The text sizes are read on the server, without a browser, from
