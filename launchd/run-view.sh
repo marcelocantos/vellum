@@ -19,6 +19,34 @@ export PATH="/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:${HOME}/.cargo/
 export VELLUM_T3_ADDR="${VELLUM_T3_ADDR:-127.0.0.1:18747}"
 
 if [ -x "$ROOT/vellum" ]; then
+  # Give the checkout's build a stable signature before running it
+  # (🎯T86). The Go linker signs ad hoc as "a.out", so macOS identifies
+  # the build by its hash, and every rebuild is a new app to its privacy
+  # controls: on 24-25 Nov 2026 four rebuilds raised four Removable
+  # Volumes prompts. While one waits unanswered, every process's access
+  # to that volume waits behind it, mnemo's backups included. Signed with
+  # the release's Developer ID under its own identifier, an Allow given
+  # once holds across rebuilds. Failing to sign is not fatal; the viewer
+  # starts as before and the log says why.
+  SIGN_IDENTITY="" SIGN_TEAM="" SIGN_IDENTIFIER=""
+  # shellcheck source=scripts/release-signing.sh
+  [ -r "$ROOT/scripts/release-signing.sh" ] && . "$ROOT/scripts/release-signing.sh"
+  DEV_IDENTIFIER="$SIGN_IDENTIFIER.dev"
+  sig="$(codesign --display --verbose=2 "$ROOT/vellum" 2>&1 || true)"
+  if [ -z "$SIGN_IDENTITY" ]; then
+    echo "run-view: $ROOT/scripts/release-signing.sh names no signing identity;" \
+      "running $ROOT/vellum as built" >&2
+  elif ! codesign --verify --strict "$ROOT/vellum" >/dev/null 2>&1 ||
+    ! printf '%s\n' "$sig" | grep -qx "Identifier=$DEV_IDENTIFIER" ||
+    ! printf '%s\n' "$sig" | grep -qx "TeamIdentifier=$SIGN_TEAM"; then
+    if out="$(codesign --force --timestamp=none --sign "$SIGN_IDENTITY" \
+      --identifier "$DEV_IDENTIFIER" "$ROOT/vellum" 2>&1)"; then
+      echo "run-view: signed $ROOT/vellum as $DEV_IDENTIFIER (team $SIGN_TEAM)"
+    else
+      echo "run-view: could not sign $ROOT/vellum as $DEV_IDENTIFIER; macOS may ask" \
+        "for its privacy permissions again after each rebuild: $out" >&2
+    fi
+  fi
   exec "$ROOT/vellum" serve-view
 fi
 if [ -x "/opt/homebrew/opt/vellum/bin/vellum" ]; then

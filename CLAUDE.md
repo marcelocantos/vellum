@@ -111,7 +111,12 @@ Minor releases only (no patch on top of the latest). On Colossus:
 Dev and release run side by side as LaunchAgents: `vellum-view`
 (127.0.0.1:18742, `launchd/install.sh`) runs `launchd/run-view.sh`, which
 prefers the checkout's `./vellum` build; `vellum-view-release` serves the
-Homebrew binary. Restart with
+Homebrew binary. Before running the checkout's build, `run-view.sh`
+signs it with the release's Developer ID as `com.marcelocantos.vellum.dev`
+(🎯T86). The linker's ad-hoc signature makes every rebuild a new app to
+macOS privacy controls, and an unanswered Removable Volumes prompt holds
+every process's access to that volume, so do not bypass the script by
+running `./vellum serve-view` under the LaunchAgent another way. Restart with
 `launchctl kickstart -k gui/$(id -u)/com.marcelocantos.<program>`, check
 with `launchctl print gui/$(id -u)/com.marcelocantos.<program>` (or
 `svc restart|status <program>`); logs are
