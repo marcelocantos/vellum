@@ -6,9 +6,11 @@
 # Nothing about what "green" means lives anywhere else, so the gate can
 # always be reproduced on the machine in front of you.
 #
-# The gate host is macOS. Windows (arm64/amd64) is also supported and is
-# proven on the Parallels Windows 11 arm64 VM (ssh hms-vm) with the same
-# VELLUM_REQUIRE_DEPS=1 suite; see CLAUDE.md. Linux is unsupported.
+# The gate host is macOS. Windows (arm64/amd64) is also supported, and
+# the gate proves it on the Parallels Windows 11 arm64 VM (ssh hms-vm):
+# `windows` copies the working tree there and runs the same
+# VELLUM_REQUIRE_DEPS=1 suite (scripts/windows-gate.sh). Linux is
+# unsupported.
 
 go ?= go
 binary = vellum
@@ -69,12 +71,18 @@ $binary: $gosrc go.mod go.sum
         [ "$$all" -eq "$$pb" ] || { echo "ERROR: $$((all - pb)) non-pasteboard skip(s) with VELLUM_REQUIRE_DEPS=1"; \
             echo "$$out" | grep -B1 -- "--- SKIP" | grep -v pasteboard; exit 1; }'
 
+# The suite on the Windows VM, with its own skip census (one allowed skip
+# per open Windows target, locked in both directions). Wakes the VM if
+# Parallels has it stopped or suspended; fails if it cannot reach it.
+!windows:
+    $runner ./scripts/windows-gate.sh
+
 !cli-contract: $binary
     $runner sh -c './$binary --version && ./$binary --help >/dev/null && ./$binary --help-agent | head -5 >/dev/null'
 
 # --- aggregate --------------------------------------------------------
 
-!gate: fmt vet test skip-census cli-contract
+!gate: fmt vet test skip-census cli-contract windows
     @echo "gate green"
 
 # Standing-invariants hook for bullseye convergence. Dirty tree warns

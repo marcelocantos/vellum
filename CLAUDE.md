@@ -64,8 +64,14 @@ build to reproduce: a red gate is the failure, one command away.
 
 Platforms: macOS (darwin-arm64, the gate host) and Windows (arm64 and
 amd64). Windows is proven on the Parallels "Windows 11" arm64 VM on
-Colossus (`ssh hms-vm`): before a Windows-affecting change lands, run
-`VELLUM_REQUIRE_DEPS=1 go test ./...` there with 0 skips. The Windows
+Colossus (`ssh hms-vm`) by the gate itself: `cv windows`
+(`scripts/windows-gate.sh`) copies the working tree there, runs
+`VELLUM_REQUIRE_DEPS=1 go test ./... -count=1` (no `-race`: windows/arm64
+has no race detector) and allows only the skips listed in the script,
+each tied to an open Windows target. It wakes a stopped or suspended
+VM and fails when it cannot reach it. Do not copy a tree to the VM by
+hand with macOS `tar`: without `COPYFILE_DISABLE=1` it adds AppleDouble
+`._` files, which break `FuzzDocument`. The Windows
 toolchain is Go, pandoc and node (winget), WeasyPrint (pip) with Pango
 and poppler from MSYS2 clangarm64 (`WEASYPRINT_DLL_DIRECTORIES`), and
 `npm install -g katex@<embed version> @mermaid-js/mermaid-cli`. Linux is
