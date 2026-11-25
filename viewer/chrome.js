@@ -2111,6 +2111,32 @@
     if (zoomLevel) zoomLevel.textContent = Math.round(lb.scale * 100) + "%";
   }
 
+  // A remote image that may be an SVG stands alone but is not measured
+  // yet (fit_remote.go): the viewer fetches it now, not before the page.
+  // One it can measure becomes a figure; one it cannot (the browser may
+  // reach what the viewer does not) stays as it is.
+  if (article) {
+    article.querySelectorAll("img[data-vellum-fit-pending]").forEach(function (img) {
+      const src = img.getAttribute("src") || "";
+      fetch(actionURL("svg-fit") + "&src=" + encodeURIComponent(src))
+        .then(function (resp) {
+          return resp.status === 200 ? resp.json() : null;
+        })
+        .then(function (fit) {
+          img.removeAttribute("data-vellum-fit-pending");
+          if (!fit || !(fit.natural > 0)) return;
+          img.style.setProperty("--vellum-svg-natural", fit.natural + "px");
+          img.style.setProperty("--vellum-svg-ems", String(fit.ems));
+          const block = img.closest("[data-vellum-figure-pending]");
+          if (block) {
+            block.removeAttribute("data-vellum-figure-pending");
+            block.setAttribute("data-vellum-figure", "");
+          }
+        })
+        .catch(function () {});
+    });
+  }
+
   if (article) {
     article.addEventListener("click", function (ev) {
       const t = ev.target;

@@ -409,12 +409,16 @@ already work with files and `convert`.
   download and Finder; a contents panel that marks the section being
   read; dark / system / light theme with dark-mode syntax highlighting
   and recoloured Mermaid diagrams; figure lightbox; editable GFM task
-  lists). A Mermaid diagram, or an SVG image alone in its paragraph, is
-  drawn at its natural width or wider until its small print reaches 12px
-  or its typical text reaches 16px, never wider than the panel less its
-  gutters, and centred on the text column when wider than it. An image
-  in a sentence, one with a `width` or `height`, a diagram with a
-  `vellum:scale` hint and an SVG with no `viewBox` keep their size. The raw source is reached through
+  lists). A Mermaid diagram, or any SVG that stands alone in its block
+  (a document's own `<svg>`, an SVG image, linked, in a `<figure>` or
+  `<picture>`, as a `data:` URL, or from the web when the viewer can
+  fetch it), is drawn at its natural width or wider until its small
+  print reaches 12px or its typical text reaches 16px, never wider than
+  the panel less its gutters, and centred on the text column when wider
+  than it. A remote one is measured after the page loads. An SVG in a
+  sentence, one with a `width` or `height` (a style width for `<svg>`),
+  a diagram with a `vellum:scale` hint and an SVG with no `viewBox` keep
+  their size. The raw source is reached through
   the editor (pencil); there is no separate source view.
   Task-list boxes toggle the source on the box itself (click or
   Space), not the label text. The toggle POST returns a source stamp

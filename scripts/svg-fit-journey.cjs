@@ -1,7 +1,8 @@
 // SVG fit journey: in Chrome and Firefox, at several window widths, an SVG
-// in the viewer (a Mermaid diagram or an SVG image alone in a paragraph)
-// is drawn as wide as the room allows and no larger than its text
-// warrants.
+// in the viewer (a Mermaid diagram, a document's own <svg>, or an SVG
+// image standing alone: in a paragraph, a link, a centred div, a data:
+// URL, or from another server) is drawn as wide as the room allows and
+// no larger than its text warrants.
 //
 // The rule under test: an SVG is drawn at its natural width, or wider
 // until its small print reaches 0.75em (12px) or its typical text reaches
@@ -21,9 +22,14 @@ const path = require("node:path");
 const fs = require("node:fs");
 const os = require("node:os");
 const { spawn } = require("node:child_process");
+const http = require("node:http");
 const pw = require(path.join(__dirname, "..", "editor", "node_modules", "playwright"));
 
 const port = 19861;
+// A second server stands for the web: it serves remote.svg to anyone and
+// private.svg only to a browser, as a site behind a sign-in would.
+const remotePort = 19862;
+const remoteBase = `http://127.0.0.1:${remotePort}`;
 const widths = [1886, 1400, 1100, 700];
 const gutter = 32;
 const tolerance = 1.5;
@@ -57,6 +63,19 @@ const images = {
   noviewbox: { body: svg('width="300" height="100"', words(40, 8)), natural: 300, grow: 1 },
 };
 
+// The small drawing again, as a document's own markup.
+const inlineSmall = images.small.body.trim();
+const dataURL = "data:image/svg+xml;base64," + Buffer.from(inlineSmall).toString("base64");
+// alt → how it should be drawn: like the small image, or left alone at
+// its natural size (natural: true).
+const extraImages = {
+  linked: { grow: true },
+  centred: { grow: true, centred: true },
+  data: { grow: true },
+  remote: { grow: true },
+  private: { natural: true },
+};
+
 const chain = Array.from({ length: 14 }, (_, i) => `S${i}[Stage ${i} of ${run}]`).join(" --> ");
 const diagrams = {
   wideflow: ["flowchart LR", "  " + chain],
@@ -82,6 +101,29 @@ const markdown = [
   "",
   '<p><img src="small.svg" alt="sized" width="100"></p>',
   "",
+  "[![linked](small.svg)](small.svg)",
+  "",
+  '<div align="center"><img src="small.svg" alt="centred"></div>',
+  "",
+  `![data](${dataURL})`,
+  "",
+  `![remote](${remoteBase}/remote.svg)`,
+  "",
+  `![private](${remoteBase}/private.svg)`,
+  "",
+  // A document's own drawings: one as a block, one alone in a paragraph,
+  // one in a sentence, one in a figure with a caption.
+  inlineSmall.replace("<svg ", '<svg id="fit-block" ').replace("><rect", ">\n<rect").replace("</svg>", "\n</svg>"),
+  "",
+  inlineSmall.replace("<svg ", '<svg id="fit-para" '),
+  "",
+  `A sentence with ${inlineSmall.replace("<svg ", '<svg id="fit-sentence" ')} a drawing inside it.`,
+  "",
+  "<figure>",
+  inlineSmall.replace("<svg ", '<svg id="fit-figure" '),
+  "<figcaption>A caption under the drawing</figcaption>",
+  "</figure>",
+  "",
   "- A list item.",
   "",
   "  ![nested](wide.svg)",
@@ -105,7 +147,7 @@ function measurePage({ gutter }) {
   const room = { left: panel.left + gutter, right: panel.left + scroll.clientWidth - gutter };
   const rect = (el) => {
     const b = el.getBoundingClientRect();
-    return { left: b.left, right: b.right, width: b.width, height: b.height };
+    return { left: b.left, right: b.right, top: b.top, width: b.width, height: b.height };
   };
 
   // Every drawn character's size on screen: its element's computed
@@ -153,8 +195,14 @@ function measurePage({ gutter }) {
       text: textSizes(svg),
     };
   });
+  const drawings = {};
+  document.querySelectorAll('.vellum-article svg[id^="fit-"]').forEach((svg) => {
+    const caption = svg.closest("figure") && svg.closest("figure").querySelector("figcaption");
+    drawings[svg.id.slice(4)] = { ...rect(svg), container: rect(svg.closest("p, figure, div, article")), caption: caption && rect(caption) };
+  });
   return {
     overflow: scroll.scrollWidth - scroll.clientWidth,
+    drawings,
     prose: { left: prose.left, right: prose.right, width: prose.width },
     room,
     images,
@@ -167,6 +215,18 @@ function measurePage({ gutter }) {
   const file = path.join(dir, "fit.md");
   fs.writeFileSync(file, markdown);
   for (const [name, image] of Object.entries(images)) fs.writeFileSync(path.join(dir, name + ".svg"), image.body);
+  // The viewer fetches with Go's client; the browser does not.
+  const remote = http.createServer((req, res) => {
+    const viewer = /Go-http-client/.test(req.headers["user-agent"] || "");
+    if (req.url === "/remote.svg" || (req.url === "/private.svg" && !viewer)) {
+      res.writeHead(200, { "Content-Type": "image/svg+xml", "Access-Control-Allow-Origin": "*" });
+      res.end(images.small.body);
+      return;
+    }
+    res.writeHead(401);
+    res.end("sign in first");
+  });
+  await new Promise((resolve) => remote.listen(remotePort, "127.0.0.1", resolve));
   const server = spawn(process.env.VELLUM_BINARY || "./vellum", ["serve-view", "--addr", "127.0.0.1:" + port], { stdio: "inherit" });
   const failures = [];
   const seen = [];
@@ -193,6 +253,8 @@ function measurePage({ gutter }) {
     });
     await page.evaluate(() => document.querySelectorAll(".vellum-article img").forEach((img) => (img.loading = "eager")));
     await page.waitForFunction(() => [...document.querySelectorAll(".vellum-article img")].every((img) => img.complete && img.naturalWidth > 0));
+    // Remote images are measured after load.
+    await page.waitForFunction(() => !document.querySelector("[data-vellum-fit-pending]"));
   }
 
   try {
@@ -229,6 +291,41 @@ function measurePage({ gutter }) {
             }
             if (!(got.height > 0)) fail(`image ${alt} has no height`);
           }
+          // The small image in other wrappings, and the same drawing as
+          // the document's own markup.
+          const small = Math.min(roomWidth, images.small.natural * images.small.grow);
+          const placed = (what, got, centred) => {
+            if (!near(got.width, small)) fail(`${what} is ${got.width.toFixed(1)}px wide, want ${small.toFixed(1)}`);
+            if (!insideRoom(got)) fail(`${what} outside the panel gutters at ${got.left.toFixed(0)}..${got.right.toFixed(0)}`);
+            if (got.width > r.prose.width + tolerance || centred) {
+              if (!near((got.left + got.right) / 2, columnMid)) fail(`${what} not centred on the column`);
+            } else if (!near(got.left, r.prose.left)) fail(`${what} fits the column but starts at ${got.left.toFixed(1)}, column at ${r.prose.left.toFixed(1)}`);
+            if (!(got.height > 0)) fail(`${what} has no height`);
+          };
+          for (const [alt, want] of Object.entries(extraImages)) {
+            const got = r.images[alt];
+            if (!got) {
+              fail(`image ${alt} missing`);
+              continue;
+            }
+            if (want.natural) {
+              if (!near(got.width, Math.min(images.small.natural, got.container.width))) fail(`image ${alt} is ${got.width.toFixed(1)}px wide, want its natural ${images.small.natural}`);
+            } else placed(`image ${alt}`, got, want.centred);
+          }
+          for (const id of ["block", "para"]) {
+            if (!r.drawings[id]) fail(`drawing ${id} missing`);
+            else placed(`drawing ${id}`, r.drawings[id], false);
+          }
+          const sentence = r.drawings.sentence;
+          if (!sentence || !near(sentence.width, Math.min(images.small.natural, sentence.container.width))) fail(`drawing in a sentence changed size: ${sentence && sentence.width}`);
+          const fig = r.drawings.figure;
+          if (!fig) fail("drawing figure missing");
+          else {
+            if (!near(fig.width, small)) fail(`drawing figure is ${fig.width.toFixed(1)}px wide, want ${small.toFixed(1)}`);
+            if (!insideRoom(fig)) fail("drawing figure outside the panel gutters");
+            if (!fig.caption || fig.caption.top < fig.top + fig.height - tolerance) fail("the figure's caption is not below its drawing");
+          }
+
           // Left alone: an image in a sentence, one the author sized, and
           // one in a list (which gets its container's width, no more).
           const inline = r.images.inline;
@@ -305,6 +402,7 @@ function measurePage({ gutter }) {
     }
   } finally {
     server.kill();
+    remote.close();
     fs.rmSync(dir, { recursive: true, force: true });
   }
   if (process.env.VERBOSE) seen.forEach((s) => console.log(s));

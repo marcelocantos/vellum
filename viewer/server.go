@@ -85,6 +85,8 @@ type Server struct {
 	// fits remembers SVG measurements (fit.go), keyed by fragment id or
 	// file path.
 	fits sync.Map
+	// remote remembers remote SVG measurements (fit_remote.go).
+	remote remoteFits
 
 	// MCP, when non-nil, is mounted at MCPPath so the brew-service
 	// process hosts streamable HTTP MCP on the same listener as the view.
@@ -211,6 +213,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc(ChromeEditPath, s.handleEdit)
 	mux.HandleFunc(ChromeEditorPrefix, s.handleEditorAsset)
 	mux.HandleFunc(ChromeFragmentPath, s.handleFragment)
+	mux.HandleFunc(ChromeSVGFitPath, s.handleSVGFit)
 	mux.HandleFunc(ChromeFaviconPath, s.handleFavicon)
 	mux.HandleFunc(ChromeFileManagerIconPath, s.handleFileManagerIcon)
 	mux.Handle(ChromeKaTeXPrefix, http.StripPrefix(ChromeKaTeXPrefix, http.FileServerFS(embed.KaTeX())))
@@ -488,7 +491,7 @@ func (s *Server) serveMarkdown(w http.ResponseWriter, r *http.Request, absPath s
 		return
 	}
 	// Before any pass that rewrites image URLs: it reads them as written.
-	page := s.fitFigures(string(body), absPath)
+	page := s.fitFigures(string(body), absPath, embedded)
 	if embedded {
 		page = embedLocalRefs(page, absPath)
 	} else {

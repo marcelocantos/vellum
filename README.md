@@ -553,11 +553,25 @@ from its own text:
   characters are at least as large as, so a stray watermark does not decide
   the size; "typical" is the median character.
 
-This applies to Mermaid diagrams and to an SVG image that is the only thing
-in its paragraph (`![…](drawing.svg)` on a line of its own). Left as they
-were: an image inside a sentence, an image given a `width` or `height`, a
-diagram with a `vellum:scale` hint, an SVG with no `viewBox`, images from
-the web, and print and PDF output. `test/svg-fit/svg-fit.md` shows each
+This applies to Mermaid diagrams and to any SVG that stands alone, with
+nothing beside it in its block:
+
+- a drawing written into the document as `<svg>` markup, on lines of its
+  own or alone in a paragraph;
+- an SVG image (`![…](drawing.svg)` on a line of its own), including one
+  wrapped in a link (`[![…](drawing.svg)](drawing.svg)`), inside raw HTML
+  such as `<figure>`, `<div align="center">` or `<picture>`, or given as a
+  `data:image/svg+xml` URL;
+- an image from the web, when the viewer itself can fetch it and it is an
+  SVG. The page does not wait for it: the viewer measures it after the
+  page loads, remembers the result for an hour, and writes it into later
+  pages. An image the viewer cannot fetch, such as one behind a sign-in
+  only the browser has, keeps its size.
+
+Left as they were: an image or drawing inside a sentence, an image given a
+`width` or `height`, a drawing given a width in its `style` or as a
+percentage, a diagram with a `vellum:scale` hint, an SVG with no
+`viewBox`, and print and PDF output. `test/svg-fit/svg-fit.md` shows each
 case.
 
 The text sizes are read on the server, without a browser, from

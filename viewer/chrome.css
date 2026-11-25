@@ -679,11 +679,16 @@ html[data-vellum-theme="system"] .vellum-theme-btn .vellum-icon-system {
      grows and one with large labels stays natural, and never wider than
      the room it has. An unmeasured one keeps github.css's fit rule.
 
+     The SVG is a Mermaid diagram, or a figure (figures.go): a document's
+     own <svg> or an SVG image standing alone in its block, which carries
+     data-vellum-figure. A link or <picture> around it gives up its box,
+     so the SVG sizes against the block.
+
      A diagram with a vellum:scale hint (a style on its wrapper) keeps the
      width its author asked for. Mermaid writes its natural width as an
      inline max-width, hence !important. */
   .vellum-article .mermaid-svg:not([style]) > [style*="--vellum-svg-natural"],
-  .vellum-article p[data-vellum-figure] > img {
+  .vellum-article [data-vellum-figure] [style*="--vellum-svg-natural"] {
     --vellum-svg-room: 100%;
     flex: none;
     width: min(
@@ -694,26 +699,42 @@ html[data-vellum-theme="system"] .vellum-theme-btn .vellum-icon-system {
     height: auto;
   }
 
+  .vellum-article [data-vellum-figure] [data-vellum-fit-wrap] {
+    display: contents;
+  }
+
   /* At the top level the room is the panel less the article's gutters,
      as for a table: up to the measure the drawing sits in the column, and
-     past that it grows outward on both sides, centred on it. A flex row
+     past that it grows outward on both sides, centred on it. A flex box
      centres an item wider than itself, so nothing sticks out past the
      panel's right edge the way a transformed box would. */
-  .vellum-article > .mermaid-svg:not([style]),
-  .vellum-article > p[data-vellum-figure] {
+  .vellum-article > .mermaid-svg:not([style]) {
     display: flex;
     justify-content: center;
   }
 
+  /* A row, so that an auto margin gives way to centring when the drawing
+     is wider than the block (a cross-axis one would not); a caption
+     wraps onto its own line below. */
+  .vellum-article > [data-vellum-figure] {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .vellum-article > [data-vellum-figure] > figcaption {
+    flex: 0 0 100%;
+  }
+
   .vellum-article > .mermaid-svg:not([style]) > [style*="--vellum-svg-natural"],
-  .vellum-article > p[data-vellum-figure] > img {
+  .vellum-article > [data-vellum-figure] [style*="--vellum-svg-natural"] {
     --vellum-svg-room: calc(100cqw - 2 * var(--vellum-gutter));
   }
 
-  /* An image that fits the column stays at its left edge, as before. An
-     auto margin takes up spare room only, so a wider one is still
-     centred. */
-  .vellum-article > p[data-vellum-figure] > img {
+  /* A figure that fits the column stays at its left edge, as before,
+     unless its author centred it. An auto margin takes up spare room
+     only, so a wider one is still centred. */
+  .vellum-article > [data-vellum-figure]:not(center, [align="center" i]) [style*="--vellum-svg-natural"] {
     margin-right: auto;
   }
 }
@@ -727,7 +748,8 @@ html[data-vellum-theme="system"] .vellum-theme-btn .vellum-icon-system {
 
 .vellum-article img,
 .vellum-article .mermaid-svg,
-.vellum-article .mermaid-svg svg {
+.vellum-article .mermaid-svg svg,
+.vellum-article [data-vellum-figure] svg[style*="--vellum-svg-natural"] {
   cursor: zoom-in;
 }
 

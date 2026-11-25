@@ -59,6 +59,13 @@ var remoteImageClient = &http.Client{
 // image at rawURL. A response that is not an image (by its Content-Type)
 // is refused, as the page's <img> would show nothing for it.
 func fetchRemoteImage(ctx context.Context, rawURL string) ([]byte, string, error) {
+	return fetchRemote(ctx, rawURL, "image/*", "image/", remoteImageMaxBytes)
+}
+
+// fetchRemote GETs rawURL as a page's image load would, and returns its
+// body when its media type starts with want, refusing anything else
+// before reading it.
+func fetchRemote(ctx context.Context, rawURL, accept, want string, maxBytes int64) ([]byte, string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
 		return nil, "", err
@@ -69,7 +76,7 @@ func fetchRemoteImage(ctx context.Context, rawURL string) ([]byte, string, error
 	req.Header.Set(secFetchSiteHeader, secFetchSiteCrossSite)
 	req.Header.Set(secFetchModeHeader, secFetchModeNoCORS)
 	req.Header.Set(secFetchDestHeader, secFetchDestImage)
-	req.Header.Set("Accept", "image/*")
+	req.Header.Set("Accept", accept)
 	resp, err := remoteImageClient.Do(req)
 	if err != nil {
 		return nil, "", err
@@ -79,15 +86,15 @@ func fetchRemoteImage(ctx context.Context, rawURL string) ([]byte, string, error
 		return nil, "", fmt.Errorf("%s: %s", rawURL, resp.Status)
 	}
 	mediaType, _, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
-	if err != nil || !strings.HasPrefix(mediaType, "image/") {
+	if err != nil || !strings.HasPrefix(mediaType, want) {
 		return nil, "", fmt.Errorf("%s: %w", rawURL, errNotAnImage)
 	}
-	body, err := io.ReadAll(io.LimitReader(resp.Body, remoteImageMaxBytes+1))
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBytes+1))
 	if err != nil {
 		return nil, "", err
 	}
-	if len(body) > remoteImageMaxBytes {
-		return nil, "", fmt.Errorf("%s: larger than %d bytes", rawURL, remoteImageMaxBytes)
+	if int64(len(body)) > maxBytes {
+		return nil, "", fmt.Errorf("%s: larger than %d bytes", rawURL, maxBytes)
 	}
 	return body, mediaType, nil
 }

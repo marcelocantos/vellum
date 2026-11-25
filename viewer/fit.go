@@ -6,7 +6,6 @@ package viewer
 import (
 	"io"
 	"os"
-	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -26,8 +25,8 @@ const (
 	// fitEmsVar is the width up to which it may grow, as a number of ems
 	// of the article's text (chrome.css multiplies by --vellum-text-size).
 	fitEmsVar = "--vellum-svg-ems"
-	// figureAttr marks a paragraph that holds nothing but one fitted SVG
-	// image, which chrome.css then lets leave the reading column.
+	// figureAttr marks the block that holds nothing but one fitted SVG
+	// (figures.go), which chrome.css then lets leave the reading column.
 	figureAttr = "data-vellum-figure"
 
 	fitSVGExt = ".svg"
@@ -36,10 +35,6 @@ const (
 var (
 	svgRootRe   = regexp.MustCompile(`(?i)<svg\b[^>]*>`)
 	styleAttrRe = regexp.MustCompile(`(?i)(?:^|\s)style\s*=\s*"`)
-	sizeAttrRe  = regexp.MustCompile(`(?i)\s(?:width|height)\s*=`)
-	// figureRe matches a paragraph whose only content is one image: how
-	// Markdown writes a figure. An image inside a sentence is left alone.
-	figureRe = regexp.MustCompile(`(?i)<p\b([^>]*)>\s*(<img\b[^>]*>)\s*</p>`)
 )
 
 // fitMemo is one remembered measurement. A fragment's is keyed by its
@@ -133,29 +128,4 @@ func (s *Server) fileFit(abs string) (svgfit.Fit, bool) {
 	fit, ok := svgfit.Measure(data)
 	s.fits.Store(key, fitMemo{fit: fit, ok: ok, mtime: info.ModTime(), size: info.Size()})
 	return fit, ok
-}
-
-// fitFigures sizes each SVG image that stands alone in a paragraph of the
-// document at sourcePath. It runs on the page as rendered, before any
-// pass that rewrites image URLs. An image the author sized (width or
-// height) keeps that size.
-func (s *Server) fitFigures(page, sourcePath string) string {
-	dir := filepath.Dir(sourcePath)
-	return figureRe.ReplaceAllStringFunc(page, func(m string) string {
-		sub := figureRe.FindStringSubmatch(m)
-		attrs, img := sub[1], sub[2]
-		src := srcAttrRe.FindStringSubmatch(img)
-		if src == nil || sizeAttrRe.MatchString(img) {
-			return m
-		}
-		abs, _, ok := localRef(src[3], dir)
-		if !ok || !strings.EqualFold(filepath.Ext(abs), fitSVGExt) {
-			return m
-		}
-		fit, ok := s.fileFit(abs)
-		if !ok {
-			return m
-		}
-		return "<p" + attrs + " " + figureAttr + `="">` + addStyle(img, fitStyle(fit)) + "</p>"
-	})
 }
