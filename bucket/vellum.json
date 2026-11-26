@@ -1,16 +1,16 @@
 {
-    "version": "0.48.0",
+    "version": "0.49.0",
     "description": "Document preparation: Markdown to PDF/HTML/PowerPoint, rich-text import, clipboard, and a localhost Markdown viewer with MCP.",
     "homepage": "https://github.com/marcelocantos/vellum",
     "license": "Apache-2.0",
     "architecture": {
         "64bit": {
-            "url": "https://github.com/marcelocantos/vellum/releases/download/v0.48.0/vellum-0.48.0-windows-amd64.zip",
-            "hash": "21b69cb6850b8a56774538982ca38c0ab6edd934f80dfb1ccdb5f15883696c0f"
+            "url": "https://github.com/marcelocantos/vellum/releases/download/v0.49.0/vellum-0.49.0-windows-amd64.zip",
+            "hash": "1a876942b583636518696ecacd4b8b43f2608c5748f1356c47488c49f18e5050"
         },
         "arm64": {
-            "url": "https://github.com/marcelocantos/vellum/releases/download/v0.48.0/vellum-0.48.0-windows-arm64.zip",
-            "hash": "352709e2a7ea1d2220a016acdff8c48bdacc7e9851cbbd1cfc9c2b7e4492642b"
+            "url": "https://github.com/marcelocantos/vellum/releases/download/v0.49.0/vellum-0.49.0-windows-arm64.zip",
+            "hash": "b4e48b98028e2e66728f0c136fe2548c078ab8a7580fb0845ba5ae02421827e3"
         }
     },
     "bin": "vellum.exe",
