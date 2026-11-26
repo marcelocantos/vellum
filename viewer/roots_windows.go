@@ -13,3 +13,7 @@ func isVolumeTop(dir string) bool { return false }
 
 // isDataVolumeRoot: there is no APFS Data volume on Windows.
 func isDataVolumeRoot(string) bool { return false }
+
+// isUnderRoot: a Windows path has one spelling of its parent, which
+// tooWideToServe compares as a string.
+func isUnderRoot(string) bool { return false }

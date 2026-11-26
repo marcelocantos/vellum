@@ -35,6 +35,34 @@ func isDataVolumeRoot(dir string) bool {
 	return os.SameFile(info, root)
 }
 
+// realParent is dir's parent as the kernel walks "..", which is one
+// directory however dir is spelled. filepath.Dir answers for the
+// spelling: macOS also resolves /.nofollow/<path> and
+// /.vol/<device>/<inode>, neither a symlink, and filepath.Dir of
+// /.nofollow/Volumes is /.nofollow, while /.vol/<device> is not a
+// directory at all.
+func realParent(dir string) (os.FileInfo, error) {
+	return os.Stat(dir + string(filepath.Separator) + "..")
+}
+
+// isUnderRoot reports whether dir's parent is / or the Data volume, by
+// identity. / is its own parent, so it is included. A folder the system
+// volume firmlinks (/System/Volumes/Data/Library) has / as its parent,
+// and one only the Data volume has (/System/Volumes/Data/usr) has that
+// volume.
+func isUnderRoot(dir string) bool {
+	parent, err := realParent(dir)
+	if err != nil {
+		return false
+	}
+	for _, root := range []string{string(filepath.Separator), dataVolumeRoot} {
+		if info, err := os.Stat(root); err == nil && os.SameFile(parent, info) {
+			return true
+		}
+	}
+	return false
+}
+
 // isVolumeTop reports whether dir is a shared temporary folder (sticky)
 // or the top of a mounted volume (its device differs from its parent's).
 func isVolumeTop(dir string) bool {
@@ -45,7 +73,7 @@ func isVolumeTop(dir string) bool {
 	if info.Mode()&os.ModeSticky != 0 {
 		return true
 	}
-	parent, err := os.Stat(filepath.Dir(dir))
+	parent, err := realParent(dir)
 	if err != nil {
 		return false
 	}

@@ -154,15 +154,17 @@ func resolvedHome() string {
 // dir: it is home or holds home, it is a filesystem root or a folder
 // directly under one (/Users, /Volumes, /private, C:\Users), or it is
 // a volume's top or a shared temporary folder (isVolumeTop). dir and
-// home have their symlinks resolved. Home and the Data volume are
-// compared by directory identity, so a case variant or a firmlink
-// spelling is the same folder as the path home was resolved to.
+// home have their symlinks resolved. Every rule but the first is decided
+// by directory identity, so another spelling of a folder (a case
+// variant, a firmlink path, /.nofollow/<path>, /.vol/<device>/<inode>)
+// is the same folder. The first is the string check, which also decides
+// a path that cannot be stated.
 func tooWideToServe(dir, home string) bool {
 	parent := filepath.Dir(dir)
 	if parent == dir || filepath.Dir(parent) == parent {
 		return true
 	}
-	if isDataVolumeRoot(dir) || isDataVolumeRoot(parent) {
+	if isDataVolumeRoot(dir) || isUnderRoot(dir) {
 		return true
 	}
 	if holdsHome(dir, home) {

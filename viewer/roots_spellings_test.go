@@ -163,11 +163,14 @@ func TestRootFor_VerdictSpellingsGrantOnlyTheDocument(t *testing.T) {
 	}
 }
 
-// TestRootFor_DirectoryDirectlyUnderRootGrantsOnlyTheDocument pins the
-// "directly under a root" check. TestRootFor_TopLevelFolderGrantsOnlyTheDocument
-// walks up from the temp directory, so its folder holds HOME and the
-// holds-home rule answers first. /usr does not hold HOME, is not sticky,
-// and is the same device as /, so only that check refuses it.
+// TestRootFor_DirectoryDirectlyUnderRootGrantsOnlyTheDocument is the
+// "directly under a root" rule on a folder no other rule refuses.
+// TestRootFor_TopLevelFolderGrantsOnlyTheDocument walks up from the temp
+// directory, so its folder holds HOME and the holds-home rule answers
+// first. /usr does not hold HOME, is not sticky, and is the same device
+// as /. It is refused by name and by identity (isUnderRoot); each of
+// those alone is pinned by TestTooWideToServe_RootAndFolderDirectlyUnderItByName
+// and TestRootFor_KernelSpellingOfTopLevelFolderGrantsOnlyTheDocument.
 func TestRootFor_DirectoryDirectlyUnderRootGrantsOnlyTheDocument(t *testing.T) {
 	home, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
@@ -196,32 +199,16 @@ func TestRootFor_DirectoryDirectlyUnderRootGrantsOnlyTheDocument(t *testing.T) {
 }
 
 // TestRootFor_VolumeTopGrantsOnlyTheDocument pins the device-id line.
-// /Volumes/Storage is two levels below / (so the depth check does not
-// see it), it does not hold HOME, and it is not sticky. Its device
-// differs from /Volumes. Removing st.Dev != pst.Dev grants the volume.
+// A mounted volume's top (mountedVolumeTop: /System/Volumes/Hardware on
+// this Mac, so an external drive need not be attached) is two levels
+// below /, does not hold HOME, and is not sticky. Its device differs
+// from its parent's. Removing st.Dev != pst.Dev grants the volume.
 func TestRootFor_VolumeTopGrantsOnlyTheDocument(t *testing.T) {
-	home, err := filepath.EvalSymlinks(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("HOME", home)
-	const vol = "/Volumes/Storage"
-	info, err := os.Stat(vol)
-	if err != nil {
-		t.Fatalf("%s: %v", vol, err)
-	}
-	if info.Mode()&os.ModeSticky != 0 {
-		t.Fatalf("%s is sticky; the sticky check would answer first", vol)
-	}
+	vol := mountedVolumeTop(t)
+	homeOutside(t, vol)
 	parent := filepath.Dir(vol)
 	if parent == vol || filepath.Dir(parent) == parent {
 		t.Fatalf("%s is a root or directly under one; the depth check would answer first", vol)
-	}
-	if deviceOf(t, vol) == deviceOf(t, parent) {
-		t.Fatalf("%s has the same device as %s", vol, parent)
-	}
-	if rel, err := filepath.Rel(vol, home); err != nil || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))) {
-		t.Fatalf("HOME %s is inside %s; holds-home would answer first", home, vol)
 	}
 	assertDocumentAlone(t, filepath.Join(vol, "vellum-absent-notes.md"))
 }
