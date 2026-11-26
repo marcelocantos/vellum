@@ -241,8 +241,15 @@ func (in *inliner) decide(ref string) refDecision {
 	// A stylesheet url() is resolved to that form against the
 	// stylesheet's directory before it comes back here. A drive-relative
 	// path with no separator (C:name) is left for url.Parse to drop.
+	//
+	// Only where that is an absolute path. Elsewhere the letter is a
+	// scheme vellum does not fetch, and cleaning C:/../../etc/passwd
+	// leaves ../etc/passwd: Read is handed absolute paths only.
 	if drivePath(ref) {
-		return in.local(filepath.Clean(ref))
+		if p := filepath.Clean(ref); filepath.IsAbs(p) {
+			return in.local(p)
+		}
+		return refDecision{kind: refDrop}
 	}
 	u, err := url.Parse(ref)
 	if err != nil {

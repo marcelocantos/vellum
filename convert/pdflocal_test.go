@@ -206,8 +206,20 @@ func TestInlineResources_DriveLetterPathIsALocalFile(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !strings.Contains(out, want) {
-				t.Fatalf("drive path was not inlined (reads %v):\n%s", reads, out)
+			// A drive path is a file where the platform calls it an
+			// absolute path. Elsewhere the letter is a URL scheme vellum
+			// does not fetch, and nothing is read.
+			if filepath.IsAbs(drive) {
+				if !strings.Contains(out, want) {
+					t.Fatalf("drive path was not inlined (reads %v):\n%s", reads, out)
+				}
+				return
+			}
+			if len(reads) != 0 {
+				t.Fatalf("a path that is not absolute here was handed to Read: %q", reads)
+			}
+			if strings.Contains(out, "dot.png") || strings.Contains(out, want) {
+				t.Fatalf("drive path survived where it is not a path:\n%s", out)
 			}
 		})
 	}
@@ -235,6 +247,90 @@ func TestInlineResources_DriveLetterPathIsALocalFile(t *testing.T) {
 	}
 	if len(fetched) != 1 || fetched[0] != "https://cdn.example/a.png" {
 		t.Fatalf("fetches %v", fetched)
+	}
+}
+
+// TestInlineResources_RemoteStylesheetNamesStayOnItsHost: a relative or
+// rooted name in a stylesheet vellum fetched is a name on that host. It
+// is never a local path (url(/etc/passwd) in a remote stylesheet reads
+// no file), and a file: URL there goes through Read like any other.
+func TestInlineResources_RemoteStylesheetNamesStayOnItsHost(t *testing.T) {
+	const sheetURL = "https://cdn.example/css/site.css"
+	sheet := `a{background:url("img/a.png")}b{background:url("/rooted.png")}c{background:url("../up.png")}`
+	page := `<!DOCTYPE html><html><head></head><body><link rel="stylesheet" href="` + sheetURL + `"></body></html>`
+	var fetched []string
+	out, err := InlineResources(context.Background(), page, t.TempDir(), &InlineArgs{
+		Read: func(p string) ([]byte, error) {
+			t.Errorf("a remote stylesheet's name was read as the local file %s", p)
+			return nil, errors.New("refused")
+		},
+		Fetch: func(_ context.Context, u string) ([]byte, string, error) {
+			fetched = append(fetched, u)
+			if u == sheetURL {
+				return []byte(sheet), "text/css", nil
+			}
+			return []byte("REMOTE"), "image/png", nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		sheetURL,
+		"https://cdn.example/css/img/a.png",
+		"https://cdn.example/rooted.png",
+		"https://cdn.example/up.png",
+	}
+	if strings.Join(fetched, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("fetched %q, want %q", fetched, want)
+	}
+	if !strings.Contains(out, `href="data:text/css;base64,`) {
+		t.Fatalf("stylesheet was not inlined:\n%s", out)
+	}
+}
+
+// TestInlineResources_ReadGetsOnlyAbsolutePaths holds InlineArgs.Read to
+// its contract on every platform. Off Windows a drive path is not
+// absolute, and cleaning one that climbs (C:/../../etc/passwd) leaves a
+// relative path out of the working directory (../etc/passwd): Read must
+// never be handed that, whatever it would then do with it.
+func TestInlineResources_ReadGetsOnlyAbsolutePaths(t *testing.T) {
+	refs := []string{
+		`C:/../../etc/passwd`,
+		`C:\..\..\etc\passwd`,
+		`C:/doc/dot.png`,
+		`c:\doc\dot.png`,
+		`dot.png`,
+		`../up.png`,
+		`sub/../dot.png`,
+	}
+	var page strings.Builder
+	page.WriteString(`<!DOCTYPE html><html><head></head><body>`)
+	for _, ref := range refs {
+		page.WriteString(`<img src="` + ref + `">`)
+	}
+	page.WriteString(`<style>`)
+	for _, ref := range refs {
+		page.WriteString(`p{background:url("` + strings.ReplaceAll(ref, `\`, `\\`) + `")}`)
+	}
+	page.WriteString(`</style></body></html>`)
+	var reads []string
+	_, err := InlineResources(context.Background(), page.String(), t.TempDir(), &InlineArgs{
+		Read: func(p string) ([]byte, error) {
+			reads = append(reads, p)
+			return nil, errors.New("not here")
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reads) == 0 {
+		t.Fatal("no reference reached Read; the relative names should have")
+	}
+	for _, p := range reads {
+		if !filepath.IsAbs(p) {
+			t.Errorf("Read was handed %q, which is not an absolute path", p)
+		}
 	}
 }
 
