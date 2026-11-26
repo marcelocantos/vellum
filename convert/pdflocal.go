@@ -236,6 +236,14 @@ func (in *inliner) decide(ref string) refDecision {
 		}
 		return in.local(filepath.Clean(p))
 	}
+	// A Windows path C:\dir\file or C:/dir/file is a URL to url.Parse:
+	// the drive letter is the scheme, and the file would be dropped.
+	// A stylesheet url() is resolved to that form against the
+	// stylesheet's directory before it comes back here. A drive-relative
+	// path with no separator (C:name) is left for url.Parse to drop.
+	if drivePath(ref) {
+		return in.local(filepath.Clean(ref))
+	}
 	u, err := url.Parse(ref)
 	if err != nil {
 		return refDecision{kind: refDrop}
@@ -322,6 +330,19 @@ func (in *inliner) packed(name, cssBase string, b []byte, mediaType string) refD
 		b = []byte(rewritten)
 	}
 	return refDecision{kind: refReplace, repl: dataURL(mediaType, b)}
+}
+
+// drivePath reports a Windows path with a drive letter and a separator.
+// url.Parse takes the letter as a scheme (C:\dir\file and C:/dir/file).
+func drivePath(ref string) bool {
+	if len(ref) < 3 || ref[1] != ':' {
+		return false
+	}
+	if ref[2] != '/' && ref[2] != '\\' {
+		return false
+	}
+	c := ref[0]
+	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
 }
 
 // resolveCSSRef makes a stylesheet-relative reference absolute against

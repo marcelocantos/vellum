@@ -176,6 +176,76 @@ func TestInlineResources_LinkedStylesheetDoesNotReadOutside(t *testing.T) {
 	}
 }
 
+// TestInlineResources_DriveLetterPathIsALocalFile is the Windows failure of
+// TestInlineResources_LinkedStylesheetDoesNotReadOutside: a stylesheet
+// url() resolved against the stylesheet's directory is an absolute path
+// with a drive letter, and url.Parse takes that letter as a scheme.
+func TestInlineResources_DriveLetterPathIsALocalFile(t *testing.T) {
+	const dot = "DOT"
+	want := base64.StdEncoding.EncodeToString([]byte(dot))
+	// An img src reaches decide unchanged. A CSS url() does not: a
+	// backslash there is an escape, and the Windows failure is the path
+	// resolveCSSRef already built, which decide sees as a Go string.
+	for _, drive := range []string{`C:\doc\dot.png`, `C:/doc/dot.png`} {
+		t.Run(drive, func(t *testing.T) {
+			var reads []string
+			page := `<!DOCTYPE html><html><head></head><body><img src="` + drive + `"></body></html>`
+			out, err := InlineResources(context.Background(), page, t.TempDir(), &InlineArgs{
+				Read: func(abs string) ([]byte, error) {
+					reads = append(reads, abs)
+					if filepath.Clean(abs) != filepath.Clean(drive) {
+						return nil, errors.New("unexpected path")
+					}
+					return []byte(dot), nil
+				},
+				Fetch: func(context.Context, string) ([]byte, string, error) {
+					t.Fatal("drive path was fetched as a URL")
+					return nil, "", nil
+				},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(out, want) {
+				t.Fatalf("drive path was not inlined (reads %v):\n%s", reads, out)
+			}
+		})
+	}
+	// The letter is a path only with a separator. C:name stays dropped,
+	// and a real URL is not read as a file.
+	page := `<!DOCTYPE html><html><head></head><body>` +
+		`<style>p{background:url("C:not-a-path")}b{background:url("https://cdn.example/a.png")}</style>` +
+		`</body></html>`
+	var fetched []string
+	out, err := InlineResources(context.Background(), page, t.TempDir(), &InlineArgs{
+		Read: func(string) ([]byte, error) {
+			t.Fatal("a non-path was read as a file")
+			return nil, nil
+		},
+		Fetch: func(_ context.Context, u string) ([]byte, string, error) {
+			fetched = append(fetched, u)
+			return []byte("REMOTE"), "image/png", nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out, "not-a-path") {
+		t.Fatalf("drive-relative name survived:\n%s", out)
+	}
+	if len(fetched) != 1 || fetched[0] != "https://cdn.example/a.png" {
+		t.Fatalf("fetches %v", fetched)
+	}
+}
+
+func TestDocFiles_DrivePathOutsideTheFolderIsRefused(t *testing.T) {
+	files := newDocFiles(t.TempDir())
+	_, err := files.read(`C:\doc\dot.png`)
+	if !errors.Is(err, errOutsideDocument) {
+		t.Fatalf("read = %v, want outside the document folder", err)
+	}
+}
+
 func TestDataURL_StripsParameters(t *testing.T) {
 	if got := dataURL("Image/SVG+XML; charset=utf-8", []byte("<svg/>")); got != "data:image/svg+xml;base64,PHN2Zy8+" {
 		t.Fatalf("dataURL = %q", got)
