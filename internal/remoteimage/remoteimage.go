@@ -67,7 +67,7 @@ var client = &http.Client{
 func Fetch(ctx context.Context, rawURL string) ([]byte, string, error) {
 	return fetch(ctx, rawURL, "image/*", func(mediaType string) bool {
 		return strings.HasPrefix(mediaType, "image/")
-	})
+	}, MaxBytes)
 }
 
 // FetchAsset is Fetch for the resources a PDF page names: an image, a
@@ -75,7 +75,7 @@ func Fetch(ctx context.Context, rawURL string) ([]byte, string, error) {
 // themselves, so a remote stylesheet reaches the PDF only through here,
 // with the same cross-site fetch metadata as an image.
 func FetchAsset(ctx context.Context, rawURL string) ([]byte, string, error) {
-	return fetch(ctx, rawURL, "image/*,text/css,font/woff2,font/woff,*/*;q=0.1", acceptAsset)
+	return fetch(ctx, rawURL, "image/*,text/css,font/woff2,font/woff,*/*;q=0.1", acceptAsset, MaxBytes)
 }
 
 func acceptAsset(mediaType string) bool {
@@ -90,7 +90,7 @@ func acceptAsset(mediaType string) bool {
 	return false
 }
 
-func fetch(ctx context.Context, rawURL, accept string, ok func(mediaType string) bool) ([]byte, string, error) {
+func fetch(ctx context.Context, rawURL, accept string, ok func(mediaType string) bool, maxBytes int64) ([]byte, string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
 		return nil, "", err
@@ -114,12 +114,12 @@ func fetch(ctx context.Context, rawURL, accept string, ok func(mediaType string)
 	if err != nil || !ok(mediaType) {
 		return nil, "", fmt.Errorf("%s: %w", rawURL, ErrNotAnImage)
 	}
-	body, err := io.ReadAll(io.LimitReader(resp.Body, MaxBytes+1))
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBytes+1))
 	if err != nil {
 		return nil, "", err
 	}
-	if len(body) > MaxBytes {
-		return nil, "", fmt.Errorf("%s: larger than %d bytes", rawURL, MaxBytes)
+	if int64(len(body)) > maxBytes {
+		return nil, "", fmt.Errorf("%s: larger than %d bytes", rawURL, maxBytes)
 	}
 	return body, mediaType, nil
 }
@@ -129,35 +129,7 @@ func fetch(ctx context.Context, rawURL, accept string, ok func(mediaType string)
 // (image/svg+xml, no larger than what Measure will read) on the same
 // client, with the same cross-site image fetch metadata, as Fetch.
 func FetchMatch(ctx context.Context, rawURL, accept, want string, maxBytes int64) ([]byte, string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
-	if err != nil {
-		return nil, "", err
-	}
-	if req.URL.Scheme != "http" && req.URL.Scheme != "https" {
-		return nil, "", fmt.Errorf("%s: not http or https", rawURL)
-	}
-	req.Header.Set(SiteHeader, SiteCrossSite)
-	req.Header.Set(ModeHeader, ModeNoCORS)
-	req.Header.Set(DestHeader, DestImage)
-	req.Header.Set("Accept", accept)
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, "", err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return nil, "", fmt.Errorf("%s: %s", rawURL, resp.Status)
-	}
-	mediaType, _, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
-	if err != nil || !strings.HasPrefix(mediaType, want) {
-		return nil, "", fmt.Errorf("%s: %w", rawURL, ErrNotAnImage)
-	}
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBytes+1))
-	if err != nil {
-		return nil, "", err
-	}
-	if int64(len(body)) > maxBytes {
-		return nil, "", fmt.Errorf("%s: larger than %d bytes", rawURL, maxBytes)
-	}
-	return body, mediaType, nil
+	return fetch(ctx, rawURL, accept, func(mediaType string) bool {
+		return strings.HasPrefix(mediaType, want)
+	}, maxBytes)
 }
