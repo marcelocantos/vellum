@@ -22,7 +22,7 @@ import (
 	"github.com/marcelocantos/vellum/viewer"
 )
 
-const version = "0.48.0"
+const version = "0.49.0"
 
 func main() {
 	// First, so every read and every child process can open cloud-only
