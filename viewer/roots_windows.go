@@ -10,3 +10,6 @@ const stickyFoldersAreShared = false
 // already treats as a filesystem root. Volumes mounted on folders are
 // not detected.
 func isVolumeTop(dir string) bool { return false }
+
+// isDataVolumeRoot: there is no APFS Data volume on Windows.
+func isDataVolumeRoot(string) bool { return false }

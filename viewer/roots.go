@@ -154,18 +154,50 @@ func resolvedHome() string {
 // dir: it is home or holds home, it is a filesystem root or a folder
 // directly under one (/Users, /Volumes, /private, C:\Users), or it is
 // a volume's top or a shared temporary folder (isVolumeTop). dir and
-// home have their symlinks resolved.
+// home have their symlinks resolved. Home and the Data volume are
+// compared by directory identity, so a case variant or a firmlink
+// spelling is the same folder as the path home was resolved to.
 func tooWideToServe(dir, home string) bool {
 	parent := filepath.Dir(dir)
 	if parent == dir || filepath.Dir(parent) == parent {
 		return true
 	}
-	if home != "" {
-		if rel, err := filepath.Rel(dir, home); err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel) {
-			return true
-		}
+	if isDataVolumeRoot(dir) || isDataVolumeRoot(parent) {
+		return true
+	}
+	if holdsHome(dir, home) {
+		return true
 	}
 	return isVolumeTop(dir)
+}
+
+// holdsHome reports whether dir is home or a folder home is in.
+// The string check is what a path that cannot be stated can still
+// decide. The identity check is what two spellings of one directory
+// need: filepath.Rel("/users/me", "/Users/me") is not "inside", and
+// EvalSymlinks does not fold an APFS firmlink.
+func holdsHome(dir, home string) bool {
+	if home == "" {
+		return false
+	}
+	if rel, err := filepath.Rel(dir, home); err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel) {
+		return true
+	}
+	dirInfo, err := os.Stat(dir)
+	if err != nil {
+		return false
+	}
+	for d := home; ; {
+		info, err := os.Stat(d)
+		if err == nil && os.SameFile(dirInfo, info) {
+			return true
+		}
+		parent := filepath.Dir(d)
+		if parent == d {
+			return false
+		}
+		d = parent
+	}
 }
 
 // servedRoots returns Server.Roots (resolved) and the granted roots.
