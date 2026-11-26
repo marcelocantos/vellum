@@ -16,6 +16,7 @@ import (
 	"github.com/marcelocantos/vellum/config"
 	"github.com/marcelocantos/vellum/convert"
 	"github.com/marcelocantos/vellum/docs"
+	"github.com/marcelocantos/vellum/internal/dataless"
 	"github.com/marcelocantos/vellum/internal/hint"
 	vellummcp "github.com/marcelocantos/vellum/mcp"
 	"github.com/marcelocantos/vellum/viewer"
@@ -24,6 +25,11 @@ import (
 const version = "0.48.0"
 
 func main() {
+	// First, so every read and every child process can open cloud-only
+	// files (OneDrive, Google Drive, iCloud) even under launchd.
+	if err := dataless.Enable(); err != nil {
+		fmt.Fprintf(os.Stderr, "vellum: warning: cloud-only files may not open: %v\n", err)
+	}
 	if err := run(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)

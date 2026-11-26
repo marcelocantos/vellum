@@ -125,6 +125,9 @@ must succeed before vellum is usable — do not stop after `brew install`.**
    `/usr/local/bin`, `$HOME/.cargo/bin`, etc.) before exec'ing the real
    binary, so `weasyprint`, `node`, `mmdc`, and `prince` resolve
    regardless of how the client or launchd environment was set up.
+   The binary also sets its own macOS policy to download cloud-only
+   files (OneDrive, Google Drive, iCloud Drive) when it reads them, so
+   the service opens them without a `MaterializeDatalessFiles` plist key.
 
 4. **Restart the agent session.** MCP client config changes are only
    picked up on session start. The current session will not see vellum

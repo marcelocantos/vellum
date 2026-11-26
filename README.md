@@ -171,6 +171,12 @@ brew services start vellum
 # or: vellum serve-view
 ```
 
+Documents in cloud folders (OneDrive, Google Drive, iCloud Drive,
+Dropbox) open even when they are cloud-only: vellum asks macOS to
+download a file when it reads it, which a launchd service is not
+allowed to do by default. No `MaterializeDatalessFiles` key is needed
+in the service's plist.
+
 Each GET converts **one** Markdown path (no link-graph crawl). Relative
 `.md`/`.markdown` links are rewritten to same-origin URLs. The served page
 adds view chrome (not written into the convert cache): one top bar with a
