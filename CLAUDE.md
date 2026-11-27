@@ -115,6 +115,12 @@ Minor releases only (no patch on top of the latest). On Colossus:
    Clipboard is skipped (no guaranteed GUI session). It is not part of
    `cv gate`.
 
+On Colossus the Homebrew service `sh.brew.vellum` stays stopped: do not
+`brew services start|restart vellum` after an upgrade (the generic
+release step). It binds 127.0.0.1:18742 and, when it wins the race,
+locks the dev viewer and its T3 plugin listener (18747) out. Restart
+`vellum-view-release` instead, which `make verify-release` does.
+
 Dev and release run side by side as LaunchAgents: `vellum-view`
 (127.0.0.1:18742, `launchd/install.sh`) runs `launchd/run-view.sh`, which
 prefers the checkout's `./vellum` build; `vellum-view-release` serves the
