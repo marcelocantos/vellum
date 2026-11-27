@@ -2254,9 +2254,11 @@
       });
     }
 
-    // T3's bridge: the card starts at the height the server declared.
-    // Ask for the whole window where the host can give it (a dialog on
-    // desktop and web), else for the tallest card it allows.
+    // T3's bridge: the card starts at the height the server declared
+    // and 360px wide. Ask for the whole window where the host can give
+    // it (a dialog on desktop and web), else for the widest and tallest
+    // card it allows, so a hover card is wide enough to read.
+    const BRIDGE_CARD_WIDTH = 800;
     const BRIDGE_CARD_HEIGHT = 900;
     window.addEventListener("message", function (ev) {
       const msg = ev.data;
@@ -2266,7 +2268,7 @@
       // Both: a host that cannot maximize this kind of card still
       // resizes it, and a maximized card ignores its size.
       if (features.indexOf("surface.resize") >= 0) {
-        port.postMessage({ type: "surface.update", surfaceId: msg.surfaceId, size: { height: BRIDGE_CARD_HEIGHT } });
+        port.postMessage({ type: "surface.update", surfaceId: msg.surfaceId, size: { width: BRIDGE_CARD_WIDTH, height: BRIDGE_CARD_HEIGHT } });
       }
       if (features.indexOf("surface.maximize") >= 0) {
         port.postMessage({ type: "surface.update", surfaceId: msg.surfaceId, maximized: true });

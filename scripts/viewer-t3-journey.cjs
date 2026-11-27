@@ -407,6 +407,12 @@ const png = Buffer.concat([
         await page.waitForFunction(() => window.bridgeLog.some((m) => m.type === "surface.update" && m.maximized === true));
         const asked = await page.evaluate(() => window.bridgeLog);
         check(asked.every((m) => m.surfaceId === "link:markdown"), `${name}: bridge messages name another surface: ${JSON.stringify(asked)}`);
+        // Where the host cannot maximize it (a hover card), the card asks
+        // for the widest size T3 allows, not only the tallest.
+        check(
+          asked.some((m) => m.type === "surface.update" && m.size && m.size.width === 800 && m.size.height === 900),
+          `${name}: the card did not ask for 800x900: ${JSON.stringify(asked)}`,
+        );
 
         // A link that leaves the document, and one to a file that is not
         // Markdown, keep the reader on the page.
